@@ -79,6 +79,7 @@ async function loadCtx($: any) {
   const report = await runDoctor($, c)
   c.state = report.state
   if (report.fixed) c.rebuilt = report.lines
+  c.baseline = report.baseline
   return c
 }
 
@@ -389,6 +390,7 @@ export const register: Register = on => {
       await journal($, { ev: 'crash.detected', lockStep: ctx.lock.step, lockStatus: ctx.lock.status, lockSession: ctx.lock.session, endReason: ctx.lock.endReason ?? null })
     }
     if (ctx.rebuilt) await journal($, { ev: 'doctor.rebuilt', why: ctx.rebuilt.slice(1), state: ctx.state })
+    if (ctx.baseline) await journal($, { ev: 'baseline', why: 'the journal was empty; this state file is the starting point', state: ctx.state })
     await $.tool.register({
       name: 'step_done',
       description: 'BMUZ engine: call this when the current talk step is finished, with its result object (for example {"name": "Moon Goat"}).',

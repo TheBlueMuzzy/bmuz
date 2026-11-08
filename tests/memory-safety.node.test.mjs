@@ -137,6 +137,25 @@ test('doctor: an empty journal never wipes a state file with progress in it', ()
   assert.match(r.lines.join('\n'), /journal is empty: kept the state file/)
 })
 
+test('baseline: a kept state the journal never saw is the starting point, so a later rebuild never redoes finished steps', () => {
+  // headless check 3: the state said name/approve/plan were done, the journal only knew hello onward;
+  // after a kill, the doctor went with the journal and ran name again
+  const kept = { ...E.freshState('hello'), finished: ['name', 'approve', 'plan'], results: { name: 'Moon Goat' }, resultsBy: { name: { name: 'Moon Goat' } } }
+  const start = E.doctor(P, JSON.stringify(kept), [''], null, 's1', 0)
+  assert.equal(start.baseline, true)
+  const lines = [
+    j('baseline', { state: kept }),
+    j('step.start', { step: 'hello', kind: 'flow' }), j('step.done', { step: 'hello' }),
+    j('step.start', { step: 'review', kind: 'talk' }),
+  ]
+  const s = E.rebuildFromJournal('hello', lines)
+  assert.deepEqual(s.finished, ['name', 'approve', 'plan', 'hello'])
+  assert.equal(s.current, 'review')
+  assert.deepEqual(s.results, { name: 'Moon Goat' })
+  // a fresh project (nothing done) needs no baseline
+  assert.equal(E.doctor(P, JSON.stringify(E.freshState('hello')), [''], null, 's1', 0).baseline, false)
+})
+
 test('doctor: says what went wrong — unclosed session, BLOCKED, retries, refused actions, torn lines', () => {
   const lines = [
     j('step.start', { step: 'name', kind: 'talk' }),

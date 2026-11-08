@@ -412,6 +412,9 @@ export function rebuildFromJournal(pipelineId, lines) {
     if (!raw.trim()) continue
     let j
     try { j = JSON.parse(raw) } catch (err) { continue }
+    // A starting point: a state the journal didn't see being made (kept from a state file when the
+    // journal was empty). Everything before it is replaced by it.
+    if (j.ev === 'baseline' && j.state) s = { ...freshState(pipelineId), ...j.state }
     if (j.ev === 'step.start') s = { ...s, current: j.step, status: j.kind === 'gate' ? 'waiting' : 'working', startedAt: j.t }
     if (j.ev === 'step.done') s = finish(s, { id: j.step }, j.result || null)
     if (j.ev === 'retry') s = { ...s, retries: { ...s.retries, [j.step]: (s.retries[j.step] || 0) + 1 } }
@@ -443,8 +446,12 @@ export function doctor(p, stateText, journalLines, lock, sessionId, now) {
   if (torn) lines.push(`${torn} journal line${torn > 1 ? 's were' : ' was'} unreadable and skipped.`)
   let fixed = !kept
   const anyEvents = events.some(x => x && x.ev)
+  // `baseline` = the caller should journal the kept state as a starting point, so a later rebuild
+  // starts from it instead of redoing steps the journal never saw (headless check 3 found this).
+  let baseline = false
   if (kept && !anyEvents) {
     if (kept.finished && kept.finished.length) lines.push('The journal is empty: kept the state file as it is.')
+    baseline = (kept.finished && kept.finished.length > 0) || !!kept.current
   } else if (kept && decided(kept) !== decided(rebuilt)) {
     lines.push(`The state file disagreed with the journal (state: ${kept.status} at ${kept.current || 'no step'}, ${kept.finished.length} finished; journal: ${rebuilt.status} at ${rebuilt.current || 'no step'}, ${rebuilt.finished.length} finished): went with the journal.`)
     fixed = true
@@ -462,7 +469,7 @@ export function doctor(p, stateText, journalLines, lock, sessionId, now) {
   for (const f of fails.slice(-3)) lines.push(`Earlier trouble: ${f.ev} at step "${f.step || f.lockStep}".`)
   if (!lines.length) lines.push('All good: the state file matches the journal and nothing went wrong.')
   lines.unshift(`BMUZ doctor · ${bandText(p, state, now)}`)
-  return { lines, state, fixed }
+  return { lines, state, fixed, baseline }
 }
 
 // Reads the flow result out of a task-notification text.
