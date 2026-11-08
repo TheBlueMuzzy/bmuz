@@ -31,7 +31,9 @@ export function isSafePath(path) {
   if (typeof path !== 'string' || !path.trim()) return false
   if (path.includes('\\') || path.startsWith('/') || /^[A-Za-z]:/.test(path)) return false
   const parts = path.split('/')
-  return !parts.some(p => p === '..' || p === '' || p === '.') && parts[0] !== '.bmuz'
+  // Windows ignores case and a trailing dot or space: ".BMUZ" and ".bmuz." are the engine's own folder too.
+  if (parts.some(p => p === '..' || p === '' || p === '.' || /[. ]$/.test(p))) return false
+  return parts[0].toLowerCase() !== '.bmuz'
 }
 
 const isList = v => Array.isArray(v) && v.every(x => typeof x === 'string' && x.trim())
@@ -233,7 +235,8 @@ export function isPlanModeMove(call) {
 // Decides one tool call. Returns { allow: true } or { allow: false, why }.
 // call = { tool, agentId?, input? }; opts.auto = an unattended run (nobody to answer).
 export function judgeTool(p, state, call, opts = {}) {
-  if (!call.agentId && isPlanModeMove(call)) return { allow: true }
+  // (not in an auto run: leaving plan mode waits for a person's OK)
+  if (!call.agentId && !opts.auto && isPlanModeMove(call)) return { allow: true }
   if (opts.auto && call.tool === 'AskUserQuestion') {
     return { allow: false, why: `BMUZ engine: auto run, nobody is here to answer. Don't ask: pick the sensible default, add {"question": "...", "picked": "..."} to the "asks" list in ${ENGINE_TOOL}'s result, and carry on.` }
   }
@@ -241,7 +244,11 @@ export function judgeTool(p, state, call, opts = {}) {
   if (call.tool === ENGINE_TOOL && !call.agentId && !(state.status === 'working' && (stepById(p, state.current) || {}).kind === 'talk')) {
     return { allow: false, why: 'BMUZ engine: no talk step is open, so there is nothing to finish. End your turn; the engine starts the next step itself.' }
   }
-  if (state.status === 'done' || state.status === 'idle') return { allow: true }
+  // Everything is open only before the pipeline starts and after it ends. Between steps (after a
+  // step_done, an undo, a gate going back, a retry about to start) the engine owns the next move.
+  if (state.status === 'done') return { allow: true }
+  if (state.status === 'idle' && !state.current && state.finished.length === 0) return { allow: true }
+  if (state.status === 'idle') return { allow: false, why: `BMUZ engine: between steps; the engine starts the next one itself. End your turn (or the creative says "bmuz go").` }
   const step = stepById(p, state.current)
   if (!step) return { allow: false, why: `BMUZ engine: no current step (state says ${state.current}); run /bmuz-doctor` }
   if (state.status === 'blocked') return { allow: false, why: `BMUZ engine: step ${step.id} is BLOCKED; nothing runs until the creative decides ("bmuz retry" for 2 more tries, or "bmuz undo" to go back)` }
@@ -317,6 +324,7 @@ export function finish(state, step, result) {
     results: result ? { ...state.results, ...result } : state.results,
     resultsBy: result ? { ...(state.resultsBy || {}), [step.id]: result } : (state.resultsBy || {}),
     retries,
+    flow: null, // a finished flow's launch record (and a "late" mark) must not follow the next step
     current: null,
     status: 'idle',
     startedAt: null,
@@ -374,7 +382,12 @@ export function answerGate(p, state, step, answer) {
   if (answer === step.approve) return { state: finish(state, step), approved: true }
   const back = step.backTo
   if (!back) return { state, approved: false }
-  const drop = new Set([back, ...p.steps.filter(s => (s.needs || []).includes(back)).map(s => s.id)])
+  // the step and everything that needs it, directly or through other steps
+  const drop = new Set([back])
+  for (let grew = true; grew;) {
+    grew = false
+    for (const s of p.steps) if (!drop.has(s.id) && (s.needs || []).some(n => drop.has(n))) { drop.add(s.id); grew = true }
+  }
   return { state: { ...dropSteps(state, drop), current: null, status: 'idle', startedAt: null }, approved: false }
 }
 
@@ -428,7 +441,8 @@ export function rebuildFromJournal(pipelineId, lines) {
 }
 
 // The parts of the state the journal decides; the doctor compares only these.
-const decided = s => JSON.stringify({ finished: s.finished, current: s.current, status: s.status, blocked: s.blocked && s.blocked.step, results: s.results })
+// Retries too: a crash between the journal's "retry" line and the state write must not hand out a free try.
+const decided = s => JSON.stringify({ finished: s.finished, current: s.current, status: s.status, blocked: s.blocked && s.blocked.step, results: s.results, retries: s.retries || {} })
 
 // Doctor: checks "where are we" against the journal, and says what went wrong, in plain words.
 // stateText = .bmuz/state.json as read (null = missing). Returns { lines, state, fixed }:

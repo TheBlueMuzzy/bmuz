@@ -12,6 +12,7 @@ const band = atom({ plugin: 'bmuz', key: 'band' } as const, null)
 let ctx: any = null
 let pending: null | "advance" | "resume" | "retry" | { undo: string } = null
 let watchdogBusy = false
+let sessionInteractive = false
 
 const SAFE_DENY = 'BMUZ engine hit an error in its own code, so it refused this action to be safe. Run /bmuz-doctor.'
 
@@ -20,11 +21,19 @@ async function readText($: any, path: string) {
   return String(await $.fs.read(path))
 }
 
-async function journal($: any, entry: any) {
+// $.fs has no append, so a journal line is a read + a rewrite. Hooks and timers run side by side,
+// so the writes go one at a time through this queue, or one would overwrite another's line.
+let journalQueue: Promise<void> = Promise.resolve()
+function journal($: any, entry: any) {
   const path = `${ctx.dir}/.bmuz/journal.jsonl`
-  const old = (await readText($, path)) ?? ''
-  const line = JSON.stringify({ t: await $.clock.now(), session: ctx.sessionId, ...entry })
-  await $.fs.write(path, old + line + '\n')
+  const sessionId = ctx.sessionId
+  const run = journalQueue.then(async () => {
+    const old = (await readText($, path)) ?? ''
+    const line = JSON.stringify({ t: await $.clock.now(), session: sessionId, ...entry })
+    await $.fs.write(path, old + line + '\n')
+  })
+  journalQueue = run.catch(() => {})
+  return run
 }
 
 async function save($: any) {
@@ -80,7 +89,51 @@ async function loadCtx($: any) {
   c.state = report.state
   if (report.fixed) c.rebuilt = report.lines
   c.baseline = report.baseline
+  // The state belongs to the pipeline that made it: switching bmuz.json to another pipeline must not
+  // count its own steps as finished just because the ids match.
+  if (!c.broken && c.state.pipeline && c.state.pipeline !== c.pipeline.id) {
+    c.broken = `this project's .bmuz folder belongs to pipeline "${c.state.pipeline}", but bmuz.json says "${c.pipeline.id}". Set bmuz.json back, or move the .bmuz folder away to start "${c.pipeline.id}" fresh`
+  }
   return c
+}
+
+// Loads the project into ctx. A start-up error used to leave the engine off, so every tool was allowed
+// in a BMUZ project; now the engine stays on and refuses everything until /bmuz-doctor gets it going.
+// Returns true when it is ready to run. Also used by the doctor to try again.
+async function startEngine($: any) {
+  const dir = String(await $.session.cwd()).replace(/\\/g, '/')
+  try {
+    if (await $.fs.exists(`${dir}/.bmuz/test-fault-start`)) throw new Error('injected fault (test)')
+    ctx = await loadCtx($)
+  } catch (err) {
+    ctx = { dir, broken: `the engine failed to start (${String(err).slice(0, 160)}); run /bmuz-doctor`, pipeline: { id: '?', steps: [] }, cfg: {}, state: E.freshState('?') }
+  }
+  if (!ctx) return false
+  ctx.interactive = sessionInteractive
+  // An auto run never asks: a session nobody can answer (-p, a background session), or bmuz.json "auto": true.
+  ctx.auto = !ctx.interactive || ctx.cfg.auto === true
+  return !ctx.broken
+}
+
+async function registerAll($: any) {
+  await $.tool.register({
+    name: 'step_done',
+    description: 'BMUZ engine: call this when the current talk step is finished, with its result object (for example {"name": "Moon Goat"}).',
+    inputSchema: { type: 'object', properties: { result: { type: 'object' } }, required: ['result'] },
+    isDeferred: false,
+  })
+  await $.command.register({ name: 'bmuz-go', description: 'BMUZ: start or resume the pipeline' })
+  await $.command.register({ name: 'bmuz-approve', description: 'BMUZ: answer the open gate', argumentHint: '<option>' })
+  await $.command.register({ name: 'bmuz-status', description: 'BMUZ: where are we' })
+  await $.command.register({ name: 'bmuz-doctor', description: 'BMUZ: check the state against the journal and say what went wrong' })
+  await $.command.register({ name: 'bmuz-undo', description: 'BMUZ: the undo list, or go back to before a step', argumentHint: '[step]' })
+  await $.command.register({ name: 'bmuz-retry', description: 'BMUZ: give a BLOCKED step 2 more tries' })
+}
+
+// The doctor, from /bmuz-doctor or "bmuz doctor": a broken start is tried again first.
+async function doctorCommand($: any) {
+  if (ctx.broken && !(await startEngine($))) return `BMUZ engine: ${ctx.broken}`
+  return doctorNow($)
 }
 
 async function runDoctor($: any, c: any) {
@@ -219,8 +272,10 @@ async function advance($: any, resume: boolean) {
     }
     if (isRestart && resume) await journal($, { ev: 'resume', step: step.id, status: s.status })
     ctx.state = E.begin(ctx.state, step, await $.clock.now())
+    // The checkpoint comes before the step.start line: a crash between them then retakes it (the files
+    // haven't changed yet), instead of resuming with a stale checkpoint or none.
+    if (!isRestart || !(await $.fs.exists(`${ctx.dir}/.bmuz/checkpoint-${step.id}.json`))) await checkpoint($, step)
     await journal($, { ev: 'step.start', step: step.id, kind: step.kind, attempt: (ctx.state.retries[step.id] || 0) + 1 })
-    if (!isRestart) await checkpoint($, step)
     await save($)
     resume = false
 
@@ -328,22 +383,28 @@ async function flowFinished($: any, n: any) {
 }
 
 async function watchdog($: any) {
-  if (!ctx || watchdogBusy) return
+  if (!ctx || ctx.broken || watchdogBusy) return
   watchdogBusy = true
   try {
     const limit = ctx.cfg.watchdogMs ?? ctx.pipeline.watchdogMs ?? 1200000
-    if (ctx.state.flow?.late) return // the helper finished; its result is on the way
-    if (!E.isStalled(ctx.pipeline, ctx.state, await $.clock.now(), limit)) return
+    const now = await $.clock.now()
+    // The helper finished; its result is on the way. If it hasn't come in 5 minutes, it was lost: a stall after all.
+    if (ctx.state.flow?.late && now - ctx.state.flow.late < 300000) return
+    if (!E.isStalled(ctx.pipeline, ctx.state, now, limit)) return
     const step = E.stepById(ctx.pipeline, ctx.state.current)
+    // Each await below lets a step_done or a flow result finish the step; act only if it is still this try.
+    const stillThisTry = () => ctx.state.current === step.id && ctx.state.status === 'working'
     await journal($, { ev: 'watchdog', step: step.id, limitMs: limit, taskId: ctx.state.flow?.taskId ?? null })
     $.ui.toast(`BMUZ watchdog: step ${step.id} ran past ${Math.round(limit / 1000)}s; stopping it`)
-    if (step.kind === 'flow' && ctx.state.flow?.taskId) {
+    // (a "late" mark past its 5 minutes skips the stop: the task already ended, its result never came)
+    if (step.kind === 'flow' && ctx.state.flow?.taskId && !ctx.state.flow.late) {
       try {
         const stopped: any = await $.tool.call({ tool: 'TaskStop', task_id: ctx.state.flow.taskId } as any)
         const said = String(stopped.text ?? stopped.result ?? '')
+        if (!stillThisTry()) return
         // Run 9's race: the helper finished as the watchdog fired. Its result is on the way; no failed try.
         if (E.taskAlreadyEnded(said)) {
-          ctx.state = { ...ctx.state, flow: { ...ctx.state.flow, late: true } }
+          ctx.state = { ...ctx.state, flow: { ...ctx.state.flow, late: now } }
           await journal($, { ev: 'watchdog.late', step: step.id, text: said.slice(0, 160) })
           await save($)
           return
@@ -353,6 +414,7 @@ async function watchdog($: any) {
         await journal($, { ev: 'watchdog.stop-failed', step: step.id, why: String(err).slice(0, 200) })
       }
     }
+    if (!stillThisTry()) return
     const next = await settle($, step, { ok: false, why: `stalled past ${Math.round(limit / 1000)}s (watchdog)` }, null)
     if (next === 'retry') {
       ctx.state = { ...ctx.state, current: step.id, status: 'idle' }
@@ -372,40 +434,21 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const r = await next(e)
     lastBand = ''
-    try {
-      if ((await $.fs.exists(`${String(await $.session.cwd()).replace(/\\/g, '/')}/.bmuz/test-fault-start`))) throw new Error('injected fault (test)')
-      ctx = await loadCtx($)
-    } catch (err) {
-      // A start-up error used to leave the engine off, so every tool was allowed in a BMUZ project.
-      // Now the engine stays on and refuses everything until the doctor sorts it out.
-      ctx = { dir: String(await $.session.cwd()).replace(/\\/g, '/'), broken: `the engine failed to start (${String(err).slice(0, 160)}); run /bmuz-doctor`, pipeline: { id: '?', steps: [] }, cfg: {}, state: E.freshState('?') }
-      return r
-    }
+    sessionInteractive = (e as any).isInteractive === true
+    const ok = await startEngine($)
     if (!ctx) return r
-    ctx.interactive = (e as any).isInteractive === true
-    // An auto run never asks: a session nobody can answer (-p, a background session), or bmuz.json "auto": true.
-    ctx.auto = !ctx.interactive || ctx.cfg.auto === true
+    // Commands and timers exist even when the start failed, so /bmuz-doctor is there to get it going.
+    await registerAll($)
+    $.clock.every(ctx.cfg.watchdogTickMs ?? 15000, () => { watchdog($) })
+    $.clock.every(1000, () => { showBand($).catch(() => {}) })
+    if (!ok) return r
     // A window closed at a gate used to look like a clean stop (live check L2); only a clean end counts as one now.
     if (E.diedLastTime(ctx.lock, ctx.sessionId)) {
       await journal($, { ev: 'crash.detected', lockStep: ctx.lock.step, lockStatus: ctx.lock.status, lockSession: ctx.lock.session, endReason: ctx.lock.endReason ?? null })
     }
     if (ctx.rebuilt) await journal($, { ev: 'doctor.rebuilt', why: ctx.rebuilt.slice(1), state: ctx.state })
     if (ctx.baseline) await journal($, { ev: 'baseline', why: 'the journal was empty; this state file is the starting point', state: ctx.state })
-    await $.tool.register({
-      name: 'step_done',
-      description: 'BMUZ engine: call this when the current talk step is finished, with its result object (for example {"name": "Moon Goat"}).',
-      inputSchema: { type: 'object', properties: { result: { type: 'object' } }, required: ['result'] },
-      isDeferred: false,
-    })
-    await $.command.register({ name: 'bmuz-go', description: 'BMUZ: start or resume the pipeline' })
-    await $.command.register({ name: 'bmuz-approve', description: 'BMUZ: answer the open gate', argumentHint: '<option>' })
-    await $.command.register({ name: 'bmuz-status', description: 'BMUZ: where are we' })
-    await $.command.register({ name: 'bmuz-doctor', description: 'BMUZ: check the state against the journal and say what went wrong' })
-    await $.command.register({ name: 'bmuz-undo', description: 'BMUZ: the undo list, or go back to before a step', argumentHint: '[step]' })
-    await $.command.register({ name: 'bmuz-retry', description: 'BMUZ: give a BLOCKED step 2 more tries' })
     await save($)
-    $.clock.every(ctx.cfg.watchdogTickMs ?? 15000, () => { watchdog($) })
-    $.clock.every(1000, () => { showBand($).catch(() => {}) })
     if (ctx.interactive && ctx.state.status !== 'done' && ctx.state.finished.length + (ctx.state.current ? 1 : 0) > 0) {
       $.clock.after(1500, () => { advance($, true) })
     }
@@ -466,7 +509,8 @@ export const register: Register = on => {
       const n = E.parseTaskNotification(text)
       const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
       if (!n || !step || step.kind !== 'flow') return next(e)
-      if (ctx.state.flow?.toolUseId && n.toolUseId !== ctx.state.flow.toolUseId) return next(e)
+      // Only this try's launch counts: an earlier try's helper finishing late is not this try's result.
+      if (!ctx.state.flow?.toolUseId || n.toolUseId !== ctx.state.flow.toolUseId) return next(e)
       await flowFinished($, n)
       pending = 'advance'
       return next({ ...(e as any), text: `BMUZ engine: the "${step.id}" helper finished and the engine checked its work. Reply with one short line; the engine starts the next step itself.` })
@@ -475,9 +519,9 @@ export const register: Register = on => {
     const say = (words: string) => next({ ...(e as any), text: `${text}\n(${words}\nShow the creative these lines as they are, then end your turn.)` })
     const cmd = text.match(/^\s*bmuz (undo|retry|doctor)\b\s*(.*)$/i)
     if (cmd) {
-      if (ctx.broken) return say(`BMUZ engine: ${ctx.broken}`)
       const what = cmd[1].toLowerCase()
-      if (what === 'doctor') return say(await doctorNow($))
+      if (what === 'doctor') return say(await doctorCommand($))
+      if (ctx.broken) return say(`BMUZ engine: ${ctx.broken}`)
       if (what === 'undo') return say(cmd[2].trim() ? await doUndo($, cmd[2].trim()) : undoMenu())
       const out = await doRetry($)
       if (out.ok) pending = 'advance'
@@ -561,12 +605,7 @@ export const register: Register = on => {
 
   on('command.run', { command: 'bmuz-doctor' }, async $ => {
     if (!ctx) return { text: 'No bmuz.json here.' }
-    if (ctx.broken) {
-      // Try the start again: a fixed pipeline file or bmuz.json takes effect without a restart.
-      try { ctx = (await loadCtx($)) ?? ctx } catch (err) { return { text: `BMUZ engine: still can't start: ${String(err).slice(0, 200)}` } }
-      if (ctx.broken) return { text: `BMUZ engine: ${ctx.broken}` }
-    }
-    return { text: await doctorNow($) }
+    return { text: await doctorCommand($) }
   })
 
   on('command.run', { command: 'bmuz-undo' }, async ($, e) => {

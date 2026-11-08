@@ -201,6 +201,41 @@ test('check 6f: an error while starting up keeps the engine on and refusing, unt
   expect(refused(again)).toBe(false)
 })
 
+test('review 5: after a broken start, typing "bmuz doctor" retries the start and the engine runs again', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  w.files['/proj/.bmuz/test-fault-start'] = 'boom'
+  await start($, false)
+  delete w.files['/proj/.bmuz/test-fault-start']
+  const said: any = await $.prompt.submit({ text: 'bmuz doctor' } as any)
+  expect(String(said.text)).toMatch(/BMUZ doctor/)
+  // back as an auto run (this session can't answer), so asking stays refused
+  const ask: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+  expect(why(ask)).toMatch(/auto run/)
+})
+
+test('review 10: state left by another pipeline is refused, not counted as finished', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ pipeline: 'other', current: null, status: 'done', finished: ['name', 'approve', 'plan', 'review'] }))
+  await start($, true)
+  const r: any = await $.tool.call({ tool: 'Write', file_path: '/proj/x.txt', content: 'x' } as any)
+  expect(refused(r)).toBe(true)
+  expect(why(r)).toMatch(/belongs to pipeline "other", but bmuz.json says "hello"/)
+})
+
+test('review 7: a flow result from an earlier try (or before this try launched) is not taken as this try\'s', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  const w = world(on, base({}))
+  w.files.PIPELINE = JSON.stringify({ ...PIPE, steps: PIPE.steps.map(s => (s.id === 'plan' ? { id: 'plan', kind: 'flow', needs: ['approve'], workflow: 'bmuz:hello-flow' } : s)) })
+  w.files['/proj/.bmuz/state.json'] = state({ current: 'plan', status: 'working', finished: ['name', 'approve'], flow: { args: {}, toolUseId: null, taskId: null } })
+  await start($, false)
+  await $.prompt.submit({ text: '<task-notification>\n<task-id>old</task-id>\n<tool-use-id>tu-old</tool-use-id>\n<status>completed</status>\n<result>{}</result>\n</task-notification>', origin: { kind: 'task-notification' } } as any)
+  expect(w.files['/proj/.bmuz/journal.jsonl'] ?? '').not.toMatch(/flow.result/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('working')
+})
+
 test('check 8: a flow launches once; a second Workflow call in the same try is refused', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const w = world(on, base({ current: 'hello', status: 'working', finished: ['name', 'approve', 'plan'] }))
