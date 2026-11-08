@@ -13,7 +13,8 @@ Muzzy's way of making games — Discover, Define, Develop, Deliver — run step 
 - `tests/` — tests with no Claude (`node --test`), headless runs (`run.sh`), project setup (`setup.mjs`)
 - `evidence/` — journals and output from the engine proof (2026-11-08); one is a test fixture
 
-Checks: `npm run check:fast` (node tests + `claude plugin validate` + `claude plugin test`).
+Checks: `npm run check:fast` (pipeline files + node tests + `claude plugin validate` + `claude plugin test`).
+Pipeline file format: `docs/pipeline-format.md`.
 Try it by hand: `cd project`, `node ../tests/setup.mjs fresh`, `claude --plugin-dir ../plugin`, type `bmuz go`.
 
 Started from the engine proof: design and results in the framework repo, `.planning/research/bmuz-vision/` (VISION, ARCHITECTURE, proof-results, REBUILD-PLAN).

@@ -54,8 +54,11 @@ async function loadCtx($: any) {
   const c: any = { dir, root, sessionId: await $.session.id(), broken: null }
   try {
     c.cfg = JSON.parse(cfgText)
+    if (typeof c.cfg.pipeline !== 'string' || !E.NAME_RE.test(c.cfg.pipeline)) throw new Error(`bmuz.json's "pipeline" must be a pipeline name like hello, not ${JSON.stringify(c.cfg.pipeline)}`)
     c.pipeline = JSON.parse(String(await $.fs.read(`${root}/pipelines/${c.cfg.pipeline}.json`)))
     const problems = E.checkPipeline(c.pipeline)
+    if (!problems.length && c.pipeline.id !== c.cfg.pipeline) problems.push(`the file pipelines/${c.cfg.pipeline}.json says its id is "${c.pipeline.id}"`)
+    for (const f of problems.length ? [] : E.pluginFiles(c.pipeline)) if (!(await $.fs.exists(`${root}/${f}`))) problems.push(`the craft note ${f} is missing`)
     if (problems.length) c.broken = `pipeline ${c.cfg.pipeline} has problems: ${problems.join('; ')}`
     // Test only: let flow helpers use extra tools (the stall test's helper runs Bash sleep).
     for (const s of c.pipeline.steps) if (s.kind === 'flow' && c.cfg.testAgentTools) s.agentTools = [...(s.agentTools || []), ...c.cfg.testAgentTools]
@@ -85,7 +88,7 @@ async function craftOf($: any, step: any) {
 async function checkpoint($: any, step: any) {
   if (ctx.state.retries[step.id]) return // a retry keeps the checkpoint from before the first try
   const saved: Record<string, string | null> = {}
-  for (const f of step.writes || []) saved[f] = await readText($, `${ctx.dir}/${f}`)
+  for (const f of step.writes || []) if (E.isSafePath(f)) saved[f] = await readText($, `${ctx.dir}/${f}`)
   await $.fs.write(`${ctx.dir}/.bmuz/checkpoint-${step.id}.json`, JSON.stringify(saved))
 }
 
@@ -95,6 +98,8 @@ async function rollback($: any, step: any) {
   const saved = JSON.parse(text)
   const undone: string[] = []
   for (const [f, body] of Object.entries(saved)) {
+    // The checkpoint file can be hand-edited: re-check each path right before writing or deleting.
+    if (!E.isSafePath(f)) continue
     if (body === null) await $.process.run(['node', `${ctx.root}/scripts/rm.mjs`, `${ctx.dir}/${f}`])
     else await $.fs.write(`${ctx.dir}/${f}`, String(body))
     undone.push(f)

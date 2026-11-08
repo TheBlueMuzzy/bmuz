@@ -9,7 +9,16 @@ const at = (finished, extra = {}) => ({ ...E.freshState('hello'), finished, ...e
 
 test('the pipeline file is well formed', () => {
   assert.deepEqual(E.checkPipeline(P), [])
-  assert.match(E.checkPipeline({ steps: [{ id: 'a', kind: 'talk', needs: ['zzz'] }] })[0], /needs zzz/)
+  assert.ok(E.checkPipeline({ id: 'x', version: 1, steps: [{ id: 'a', kind: 'talk', needs: ['zzz'] }] }).some(x => /needs "zzz"/.test(x)))
+})
+
+test('step_done between steps is refused in plain words (it used to crash the guard)', () => {
+  for (const s of [at([]), at(['name', 'approve', 'plan', 'hello', 'review'], { status: 'done' }), E.begin(at(['name']), E.stepById(P, 'approve'), 0), E.begin(at(['name', 'approve']), E.stepById(P, 'plan'), 0)]) {
+    const v = E.judgeTool(P, s, { tool: E.ENGINE_TOOL })
+    assert.equal(v.allow, false, s.status + ' ' + s.current)
+    assert.match(v.why, /no talk step is open/)
+  }
+  assert.equal(E.judgeTool(P, E.begin(at([]), E.stepById(P, 'name'), 0), { tool: E.ENGINE_TOOL }).allow, true)
 })
 
 test('steps run in order; a step never starts before its needs', () => {

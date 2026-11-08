@@ -3,11 +3,12 @@ import { expect, mock, test } from 'claude-code/testing'
 
 const PIPE = {
   id: 'hello',
+  version: 1,
   steps: [
-    { id: 'name', kind: 'talk', needs: [], tools: ['AskUserQuestion'], done: { type: 'result-has', key: 'name' } },
+    { id: 'name', kind: 'talk', needs: [], tools: ['AskUserQuestion'], craft: 'craft/name.md', done: { type: 'result-has', key: 'name' } },
     { id: 'approve', kind: 'gate', needs: ['name'], question: 'Approve {name}?', options: ['Approve', 'Change the name'], backTo: 'name' },
     { id: 'plan', kind: 'script', needs: ['approve'], run: ['node', 'x.mjs'], writes: ['plan.json'], done: { type: 'file-json-has', path: 'plan.json', key: 'name' } },
-    { id: 'review', kind: 'talk', needs: ['plan'], tools: ['Read', 'Glob', 'Grep'], done: { type: 'result-has', key: 'verdict' } },
+    { id: 'review', kind: 'talk', needs: ['plan'], tools: ['Read', 'Glob', 'Grep'], craft: 'craft/review.md', done: { type: 'result-has', key: 'verdict' } },
   ],
 }
 
@@ -26,7 +27,10 @@ function world(on: any, files: Record<string, string>) {
   // (the engine hands paths over in the platform's spelling, C:\proj\... on Windows)
   const key = (p: string) => {
     const unix = p.split(String.fromCharCode(92)).join('/').replace(/^[A-Za-z]:/, '')
-    return /pipelines.hello[.]json$/.test(unix) ? 'PIPELINE' : unix
+    if (/pipelines.hello[.]json$/.test(unix)) return 'PIPELINE'
+    // craft notes live in the plugin too: <root>/craft/x.md is craft/x.md
+    const craft = unix.match(/(craft\/[\w-]+[.]md)$/)
+    return craft ? craft[1] : unix
   }
   on('fs.exists', (_: any, e: any) => ({ value: key(e.path) in files }))
   on('fs.read', (_: any, e: any) => (key(e.path) in files ? { value: files[key(e.path)] } : { deny: 'ENOENT' }))
@@ -54,7 +58,7 @@ function why(r: any) {
 }
 
 function base(over: Record<string, unknown>) {
-  return { PIPELINE: JSON.stringify(PIPE), '/proj/.bmuz/state.json': state(over) } as Record<string, string>
+  return { PIPELINE: JSON.stringify(PIPE), 'craft/name.md': 'Ask the name.', 'craft/review.md': 'Review it.', '/proj/.bmuz/state.json': state(over) } as Record<string, string>
 }
 
 async function start($: any, interactive: boolean) {
@@ -106,6 +110,28 @@ test('check 6b: a broken pipeline file refuses every tool', async ($, on) => {
   await start($, false)
   const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
   expect(refused(r)).toBe(true)
+  expect(w.reached).toEqual([])
+})
+
+test('check 6c: a missing craft note or a bad pipeline name in bmuz.json refuses every tool', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  delete w.files['craft/name.md']
+  await start($, false)
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+  expect(refused(r)).toBe(true)
+  expect(why(r)).toMatch(/craft note craft\/name.md is missing/)
+  expect(w.reached).toEqual([])
+})
+
+test('check 6d: bmuz.json naming a pipeline outside the plugin refuses every tool', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  w.files['/proj/bmuz.json'] = '{"pipeline":"../../evil/hello","watchdogTickMs":3600000}'
+  await start($, false)
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+  expect(refused(r)).toBe(true)
+  expect(why(r)).toMatch(/must be a pipeline name/)
   expect(w.reached).toEqual([])
 })
 

@@ -5,22 +5,133 @@ export const KINDS = ['talk', 'gate', 'script', 'flow']
 export const MAX_RETRIES = 2
 export const ENGINE_TOOL = 'mcp__bmuz__step_done'
 
-// Checks a pipeline file's shape. Returns a list of problems (empty = fine).
-export function checkPipeline(p) {
-  const problems = []
-  if (!p || !Array.isArray(p.steps)) return ['pipeline has no steps list']
-  const ids = new Set()
-  for (const s of p.steps) {
-    if (!s.id) problems.push('a step has no id')
-    if (ids.has(s.id)) problems.push(`step id ${s.id} is used twice`)
-    ids.add(s.id)
-    if (!KINDS.includes(s.kind)) problems.push(`step ${s.id}: kind ${s.kind} is not one of ${KINDS.join('/')}`)
-    for (const n of s.needs || []) if (!ids.has(n)) problems.push(`step ${s.id} needs ${n}, which is not an earlier step`)
-    if (s.kind === 'gate' && !(s.options && s.options.length >= 2)) problems.push(`gate ${s.id} needs 2+ options`)
-    if (s.kind === 'script' && !Array.isArray(s.run)) problems.push(`script ${s.id} needs a run list`)
-    if (s.kind === 'flow' && !s.workflow) problems.push(`flow ${s.id} needs a workflow name`)
+// The pipeline file format this engine reads (docs/pipeline-format.md).
+export const FORMAT_VERSION = 1
+// Pipeline ids, step ids and pipeline names in bmuz.json: lower case, digits, dashes.
+export const NAME_RE = /^[a-z][a-z0-9-]*$/
+const TOP_KEYS = ['id', 'version', 'description', 'watchdogMs', 'steps']
+const STEP_KEYS = {
+  common: ['id', 'kind', 'needs', 'description', 'timeoutMs'],
+  talk: ['tools', 'craft', 'done', 'writes'],
+  gate: ['question', 'options', 'backTo'],
+  script: ['run', 'writes', 'done'],
+  flow: ['workflow', 'args', 'agentTools', 'writes', 'craft', 'done'],
+}
+const DONE_KEYS = {
+  'result-has': ['type', 'key'],
+  'file-contains': ['type', 'path', 'text'],
+  'file-json-has': ['type', 'path', 'key'],
+}
+const BUILT_IN_HOLES = ['project', 'plugin']
+
+// A path the engine may read, write or delete inside the project (or plugin):
+// relative, forward slashes, no "..", not the engine's own .bmuz folder.
+// The motor re-checks this right before it acts, not only when the file is checked.
+export function isSafePath(path) {
+  if (typeof path !== 'string' || !path.trim()) return false
+  if (path.includes('\\') || path.startsWith('/') || /^[A-Za-z]:/.test(path)) return false
+  const parts = path.split('/')
+  return !parts.some(p => p === '..' || p === '' || p === '.') && parts[0] !== '.bmuz'
+}
+
+const isList = v => Array.isArray(v) && v.every(x => typeof x === 'string' && x.trim())
+const isPositive = v => typeof v === 'number' && Number.isFinite(v) && v > 0
+const holesIn = v => {
+  const found = []
+  const walk = x => {
+    if (typeof x === 'string') for (const m of x.matchAll(/\{(\w+)\}/g)) found.push(m[1])
+    else if (Array.isArray(x)) x.forEach(walk)
+    else if (x && typeof x === 'object') Object.values(x).forEach(walk)
   }
+  walk(v)
+  return found
+}
+
+// Checks a pipeline file. Returns a list of problems in plain words (empty = fine).
+// The engine refuses to run a pipeline with any problem.
+export function checkPipeline(p) {
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return ['the pipeline file is not a JSON object']
+  const problems = []
+  for (const k of Object.keys(p)) if (!TOP_KEYS.includes(k)) problems.push(`the pipeline has an unknown setting "${k}" (allowed: ${TOP_KEYS.join(', ')})`)
+  if (typeof p.id !== 'string' || !NAME_RE.test(p.id)) problems.push('the pipeline needs an "id" in lower case letters, digits and dashes')
+  if (p.version !== FORMAT_VERSION) problems.push(`the pipeline's "version" must be ${FORMAT_VERSION} (this engine reads format ${FORMAT_VERSION})`)
+  if (p.description !== undefined && typeof p.description !== 'string') problems.push('the pipeline\'s "description" must be text')
+  if (p.watchdogMs !== undefined && !isPositive(p.watchdogMs)) problems.push('"watchdogMs" must be a number of milliseconds above 0')
+  if (!Array.isArray(p.steps) || p.steps.length === 0) return [...problems, 'the pipeline has no steps list']
+
+  const byId = new Map()
+  p.steps.forEach((s, i) => {
+    const at = s && typeof s.id === 'string' && s.id ? `step "${s.id}"` : `step ${i + 1}`
+    if (!s || typeof s !== 'object' || Array.isArray(s)) { problems.push(`${at} is not an object`); return }
+    if (typeof s.id !== 'string' || !NAME_RE.test(s.id)) problems.push(`${at} needs an "id" in lower case letters, digits and dashes`)
+    else if (byId.has(s.id)) problems.push(`step id "${s.id}" is used twice`)
+    if (!KINDS.includes(s.kind)) {
+      problems.push(`${at}: kind "${s.kind}" is not one of ${KINDS.join(', ')}`)
+      byId.set(s.id, s)
+      return
+    }
+    const allowed = [...STEP_KEYS.common, ...STEP_KEYS[s.kind]]
+    for (const k of Object.keys(s)) if (!allowed.includes(k)) problems.push(`${at} (${s.kind}) has an unknown setting "${k}" (allowed: ${allowed.join(', ')})`)
+    if (s.needs !== undefined && !Array.isArray(s.needs)) problems.push(`${at}: "needs" must be a list of step ids`)
+    for (const n of Array.isArray(s.needs) ? s.needs : []) if (!byId.has(n)) problems.push(`${at} needs "${n}", which is not an earlier step`)
+    if (s.description !== undefined && typeof s.description !== 'string') problems.push(`${at}: "description" must be text`)
+    if (s.timeoutMs !== undefined && !isPositive(s.timeoutMs)) problems.push(`${at}: "timeoutMs" must be a number of milliseconds above 0`)
+    if (s.craft !== undefined && !(isSafePath(s.craft) && s.craft.endsWith('.md'))) problems.push(`${at}: "craft" must be a .md file inside the plugin, like craft/${s.id}.md`)
+    if (s.writes !== undefined) {
+      if (!isList(s.writes)) problems.push(`${at}: "writes" must be a list of file paths`)
+      else for (const f of s.writes) {
+        if (!isSafePath(f)) problems.push(`${at}: "writes" path "${f}" must stay inside the project (relative, forward slashes, no "..", not .bmuz)`)
+        else if (/[{}]/.test(f)) problems.push(`${at}: "writes" path "${f}" can't use {holes}; name the file`)
+      }
+    }
+    if (s.done !== undefined) {
+      const d = s.done
+      const keys = d && DONE_KEYS[d.type]
+      if (!keys) problems.push(`${at}: done-check type "${d && d.type}" is not one of ${Object.keys(DONE_KEYS).join(', ')}`)
+      else {
+        for (const k of Object.keys(d)) if (!keys.includes(k)) problems.push(`${at}: done-check "${d.type}" has an unknown setting "${k}"`)
+        for (const k of keys.slice(1)) if (typeof d[k] !== 'string' || !d[k]) problems.push(`${at}: done-check "${d.type}" needs "${k}"`)
+        if (typeof d.path === 'string' && d.path && !isSafePath(d.path)) problems.push(`${at}: done-check path "${d.path}" must stay inside the project`)
+        if (d.type === 'result-has' && s.kind !== 'talk') problems.push(`${at}: only talk steps hand back a result, so "result-has" can't check a ${s.kind} step`)
+      }
+    }
+    if (s.kind === 'talk') {
+      if (!isList(s.tools)) problems.push(`${at} (talk) needs "tools": the list of tools Claude may use in it`)
+      if (!s.craft) problems.push(`${at} (talk) needs a "craft" note telling Claude what to do`)
+    }
+    if (s.kind === 'gate') {
+      if (typeof s.question !== 'string' || !s.question.trim()) problems.push(`${at} (gate) needs a "question"`)
+      if (!isList(s.options) || s.options.length < 2) problems.push(`${at} (gate) needs 2 or more "options"`)
+      else if (new Set(s.options).size !== s.options.length) problems.push(`${at} (gate): two options have the same words`)
+      if (s.backTo !== undefined && !byId.has(s.backTo)) problems.push(`${at} (gate): "backTo" "${s.backTo}" is not an earlier step`)
+    }
+    if (s.kind === 'script' && (!isList(s.run) || s.run.length === 0)) problems.push(`${at} (script) needs "run": the command as a list, like ["node", "{plugin}/scripts/x.mjs"]`)
+    if (s.kind === 'flow') {
+      if (typeof s.workflow !== 'string' || !/^[a-z0-9-]+:[a-z0-9-]+$/.test(s.workflow)) problems.push(`${at} (flow) needs "workflow" as plugin:name, like bmuz:hello-flow`)
+      if (s.args !== undefined && (!s.args || typeof s.args !== 'object' || Array.isArray(s.args))) problems.push(`${at} (flow): "args" must be an object`)
+      if (s.agentTools !== undefined && !isList(s.agentTools)) problems.push(`${at} (flow): "agentTools" must be a list of tool names`)
+    }
+    // {holes} may name the project, the plugin, or a result an earlier talk step this one needs hands back.
+    const known = new Set(BUILT_IN_HOLES)
+    const seen = new Set()
+    const walk = id => {
+      if (seen.has(id) || !byId.has(id)) return
+      seen.add(id)
+      const n = byId.get(id)
+      if (n.kind === 'talk' && n.done && n.done.type === 'result-has') known.add(n.done.key)
+      for (const m of Array.isArray(n.needs) ? n.needs : []) walk(m)
+    }
+    for (const n of Array.isArray(s.needs) ? s.needs : []) walk(n)
+    const filled = { question: s.question, run: s.run, args: s.args, path: s.done && s.done.path, text: s.done && s.done.text }
+    for (const h of new Set(holesIn(filled))) if (!known.has(h)) problems.push(`${at}: {${h}} isn't known here (known: ${[...known].map(k => `{${k}}`).join(', ')}); a result comes from a talk step this step needs`)
+    if (typeof s.id === 'string' && !byId.has(s.id)) byId.set(s.id, s)
+  })
   return problems
+}
+
+// Plugin files a pipeline names (craft notes); the caller checks they exist.
+export function pluginFiles(p) {
+  return (Array.isArray(p && p.steps) ? p.steps : []).filter(s => s && typeof s.craft === 'string' && isSafePath(s.craft)).map(s => s.craft)
 }
 
 export function freshState(pipelineId) {
@@ -55,6 +166,10 @@ export function fillDeep(v, vars) {
 // Decides one tool call. Returns { allow: true } or { allow: false, why }.
 // call = { tool, agentId?, workflowName? }
 export function judgeTool(p, state, call) {
+  // step_done only closes an open talk step; called between steps, it has nothing to finish.
+  if (call.tool === ENGINE_TOOL && !call.agentId && !(state.status === 'working' && (stepById(p, state.current) || {}).kind === 'talk')) {
+    return { allow: false, why: 'BMUZ engine: no talk step is open, so there is nothing to finish. End your turn; the engine starts the next step itself.' }
+  }
   if (state.status === 'done' || state.status === 'idle') return { allow: true }
   const step = stepById(p, state.current)
   if (!step) return { allow: false, why: `BMUZ engine: no current step (state says ${state.current}); run /bmuz-doctor` }
@@ -86,6 +201,7 @@ export function doneCheck(step, vars, look) {
     return v ? { ok: true } : { ok: false, why: `the result has no "${d.key}"; give it in step_done's result` }
   }
   const path = fill(d.path, vars)
+  if (!isSafePath(path)) return { ok: false, why: `${path} is outside the project; the engine won't read it` }
   const text = look.files ? look.files[path] : undefined
   if (text === null || text === undefined) return { ok: false, why: `${path} does not exist; the step must write it` }
   if (d.type === 'file-contains') {
@@ -106,7 +222,7 @@ export function doneCheck(step, vars, look) {
 // The files a done-check needs read.
 export function checkFiles(step, vars) {
   const d = step.done
-  return d && d.path ? [fill(d.path, vars)] : []
+  return d && d.path ? [fill(d.path, vars)].filter(isSafePath) : []
 }
 
 // After a failed done-check: retry (up to MAX_RETRIES) or block.
