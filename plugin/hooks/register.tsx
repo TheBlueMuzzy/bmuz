@@ -36,8 +36,14 @@ async function save($: any) {
   await showBand($)
 }
 
+// Called after every state save, and every second by a timer (live check L3: the band stayed on
+// "working" after BLOCKED until the turn ended). Only a changed text is sent on.
+let lastBand = ''
 async function showBand($: any) {
+  if (!ctx) return
   const text = E.bandText(ctx.pipeline, ctx.state, await $.clock.now())
+  if (text === lastBand) return
+  lastBand = text
   await update($, band, () => ({ text, status: ctx.state.status }))
   $.ui.status(text)
 }
@@ -345,6 +351,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const r = await next(e)
     ctx = await loadCtx($)
+    lastBand = ''
     if (!ctx) return r
     ctx.interactive = (e as any).isInteractive === true
     if (ctx.lock && ctx.lock.step && !ctx.lock.closed && ctx.lock.session !== ctx.sessionId) {
@@ -365,6 +372,7 @@ export const register: Register = on => {
     await $.command.register({ name: 'bmuz-retry', description: 'BMUZ: give a BLOCKED step 2 more tries' })
     await save($)
     $.clock.every(ctx.cfg.watchdogTickMs ?? 15000, () => { watchdog($) })
+    $.clock.every(1000, () => { showBand($).catch(() => {}) })
     if (ctx.interactive && ctx.state.status !== 'done' && ctx.state.finished.length + (ctx.state.current ? 1 : 0) > 0) {
       $.clock.after(1500, () => { advance($, true) })
     }
@@ -437,13 +445,12 @@ export const register: Register = on => {
     const go = text.match(/^\s*bmuz (go|approve)\s*(.*)$/i)
     if (go && go[1].toLowerCase() === 'approve') {
       const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
-      if (step && step.kind === 'gate') {
-        const answer = go[2].trim() || step.options[0]
-        if (step.options.includes(answer)) {
-          await applyGate($, step, answer)
-          pending = 'advance'
-        }
-      }
+      if (!step || step.kind !== 'gate') return say('BMUZ engine: no gate is open.')
+      // No default answer: the creative names the option (an empty "bmuz approve" must never say yes).
+      const answer = go[2].trim()
+      if (!step.options.includes(answer)) return say(`BMUZ engine: the gate is still open. Answer with one of: ${step.options.map((o: string) => `"bmuz approve ${o}"`).join(' / ')}`)
+      await applyGate($, step, answer)
+      pending = 'advance'
       return next({ ...(e as any), text: `${text}\n(BMUZ engine: gate answered. Reply with one short line; the engine runs the next step itself.)` })
     }
     if (go) {
@@ -480,8 +487,8 @@ export const register: Register = on => {
     if (!ctx) return { text: 'No bmuz.json here.' }
     const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
     if (!step || step.kind !== 'gate') return { text: 'No gate is open.' }
-    const answer = String((e as any).args || '').trim() || step.options[0]
-    if (!step.options.includes(answer)) return { text: `Pick one of: ${step.options.join(' / ')}` }
+    const answer = String((e as any).args || '').trim()
+    if (!step.options.includes(answer)) return { text: `The gate is still open. Pick one of: ${step.options.join(' / ')}` }
     await applyGate($, step, answer)
     $.clock.after(50, () => { advance($, false) })
     return { text: `BMUZ engine: gate answered "${answer}".` }

@@ -16,7 +16,8 @@
       "kind": "gate",
       "needs": ["name"],
       "question": "Plan card: a hello page for \"{name}\". Approve it?",
-      "options": ["Approve", "Change the name"],
+      "options": ["Change the name", "Approve"],
+      "approve": "Approve",
       "backTo": "name"
     },
     {

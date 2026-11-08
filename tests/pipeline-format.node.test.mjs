@@ -59,6 +59,9 @@ test('gates need a question, 2+ different options, and an earlier backTo', () =>
   let p = copy(); delete step(p, 'approve').question; refuses(p, /needs a "question"/)
   p = copy(); step(p, 'approve').options = ['Approve']; refuses(p, /needs 2 or more "options"/)
   p = copy(); step(p, 'approve').options = ['Yes', 'Yes']; refuses(p, /same words/)
+  p = copy(); delete step(p, 'approve').approve; refuses(p, /needs "approve"/)
+  p = copy(); step(p, 'approve').approve = 'Yes please'; refuses(p, /needs "approve"/)
+  p = copy(); step(p, 'approve').options = ['Approve', 'Change the name']; refuses(p, /"Approve" can't be the first option; a stray Enter/)
   p = copy(); step(p, 'approve').backTo = 'review'; refuses(p, /"backTo" "review" is not an earlier step/)
 })
 

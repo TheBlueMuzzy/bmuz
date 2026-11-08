@@ -6,7 +6,7 @@ const PIPE = {
   version: 1,
   steps: [
     { id: 'name', kind: 'talk', needs: [], tools: ['AskUserQuestion'], craft: 'craft/name.md', done: { type: 'result-has', key: 'name' } },
-    { id: 'approve', kind: 'gate', needs: ['name'], question: 'Approve {name}?', options: ['Approve', 'Change the name'], backTo: 'name' },
+    { id: 'approve', kind: 'gate', needs: ['name'], question: 'Approve {name}?', options: ['Change the name', 'Approve'], approve: 'Approve', backTo: 'name' },
     { id: 'plan', kind: 'script', needs: ['approve'], run: ['node', 'x.mjs'], writes: ['plan.json'], done: { type: 'file-json-has', path: 'plan.json', key: 'name' } },
     { id: 'review', kind: 'talk', needs: ['plan'], tools: ['Read', 'Glob', 'Grep'], craft: 'craft/review.md', done: { type: 'result-has', key: 'verdict' } },
   ],
@@ -147,7 +147,7 @@ test('check 2: at a gate the engine asks with buttons and waits for the answer',
   await start($, true)
   await clock.advance(2000) // the resume timer fires and the gate asks
   expect(asked?.questions?.[0]?.question).toBe('Approve Moon Goat?')
-  expect(asked.questions[0].options.map((o: any) => o.label)).toEqual(['Approve', 'Change the name'])
+  expect(asked.questions[0].options.map((o: any) => o.label)).toEqual(['Change the name', 'Approve']) // Approve is never the pre-selected first button
   await clock.advance(60_000)
   expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('waiting') // nothing moved while unanswered
   expect(w.runs).toEqual([])
@@ -156,6 +156,19 @@ test('check 2: at a gate the engine asks with buttons and waits for the answer',
   await clock.advance(10)
   expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"gate.answer","step":"approve","answer":"Approve"/)
   expect(w.runs.length).toBeGreaterThan(0) // the script step started after the yes
+})
+
+test('check 2b: an empty "bmuz approve" never says yes; only the approve option, word for word, does', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  const w = world(on, base({ current: 'approve', status: 'waiting', finished: ['name'] }))
+  await start($, false)
+  const said: any = await $.prompt.submit({ text: 'bmuz approve' } as any)
+  expect(String(said.text)).toMatch(/still open. Answer with one of: "bmuz approve Change the name" \/ "bmuz approve Approve"/)
+  const cmd: any = await $.command.run({ command: 'bmuz-approve', args: '' } as any)
+  expect(JSON.stringify(cmd)).toMatch(/still open/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('waiting')
+  expect(w.files['/proj/.bmuz/journal.jsonl'] ?? '').not.toMatch(/gate.answer/)
 })
 
 test('check 13: a script whose done-check keeps failing retries twice, then BLOCKS and rolls back', async ($, on) => {

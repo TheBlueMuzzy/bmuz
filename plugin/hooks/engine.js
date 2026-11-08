@@ -13,7 +13,7 @@ const TOP_KEYS = ['id', 'version', 'description', 'watchdogMs', 'steps']
 const STEP_KEYS = {
   common: ['id', 'kind', 'needs', 'description', 'timeoutMs'],
   talk: ['tools', 'craft', 'done', 'writes'],
-  gate: ['question', 'options', 'backTo'],
+  gate: ['question', 'options', 'approve', 'backTo'],
   script: ['run', 'writes', 'done'],
   flow: ['workflow', 'args', 'agentTools', 'writes', 'craft', 'done'],
 }
@@ -103,6 +103,9 @@ export function checkPipeline(p) {
       if (typeof s.question !== 'string' || !s.question.trim()) problems.push(`${at} (gate) needs a "question"`)
       if (!isList(s.options) || s.options.length < 2) problems.push(`${at} (gate) needs 2 or more "options"`)
       else if (new Set(s.options).size !== s.options.length) problems.push(`${at} (gate): two options have the same words`)
+      // The first option is the one a stray Enter picks, so it must be the safe one (live check L1).
+      else if (typeof s.approve !== 'string' || !s.options.includes(s.approve)) problems.push(`${at} (gate) needs "approve": the option that says yes, word for word`)
+      else if (s.options[0] === s.approve) problems.push(`${at} (gate): "${s.approve}" can't be the first option; a stray Enter would approve it. Put the safe choice first`)
       if (s.backTo !== undefined && !byId.has(s.backTo)) problems.push(`${at} (gate): "backTo" "${s.backTo}" is not an earlier step`)
     }
     if (s.kind === 'script' && (!isList(s.run) || s.run.length === 0)) problems.push(`${at} (script) needs "run": the command as a list, like ["node", "{plugin}/scripts/x.mjs"]`)
@@ -311,10 +314,10 @@ export function begin(state, step, now) {
   return { ...state, current: step.id, status, startedAt: now }
 }
 
-// Gate answer: the first option approves; any other sends the creative back to
+// Gate answer: the `approve` option approves; any other sends the creative back to
 // the step named in `step.backTo` (its result cleared).
 export function answerGate(p, state, step, answer) {
-  if (answer === step.options[0]) return { state: finish(state, step), approved: true }
+  if (answer === step.approve) return { state: finish(state, step), approved: true }
   const back = step.backTo
   if (!back) return { state, approved: false }
   const drop = new Set([back, ...p.steps.filter(s => (s.needs || []).includes(back)).map(s => s.id)])
