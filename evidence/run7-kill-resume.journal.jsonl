@@ -1,0 +1,11 @@
+{"t":1794125228160,"session":"3b140b3a-fd29-4f4a-8162-157bd34f7ac3","ev":"step.start","step":"hello","kind":"flow","attempt":1}
+{"t":1794125230270,"session":"3b140b3a-fd29-4f4a-8162-157bd34f7ac3","ev":"flow.launched","step":"hello","workflow":"bmuz-proof:hello-flow","args":{"name":"Moon Goat","out":"hello.html","stallTest":50},"taskId":"wwmnablqp","runId":"wf_bbb48dce-732","deny":null}
+{"t":1794125243669,"session":"3b140b3a-fd29-4f4a-8162-157bd34f7ac3","ev":"deviation","step":"hello","tool":"ToolSearch","agentId":"a7eb63af8cecbdbb2","why":"BMUZ engine: a helper may not use ToolSearch in step hello"}
+{"t":1794125251572,"session":"3b140b3a-fd29-4f4a-8162-157bd34f7ac3","ev":"flow.result","step":"hello","status":"completed","taskId":"wwmnablqp","result":{"wrote":"hello.html","name":"Moon Goat","said":"written"}}
+{"t":1794125251575,"session":"3b140b3a-fd29-4f4a-8162-157bd34f7ac3","ev":"step.done","step":"hello","kind":"flow","result":null}
+{"t":1794125253586,"session":"3b140b3a-fd29-4f4a-8162-157bd34f7ac3","ev":"step.start","step":"review","kind":"talk","attempt":1}
+{"t":1794125269417,"session":"1f73d2f1-661f-43f5-ac57-52e349c6018f","ev":"crash.detected","lockStep":"review","lockStatus":"working","lockSession":"3b140b3a-fd29-4f4a-8162-157bd34f7ac3"}
+{"t":1794125272307,"session":"1f73d2f1-661f-43f5-ac57-52e349c6018f","ev":"resume","step":"review","status":"working"}
+{"t":1794125272309,"session":"1f73d2f1-661f-43f5-ac57-52e349c6018f","ev":"step.start","step":"review","kind":"talk","attempt":1}
+{"t":1794125277506,"session":"1f73d2f1-661f-43f5-ac57-52e349c6018f","ev":"step.done","step":"review","kind":"talk","result":{"verdict":"Matches: hello.html is a single page titled 'Hello Moon Goat' for the game name in plan.json, and plan.json lists only the 'hello' page."}}
+{"t":1794125279311,"session":"1f73d2f1-661f-43f5-ac57-52e349c6018f","ev":"pipeline.done"}

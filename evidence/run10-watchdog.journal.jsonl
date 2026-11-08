@@ -1,0 +1,7 @@
+{"t":1794125592604,"session":"b316ec31-c773-428c-94a1-b33351b285bc","ev":"step.start","step":"hello","kind":"flow","attempt":1}
+{"t":1794125594638,"session":"b316ec31-c773-428c-94a1-b33351b285bc","ev":"flow.launched","step":"hello","workflow":"bmuz-proof:hello-flow","args":{"name":"Moon Goat","out":"hello.html","stallTest":150},"taskId":"wfa14su1h","runId":"wf_506bf552-622","deny":null}
+{"t":1794125619069,"session":"b316ec31-c773-428c-94a1-b33351b285bc","ev":"watchdog","step":"hello","limitMs":25000,"taskId":"wfa14su1h"}
+{"t":1794125619114,"session":"b316ec31-c773-428c-94a1-b33351b285bc","ev":"watchdog.stopped","step":"hello","deny":null,"text":"{\"message\":\"Successfully stopped task: wfa14su1h (BMUZ proof flow: writes the hello page for the game name it is given)\",\"task_id\":\"wfa14su1h\",\"task_type\":\"loca"}
+{"t":1794125619117,"session":"b316ec31-c773-428c-94a1-b33351b285bc","ev":"retry","step":"hello","attempt":2,"why":"stalled past 25s (watchdog)"}
+{"t":1794125619123,"session":"b316ec31-c773-428c-94a1-b33351b285bc","ev":"step.start","step":"hello","kind":"flow","attempt":2}
+{"t":1794125619129,"session":"b316ec31-c773-428c-94a1-b33351b285bc","ev":"watchdog.restart-failed","step":"hello","why":"HooksError: bmuz-proof: $.command.run is not available in this mode: no session is bound in this process (the REPL has not mounted and no headless session is built); catch it and carry on"}

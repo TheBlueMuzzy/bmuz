@@ -1,0 +1,8 @@
+{
+  "name": "bmuz",
+  "version": "0.1.0",
+  "description": "BMUZ: runs a game project's steps from a pipeline file — Discover, Define, Develop, Deliver",
+  "license": "UNLICENSED",
+  "author": { "name": "Muzzy" },
+  "types": "./types/index.d.ts"
+}

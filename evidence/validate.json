@@ -1,0 +1,86 @@
+{
+  "success": true,
+  "strict": false,
+  "target": "C:\\Users\\Muzzy\\Documents\\dev\\.scratch\\bmuz-engine-proof\\plugin\\.claude-plugin\\plugin.json",
+  "manifest": {
+    "file": "C:\\Users\\Muzzy\\Documents\\dev\\.scratch\\bmuz-engine-proof\\plugin\\.claude-plugin\\plugin.json",
+    "type": "plugin",
+    "errors": [],
+    "warnings": [],
+    "notes": [
+      "types ./types/index.d.ts declares on $: nothing (no EngineInterface member)",
+      "types ./types/index.d.ts declares state: bmuz-proof.band"
+    ],
+    "gatingHooks": []
+  },
+  "contents": [
+    {
+      "file": "C:\\Users\\Muzzy\\Documents\\dev\\.scratch\\bmuz-engine-proof\\plugin\\hooks\\hooks.json",
+      "type": "hooks",
+      "errors": [],
+      "warnings": [],
+      "notes": [
+        "./register.tsx hooks: session.start, session.end, tool.call, prompt.submit, turn.complete, command.run{command=bmuz-go}, command.run{command=bmuz-approve}, command.run{command=bmuz-status}, ui.render{component=AbovePrompt}",
+        "./register.tsx answers its own command: command.run{command=bmuz-go}",
+        "./register.tsx answers its own command: command.run{command=bmuz-approve}",
+        "./register.tsx answers its own command: command.run{command=bmuz-status}",
+        "./register.tsx gating hook with .catch: tool.call",
+        "./register.tsx gating hook without .catch: prompt.submit",
+        "./register.tsx calls: $.clock.after, $.clock.every, $.clock.now, $.command.register, $.command.run (via startFlow), $.fs.exists, $.fs.read (via loadCtx, readText), $.fs.write, $.process.run (via rollback, runScript), $.prompt.submit (via startTalk), $.session.cwd (via loadCtx), $.session.id (via loadCtx), $.state.get, $.state.set, $.tool.call (via watchdog), $.tool.register, $.ui.ask (via askGate), $.ui.resolve, $.ui.status (via showBand), $.ui.toast (via settle, watchdog)",
+        "./register.tsx state writes: bmuz-proof.band",
+        "./register.tsx state reads: bmuz-proof.band"
+      ],
+      "gatingHooks": [
+        {
+          "module": "./register.tsx",
+          "pattern": "tool.call",
+          "hook": "tool.call",
+          "hasCatch": true
+        },
+        {
+          "module": "./register.tsx",
+          "pattern": "prompt.submit",
+          "hook": "prompt.submit",
+          "hasCatch": false
+        }
+      ]
+    }
+  ],
+  "advice": [],
+  "directory": {
+    "profile": null,
+    "findings": [
+      {
+        "code": "README_MISSING",
+        "title": "README missing",
+        "severity": "error",
+        "blocking": true,
+        "hold": false,
+        "file": "README.md",
+        "field": "",
+        "message": "This plugin has no README.md. People who install it and the directory's automated review read the README to learn what it does; the first line of a README in the plugin folder also stands in as the listing summary when plugin.json has no description.",
+        "fix": "Add a README.md to the plugin folder describing what the plugin does, how to use it, and any setup it needs, in at least 40 words. A README at the repository root also counts for a plugin in a sub-folder."
+      },
+      {
+        "code": "ICON_MISSING",
+        "title": "No icon",
+        "severity": "warning",
+        "blocking": false,
+        "hold": false,
+        "file": ".claude-plugin/plugin.json",
+        "field": "icon",
+        "message": "No icon found in the plugin. The validator looked for `icon` in plugin.json and for a file at .claude-plugin/icon.png or .svg, assets/icon.png or .svg, or a similar path.",
+        "fix": "Add a square PNG to the plugin folder at .claude-plugin/icon.png, or set `icon` in plugin.json to the path of a square PNG or JPEG in the plugin: 512 to 2048 px on each side, under 2 MB. SVG and WebP are not accepted. That file may become the listing icon only once: the first time the plugin is saved or submitted in the developer portal. Adding or changing it later does not change the icon."
+      }
+    ],
+    "undecided": [],
+    "incomplete": true,
+    "failure": null,
+    "notes": [
+      "The repository root was taken to be C:\\Users\\Muzzy\\Documents\\dev\\.scratch\\bmuz-engine-proof, the nearest parent folder with a .git folder or file. No README that counts (a regular file with one of the file names the plugin directory accepts) was found there either. For a plugin submitted from a git repository, the repository root is the top folder of that repository, with only what is committed there, so check that the folder named above is that top folder.",
+      "hooks/hooks.json names a hooks module (a code file listed under `modules`). The plugin directory has rules of its own for such code, and these checks apply none of them, so passing here does not mean the directory accepts the plugin. The developer portal's own validation applies those rules."
+    ]
+  },
+  "digest": "sha256-5Sq3VnvtIbJ/MkSS0P+Sp9XHb7P0M1Ve5GozqXEBKRY=",
+  "digestRefusal": null
+}

@@ -1,0 +1,13 @@
+
+tests\engine.test.tsx:
+(pass) check 1: a tool from a later step is refused, and the deviation is journaled [61.59ms]
+(pass) check 12: the review step reads but cannot edit, write or run commands [43.79ms]
+(pass) check 6: an error inside the mod refuses the call instead of letting it through [32.58ms]
+(pass) check 6b: a broken pipeline file refuses every tool [33.01ms]
+(pass) check 2: at a gate the engine asks with buttons and waits for the answer [67.21ms]
+(pass) check 13: a script whose done-check keeps failing retries twice, then BLOCKS and rolls back [46.61ms]
+(pass) check 5: the band above the prompt shows the step and its status [45.48ms]
+
+ 7 pass
+ 0 fail
+Ran 7 tests across 1 file. [0.56s]

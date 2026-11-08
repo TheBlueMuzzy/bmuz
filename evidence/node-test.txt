@@ -1,0 +1,20 @@
+✔ the pipeline file is well formed (0.8425ms)
+✔ steps run in order; a step never starts before its needs (0.1598ms)
+✔ check 1: a tool from a later step is refused (out of order) (0.1391ms)
+✔ check 12: the review step may read but not edit (0.0949ms)
+✔ a gate allows only the question; helpers only their own tools (0.0862ms)
+✔ gate answers: approve moves on, the other option goes back to the named step (0.1845ms)
+✔ check 13: a failed done-check retries twice, then BLOCKS (0.1167ms)
+✔ done-checks read results and files (0.1795ms)
+✔ check 4: the watchdog sees a step past its limit (0.0955ms)
+✔ check 5: band words for working / waiting / done (0.2159ms)
+✔ check 3 / doctor: state rebuilt from the journal alone lands on the right step (0.3997ms)
+✔ flow results are read out of a task notification (0.1724ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 96.3737

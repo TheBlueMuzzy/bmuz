@@ -1,0 +1,9 @@
+{"t":1794125165759,"session":"1588ed08-c706-42a8-997a-a9b76b33f985","ev":"step.start","step":"plan","kind":"script","attempt":1}
+{"t":1794125165989,"session":"1588ed08-c706-42a8-997a-a9b76b33f985","ev":"script.ran","step":"plan","exitCode":2,"stdout":"{\"ok\":false,\"why\":\"plan has no name\"}"}
+{"t":1794125165992,"session":"1588ed08-c706-42a8-997a-a9b76b33f985","ev":"retry","step":"plan","attempt":2,"why":"plan.json has no \"name\""}
+{"t":1794125165996,"session":"1588ed08-c706-42a8-997a-a9b76b33f985","ev":"step.start","step":"plan","kind":"script","attempt":2}
+{"t":1794125166120,"session":"1588ed08-c706-42a8-997a-a9b76b33f985","ev":"script.ran","step":"plan","exitCode":2,"stdout":"{\"ok\":false,\"why\":\"plan has no name\"}"}
+{"t":1794125166122,"session":"1588ed08-c706-42a8-997a-a9b76b33f985","ev":"retry","step":"plan","attempt":3,"why":"plan.json has no \"name\""}
+{"t":1794125166125,"session":"1588ed08-c706-42a8-997a-a9b76b33f985","ev":"step.start","step":"plan","kind":"script","attempt":3}
+{"t":1794125166246,"session":"1588ed08-c706-42a8-997a-a9b76b33f985","ev":"script.ran","step":"plan","exitCode":2,"stdout":"{\"ok\":false,\"why\":\"plan has no name\"}"}
+{"t":1794125166251,"session":"1588ed08-c706-42a8-997a-a9b76b33f985","ev":"blocked","step":"plan","why":"plan.json has no \"name\"","rolledBack":["plan.json"]}

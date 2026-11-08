@@ -1,0 +1,10 @@
+{"t":1794125454650,"session":"14266ef0-740d-4542-ae90-bf78e1a3bf53","ev":"step.start","step":"hello","kind":"flow","attempt":1}
+{"t":1794125456843,"session":"14266ef0-740d-4542-ae90-bf78e1a3bf53","ev":"flow.launched","step":"hello","workflow":"bmuz-proof:hello-flow","args":{"name":"Moon Goat","out":"hello.html","stallTest":120},"taskId":"wxz5p4rzw","runId":"wf_e55fe26f-ebe","deny":null}
+{"t":1794125476147,"session":"14266ef0-740d-4542-ae90-bf78e1a3bf53","ev":"watchdog","step":"hello","limitMs":20000,"taskId":"wxz5p4rzw"}
+{"t":1794125476153,"session":"14266ef0-740d-4542-ae90-bf78e1a3bf53","ev":"watchdog.stopped","step":"hello","deny":null,"text":"<tool_use_error>Task wxz5p4rzw is not running (status: completed)</tool_use_error>"}
+{"t":1794125476156,"session":"14266ef0-740d-4542-ae90-bf78e1a3bf53","ev":"retry","step":"hello","attempt":2,"why":"stalled past 20s (watchdog)"}
+{"t":1794125476171,"session":"14266ef0-740d-4542-ae90-bf78e1a3bf53","ev":"flow.result","step":"hello","status":"completed","taskId":"wxz5p4rzw","result":{"wrote":"hello.html","name":"Moon Goat","said":"The 120-second sleep is still running in the background, and the Monitor will end the wait once it has had time to finish. I'll wait for that notification before giving my final reply."}}
+{"t":1794125476174,"session":"14266ef0-740d-4542-ae90-bf78e1a3bf53","ev":"step.done","step":"hello","kind":"flow","result":null}
+{"t":1794125478291,"session":"14266ef0-740d-4542-ae90-bf78e1a3bf53","ev":"step.start","step":"review","kind":"talk","attempt":1}
+{"t":1794125481992,"session":"14266ef0-740d-4542-ae90-bf78e1a3bf53","ev":"step.done","step":"review","kind":"talk","result":{"verdict":"Matches the plan: hello.html has the page for Moon Goat (<h1>Hello Moon Goat</h1>), and plan.json lists the game as Moon Goat with one page, hello."}}
+{"t":1794125483800,"session":"14266ef0-740d-4542-ae90-bf78e1a3bf53","ev":"pipeline.done"}

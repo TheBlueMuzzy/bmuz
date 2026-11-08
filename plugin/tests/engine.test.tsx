@@ -1,0 +1,162 @@
+// The mod under `claude plugin test`: the real hooks, a fake project in memory beneath them.
+import { expect, mock, test } from 'claude-code/testing'
+
+const PIPE = {
+  id: 'hello',
+  steps: [
+    { id: 'name', kind: 'talk', needs: [], tools: ['AskUserQuestion'], done: { type: 'result-has', key: 'name' } },
+    { id: 'approve', kind: 'gate', needs: ['name'], question: 'Approve {name}?', options: ['Approve', 'Change the name'], backTo: 'name' },
+    { id: 'plan', kind: 'script', needs: ['approve'], run: ['node', 'x.mjs'], writes: ['plan.json'], done: { type: 'file-json-has', path: 'plan.json', key: 'name' } },
+    { id: 'review', kind: 'talk', needs: ['plan'], tools: ['Read', 'Glob', 'Grep'], done: { type: 'result-has', key: 'verdict' } },
+  ],
+}
+
+function state(over: Record<string, unknown>) {
+  return JSON.stringify({ pipeline: 'hello', current: null, status: 'idle', results: { name: 'Moon Goat' }, retries: {}, finished: [], blocked: null, startedAt: 1, ...over })
+}
+
+// A fake disk and session beneath the plugin. Returns the files, the calls the tools got, and the runs.
+function world(on: any, files: Record<string, string>) {
+  const reached: string[] = []
+  const runs: string[][] = []
+  on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
+  on('session.cwd', () => ({ value: '/proj' }))
+  on('session.id', () => ({ value: 'test-session' }))
+  // the plugin reads its pipeline from its own folder: any path ending in pipelines/hello.json is PIPELINE
+  // (the engine hands paths over in the platform's spelling, C:\proj\... on Windows)
+  const key = (p: string) => {
+    const unix = p.split(String.fromCharCode(92)).join('/').replace(/^[A-Za-z]:/, '')
+    return /pipelines.hello[.]json$/.test(unix) ? 'PIPELINE' : unix
+  }
+  on('fs.exists', (_: any, e: any) => ({ value: key(e.path) in files }))
+  on('fs.read', (_: any, e: any) => (key(e.path) in files ? { value: files[key(e.path)] } : { deny: 'ENOENT' }))
+  on('fs.write', (_: any, e: any) => { files[key(e.path)] = e.text; return { value: undefined } })
+  on('tool.register', (_: any, e: any) => ({ value: { tool: `mcp__bmuz__${e.name}` } }))
+  on('command.register', (_: any, e: any) => ({ value: { command: e.name } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('process.run', (_: any, e: any) => {
+    runs.push([...e.argv])
+    return { value: { exitCode: 0, stdout: '{}', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('tool.call', (_: any, e: any) => { reached.push(String(e.tool)); return { result: 'ran' } })
+  files['/proj/bmuz.json'] = '{"pipeline":"hello","watchdogTickMs":3600000}'
+  return { files, reached, runs }
+}
+
+// A refusal reaches a plugin's own call as { deny }, a session's as an errored result.
+function refused(r: any) {
+  return typeof r?.deny === 'string' || r?.isError === true
+}
+
+function why(r: any) {
+  return String(r?.deny ?? r?.text)
+}
+
+function base(over: Record<string, unknown>) {
+  return { PIPELINE: JSON.stringify(PIPE), '/proj/.bmuz/state.json': state(over) } as Record<string, string>
+}
+
+async function start($: any, interactive: boolean) {
+  await $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: interactive })
+}
+
+test('check 1: a tool from a later step is refused, and the deviation is journaled', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  // the plugin reads its pipeline from its own root; point the fake disk at it
+  await start($, false)
+  const write: any = await $.tool.call({ tool: 'Write', file_path: '/proj/x.txt', content: 'x' } as any)
+  expect(refused(write)).toBe(true)
+  expect(why(write)).toMatch(/out of order/)
+  const ask: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+  expect(refused(ask)).toBe(false)
+  expect(w.reached).toEqual(['AskUserQuestion'])
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"deviation".*"tool":"Write"/)
+})
+
+test('check 12: the review step reads but cannot edit, write or run commands', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ current: 'review', status: 'working', finished: ['name', 'approve', 'plan'] }))
+  await start($, false)
+  for (const tool of ['Edit', 'Write', 'Bash', 'PowerShell']) {
+    const r: any = await $.tool.call({ tool, file_path: '/proj/hello.html', old_string: 'a', new_string: 'b', content: 'x', command: 'echo' } as any)
+    expect(refused(r), tool).toBe(true)
+  }
+  const read: any = await $.tool.call({ tool: 'Read', file_path: '/proj/hello.html' } as any)
+  expect(refused(read)).toBe(false)
+  expect(w.reached).toEqual(['Read'])
+})
+
+test('check 6: an error inside the mod refuses the call instead of letting it through', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ current: 'review', status: 'working', finished: ['name', 'approve', 'plan'] }))
+  await start($, false)
+  w.files['/proj/.bmuz/test-fault'] = 'boom'
+  const read: any = await $.tool.call({ tool: 'Read', file_path: '/proj/hello.html' } as any)
+  expect(refused(read)).toBe(true)
+  expect(why(read)).toMatch(/error in its own code/)
+  expect(w.reached).toEqual([])
+})
+
+test('check 6b: a broken pipeline file refuses every tool', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  w.files.PIPELINE = '{"steps": [{"id": "a", "kind": "dance"}]}'
+  await start($, false)
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+  expect(refused(r)).toBe(true)
+  expect(w.reached).toEqual([])
+})
+
+test('check 2: at a gate the engine asks with buttons and waits for the answer', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  let asked: any = null
+  let answer: (v: any) => void = () => {}
+  on('tool.call', { tool: 'AskUserQuestion' }, (_: any, e: any) => {
+    asked = e
+    return new Promise(res => { answer = res })
+  })
+  const w = world(on, base({ current: 'approve', status: 'waiting', finished: ['name'] }))
+  await start($, true)
+  await clock.advance(2000) // the resume timer fires and the gate asks
+  expect(asked?.questions?.[0]?.question).toBe('Approve Moon Goat?')
+  expect(asked.questions[0].options.map((o: any) => o.label)).toEqual(['Approve', 'Change the name'])
+  await clock.advance(60_000)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('waiting') // nothing moved while unanswered
+  expect(w.runs).toEqual([])
+  const q = asked.questions[0].question
+  answer({ result: { questions: asked.questions, answers: { [q]: 'Approve' } } })
+  await clock.advance(10)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"gate.answer","step":"approve","answer":"Approve"/)
+  expect(w.runs.length).toBeGreaterThan(0) // the script step started after the yes
+})
+
+test('check 13: a script whose done-check keeps failing retries twice, then BLOCKS and rolls back', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, base({ current: null, status: 'idle', finished: ['name', 'approve'] }))
+  await start($, false)
+  // "bmuz go" as a typed prompt, then the turn ends: the engine runs the script step itself
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as any)
+  const j = w.files['/proj/.bmuz/journal.jsonl']
+  expect((j.match(/"ev":"script.ran"/g) || []).length).toBe(3)
+  expect((j.match(/"ev":"retry"/g) || []).length).toBe(2)
+  expect(j).toMatch(/"ev":"blocked","step":"plan"/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('blocked')
+  expect(w.runs.some(r => r.some(a => a.endsWith('rm.mjs')))).toBe(true) // rollback removed plan.json
+})
+
+test('check 5: the band above the prompt shows the step and its status', async ($, on) => {
+  mock.clock(on, { now: 61_000 })
+  const w = world(on, base({ current: 'approve', status: 'waiting', finished: ['name'], startedAt: 1000 }))
+  await start($, false)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'bmuz', surface, component: 'AbovePrompt', props: { bodyColumns: 80, hasSurvey: false } } as any)
+    const t = await ui.find({ type: 'Text', text: /BMUZ/ })
+    expect(t?.text).toBe('BMUZ · step 2 of 4 · approve · waiting for you · 01:00')
+    await ui.unmount()
+  }
+})

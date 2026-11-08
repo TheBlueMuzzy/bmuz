@@ -1,0 +1,12 @@
+{"t":1794125315509,"session":"2c8cdfa4-b437-4cc4-b92e-89f412a6b24e","ev":"step.start","step":"hello","kind":"flow","attempt":1}
+{"t":1794125318145,"session":"2c8cdfa4-b437-4cc4-b92e-89f412a6b24e","ev":"flow.launched","step":"hello","workflow":"bmuz-proof:hello-flow","args":{"name":"Moon Goat","out":"hello.html","stallTest":60},"taskId":"wqkwxha0x","runId":"wf_5237d481-adf","deny":null}
+{"t":1794125337145,"session":"2c8cdfa4-b437-4cc4-b92e-89f412a6b24e","ev":"deviation","step":"hello","tool":"Monitor","agentId":"a842c84410faa0d82","why":"BMUZ engine: a helper may not use Monitor in step hello"}
+{"t":1794125342755,"session":"004f9b0b-0d54-4b7f-9d56-6fa662472ab7","ev":"crash.detected","lockStep":"hello","lockStatus":"working","lockSession":"2c8cdfa4-b437-4cc4-b92e-89f412a6b24e"}
+{"t":1794125346217,"session":"004f9b0b-0d54-4b7f-9d56-6fa662472ab7","ev":"resume","step":"hello","status":"working"}
+{"t":1794125346219,"session":"004f9b0b-0d54-4b7f-9d56-6fa662472ab7","ev":"step.start","step":"hello","kind":"flow","attempt":1}
+{"t":1794125348032,"session":"004f9b0b-0d54-4b7f-9d56-6fa662472ab7","ev":"flow.launched","step":"hello","workflow":"bmuz-proof:hello-flow","args":{"name":"Moon Goat","out":"hello.html"},"taskId":"wr88p6fga","runId":"wf_c2d81985-804","deny":null}
+{"t":1794125352136,"session":"004f9b0b-0d54-4b7f-9d56-6fa662472ab7","ev":"flow.result","step":"hello","status":"completed","taskId":"wr88p6fga","result":{"wrote":"hello.html","name":"Moon Goat","said":"written"}}
+{"t":1794125352138,"session":"004f9b0b-0d54-4b7f-9d56-6fa662472ab7","ev":"step.done","step":"hello","kind":"flow","result":null}
+{"t":1794125354157,"session":"004f9b0b-0d54-4b7f-9d56-6fa662472ab7","ev":"step.start","step":"review","kind":"talk","attempt":1}
+{"t":1794125359203,"session":"004f9b0b-0d54-4b7f-9d56-6fa662472ab7","ev":"step.done","step":"review","kind":"talk","result":{"verdict":"Matches the plan: hello.html has the single page the plan lists (\"hello\") and its heading reads \"Hello Moon Goat\", the name in plan.json."}}
+{"t":1794125361026,"session":"004f9b0b-0d54-4b7f-9d56-6fa662472ab7","ev":"pipeline.done"}

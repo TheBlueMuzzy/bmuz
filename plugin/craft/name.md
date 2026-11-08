@@ -1,0 +1,1 @@
+Craft note (step "name"): ask the creative what their game is called, in one short question with AskUserQuestion. Offer two playful suggestions plus their own. Don't ask anything else and don't start building.

@@ -1,0 +1,5 @@
+Starting the BMUZ step now; the engine will run it.
+
+The hello-flow workflow is running in the background (run ID wf_bbb48dce-732). It's writing `hello.html` for "Moon Goat". I'll post the result when it finishes; you can watch progress with /workflows.
+
+Hello page for Moon Goat is done and checked; the engine is starting the next step.

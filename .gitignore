@@ -1,0 +1,7 @@
+probe-project/*.log
+probe-project/*.html
+.claude-plugin/types/
+**/.claude-plugin/types/
+project/.bmuz/
+project/plan.json
+project/hello.html

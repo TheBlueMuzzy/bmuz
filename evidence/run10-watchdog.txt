@@ -1,0 +1,4 @@
+Starting the BMUZ step now; the engine will run it.
+
+The `bmuz-proof:hello-flow` workflow is running in the background (run ID `wf_506bf552-622`) with the name "Moon Goat", output file `hello.html`, and stall test 150. I'll report back when it finishes.
+[exit 0]

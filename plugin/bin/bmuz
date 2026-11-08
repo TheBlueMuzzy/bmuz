@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# Git Bash on Windows: hand node a Windows path, even when MSYS path conversion is off.
+d=$(dirname "$0")
+if command -v cygpath >/dev/null 2>&1; then d=$(cygpath -m "$d"); fi
+exec node "$d/../scripts/bmuz.mjs" "$@"

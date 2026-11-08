@@ -1,0 +1,18 @@
+{"t":1794124686579,"session":"f776760c-f0ec-41c6-8b67-eb4b0558789b","ev":"doctor.rebuilt","state":{"pipeline":"hello","current":null,"status":"idle","results":{},"retries":{},"finished":[],"blocked":null,"startedAt":null}}
+{"t":1794124689569,"session":"f776760c-f0ec-41c6-8b67-eb4b0558789b","ev":"step.start","step":"name","kind":"talk","attempt":1}
+{"t":1794124692568,"session":"f776760c-f0ec-41c6-8b67-eb4b0558789b","ev":"step.done","step":"name","kind":"talk","result":{"name":"Moon Goat"}}
+{"t":1794124695179,"session":"f776760c-f0ec-41c6-8b67-eb4b0558789b","ev":"step.start","step":"approve","kind":"gate","attempt":1}
+{"t":1794124695183,"session":"f776760c-f0ec-41c6-8b67-eb4b0558789b","ev":"gate.pending","step":"approve","why":"no one to ask in this session; answer with /bmuz-approve"}
+{"t":1794124699009,"session":"21f0d2d3-ee97-4e21-92cb-c09101494532","ev":"crash.detected","lockStep":"approve","lockStatus":"waiting","lockSession":"f776760c-f0ec-41c6-8b67-eb4b0558789b"}
+{"t":1794124699195,"session":"21f0d2d3-ee97-4e21-92cb-c09101494532","ev":"gate.answer","step":"approve","answer":"Approve"}
+{"t":1794124699196,"session":"21f0d2d3-ee97-4e21-92cb-c09101494532","ev":"step.done","step":"approve","kind":"gate","result":null}
+{"t":1794124702156,"session":"21f0d2d3-ee97-4e21-92cb-c09101494532","ev":"step.start","step":"plan","kind":"script","attempt":1}
+{"t":1794124702427,"session":"21f0d2d3-ee97-4e21-92cb-c09101494532","ev":"script.ran","step":"plan","exitCode":0,"stdout":"{\"ok\":true,\"plan\":{\"name\":\"Moon Goat\",\"pages\":[\"hello\"],\"madeBy\":\"write-plan.mjs\"}}"}
+{"t":1794124702430,"session":"21f0d2d3-ee97-4e21-92cb-c09101494532","ev":"step.done","step":"plan","kind":"script","result":null}
+{"t":1794124702434,"session":"21f0d2d3-ee97-4e21-92cb-c09101494532","ev":"step.start","step":"hello","kind":"flow","attempt":1}
+{"t":1794124704715,"session":"21f0d2d3-ee97-4e21-92cb-c09101494532","ev":"flow.launched","step":"hello","workflow":"bmuz-proof:hello-flow","args":{"name":"Moon Goat","out":"hello.html"},"taskId":"wsijz0vuj","runId":"wf_e2df6d5e-2aa","deny":null}
+{"t":1794124711911,"session":"21f0d2d3-ee97-4e21-92cb-c09101494532","ev":"flow.result","step":"hello","status":"completed","taskId":"wsijz0vuj","result":{"wrote":"hello.html","name":"Moon Goat","said":"written"}}
+{"t":1794124711914,"session":"21f0d2d3-ee97-4e21-92cb-c09101494532","ev":"step.done","step":"hello","kind":"flow","result":null}
+{"t":1794124714038,"session":"21f0d2d3-ee97-4e21-92cb-c09101494532","ev":"step.start","step":"review","kind":"talk","attempt":1}
+{"t":1794124719935,"session":"21f0d2d3-ee97-4e21-92cb-c09101494532","ev":"step.done","step":"review","kind":"talk","result":{"verdict":"Matches the plan: hello.html is a single page titled \"Hello Moon Goat\", and plan.json lists one page \"hello\" for the game \"Moon Goat\"."}}
+{"t":1794124722608,"session":"21f0d2d3-ee97-4e21-92cb-c09101494532","ev":"pipeline.done"}

@@ -1,0 +1,11 @@
+{"t":1794125060090,"session":"93afba48-7380-4c07-8da8-2d00c6df48c4","ev":"deviation","step":"review","tool":"Edit","agentId":null,"why":"BMUZ engine: step review (talk) may use only Read, Glob, Grep; Edit is out of order"}
+{"t":1794125060325,"session":"93afba48-7380-4c07-8da8-2d00c6df48c4","ev":"deviation","step":"review","tool":"Write","agentId":null,"why":"BMUZ engine: step review (talk) may use only Read, Glob, Grep; Write is out of order"}
+{"t":1794125062433,"session":"93afba48-7380-4c07-8da8-2d00c6df48c4","ev":"deviation","step":"review","tool":"Bash","agentId":null,"why":"BMUZ engine: step review (talk) may use only Read, Glob, Grep; Bash is out of order"}
+{"t":1794125065743,"session":"93afba48-7380-4c07-8da8-2d00c6df48c4","ev":"turn.ended-open","step":"review"}
+{"t":1794125074706,"session":"a21980f2-9606-4581-b075-360d33cd078e","ev":"deviation","step":"review","tool":"ToolSearch","agentId":null,"why":"BMUZ engine: step review (talk) may use only Read, Glob, Grep; ToolSearch is out of order"}
+{"t":1794125079741,"session":"a21980f2-9606-4581-b075-360d33cd078e","ev":"deviation","step":"review","tool":"Write","agentId":null,"why":"BMUZ engine: step review (talk) may use only Read, Glob, Grep; Write is out of order"}
+{"t":1794125084509,"session":"a21980f2-9606-4581-b075-360d33cd078e","ev":"turn.ended-open","step":"review"}
+{"t":1794125091916,"session":"ba2a8bec-723a-4d05-aa38-3e0557da609f","ev":"deviation","step":"review","tool":"Write","agentId":null,"why":"BMUZ engine: step review (talk) may use only Read, Glob, Grep; Write is out of order"}
+{"t":1794125092198,"session":"ba2a8bec-723a-4d05-aa38-3e0557da609f","ev":"deviation","step":"review","tool":"Bash","agentId":null,"why":"BMUZ engine: step review (talk) may use only Read, Glob, Grep; Bash is out of order"}
+{"t":1794125094420,"session":"ba2a8bec-723a-4d05-aa38-3e0557da609f","ev":"deviation","step":"review","tool":"Edit","agentId":null,"why":"BMUZ engine: step review (talk) may use only Read, Glob, Grep; Edit is out of order"}
+{"t":1794125098249,"session":"ba2a8bec-723a-4d05-aa38-3e0557da609f","ev":"turn.ended-open","step":"review"}

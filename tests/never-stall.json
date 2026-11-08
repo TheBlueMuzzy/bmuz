@@ -1,0 +1,1 @@
+{ "permissions": { "denyInsteadOfPrompting": true }, "askUserQuestionTimeout": "60s" }
