@@ -175,6 +175,68 @@ test('check 13: a script whose done-check keeps failing retries twice, then BLOC
   expect(w.runs.some(r => r.some(a => a.endsWith('rm.mjs')))).toBe(true) // rollback removed plan.json
 })
 
+test('check 13b: "bmuz retry" lifts the BLOCK and the step runs again with 2 fresh retries', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, base({ current: 'plan', status: 'blocked', blocked: { step: 'plan', why: 'no plan.json' }, retries: { plan: 3 }, finished: ['name', 'approve'] }))
+  await start($, false)
+  const said: any = await $.prompt.submit({ text: 'bmuz retry' } as any)
+  expect(String(said.text)).toMatch(/step "plan" gets 2 more tries/)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as any)
+  const j = w.files['/proj/.bmuz/journal.jsonl']
+  expect(j).toMatch(/"ev":"unblock","step":"plan"/)
+  expect((j.match(/"ev":"script.ran"/g) || []).length).toBe(3) // the fake script never writes plan.json: 3 tries again
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('blocked')
+})
+
+test('undo: "bmuz undo" lists the steps; "bmuz undo plan" puts back the files and reruns from there', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  const w = world(on, base({ current: null, status: 'done', finished: ['name', 'approve', 'plan', 'review'] }))
+  w.files['/proj/plan.json'] = '{"name":"Moon Goat","v":2}'
+  w.files['/proj/.bmuz/checkpoint-plan.json'] = JSON.stringify({ 'plan.json': '{"name":"Old"}' })
+  await start($, false)
+  const menu: any = await $.prompt.submit({ text: 'bmuz undo' } as any)
+  expect(String(menu.text)).toMatch(/- plan: go back to before "plan": puts back plan.json; runs 2 steps again/)
+  const done: any = await $.prompt.submit({ text: 'bmuz undo plan' } as any)
+  expect(String(done.text)).toMatch(/went back to before "plan". Put back: plan.json. Steps to run again: plan, review/)
+  expect(w.files['/proj/plan.json']).toBe('{"name":"Old"}')
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(st.finished).toEqual(['name', 'approve'])
+  expect(st.status).toBe('idle')
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"undo","to":"plan","redo":\["review","plan"\],"restored":\["plan.json"\]/)
+})
+
+test('undo: a hand-edited checkpoint that points outside the project is skipped', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  const w = world(on, base({ current: null, status: 'done', finished: ['name', 'approve', 'plan', 'review'] }))
+  w.files['/proj/.bmuz/checkpoint-plan.json'] = JSON.stringify({ '../outside.txt': 'x', 'plan.json': null })
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz undo plan' } as any)
+  expect('/outside.txt' in w.files).toBe(false)
+  expect(w.runs.filter(r => r.some(a => a.endsWith('rm.mjs'))).map(r => r[r.length - 1])).toEqual(['/proj/plan.json'])
+})
+
+test('doctor: a damaged state file is rebuilt from the journal at start, and /bmuz-doctor says so plainly', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({}))
+  w.files['/proj/.bmuz/state.json'] = '{"pipeline": "hel'
+  w.files['/proj/.bmuz/journal.jsonl'] = [
+    { t: 1, ev: 'step.start', step: 'name', kind: 'talk' },
+    { t: 2, ev: 'step.done', step: 'name', result: { name: 'Moon Goat' } },
+    { t: 3, ev: 'step.start', step: 'approve', kind: 'gate' },
+  ].map(x => JSON.stringify(x)).join('\n') + '\n'
+  await start($, false)
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(st.current).toBe('approve')
+  expect(st.status).toBe('waiting')
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"doctor.rebuilt","why":\["The state file was damaged/)
+  const r: any = await $.command.run({ command: 'bmuz-doctor', args: '' } as any)
+  expect(String(r.text ?? r.value?.text ?? JSON.stringify(r))).toMatch(/All good/)
+})
+
 test('check 5: the band above the prompt shows the step and its status', async ($, on) => {
   mock.clock(on, { now: 61_000 })
   const w = world(on, base({ current: 'approve', status: 'waiting', finished: ['name'], startedAt: 1000 }))

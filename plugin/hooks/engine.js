@@ -135,7 +135,21 @@ export function pluginFiles(p) {
 }
 
 export function freshState(pipelineId) {
-  return { pipeline: pipelineId, current: null, status: 'idle', results: {}, retries: {}, finished: [], blocked: null, startedAt: null }
+  return { pipeline: pipelineId, current: null, status: 'idle', results: {}, resultsBy: {}, retries: {}, finished: [], blocked: null, startedAt: null }
+}
+
+// The results the next steps can use: each finished step's result, in the order they finished.
+function mergeResults(finished, resultsBy) {
+  return Object.assign({}, ...finished.map(id => (resultsBy && resultsBy[id]) || {}))
+}
+
+// Takes steps off the finished list (undo, a gate sending the creative back): their results
+// and retry counts go too, so they run fresh.
+function dropSteps(state, drop) {
+  const finished = state.finished.filter(id => !drop.has(id))
+  const resultsBy = Object.fromEntries(Object.entries(state.resultsBy || {}).filter(([id]) => !drop.has(id)))
+  const retries = Object.fromEntries(Object.entries(state.retries || {}).filter(([id]) => !drop.has(id)))
+  return { ...state, finished, resultsBy, retries, results: state.resultsBy ? mergeResults(finished, resultsBy) : state.results }
 }
 
 export function stepById(p, id) {
@@ -173,7 +187,7 @@ export function judgeTool(p, state, call) {
   if (state.status === 'done' || state.status === 'idle') return { allow: true }
   const step = stepById(p, state.current)
   if (!step) return { allow: false, why: `BMUZ engine: no current step (state says ${state.current}); run /bmuz-doctor` }
-  if (state.status === 'blocked') return { allow: false, why: `BMUZ engine: step ${step.id} is BLOCKED; nothing runs until the creative decides` }
+  if (state.status === 'blocked') return { allow: false, why: `BMUZ engine: step ${step.id} is BLOCKED; nothing runs until the creative decides ("bmuz retry" for 2 more tries, or "bmuz undo" to go back)` }
   if (state.status === 'waiting') {
     if (call.tool === 'AskUserQuestion') return { allow: true }
     return { allow: false, why: `BMUZ engine: waiting at gate "${step.id}" for the creative; no tools until they answer` }
@@ -235,15 +249,61 @@ export function onFail(state, step, why) {
   return { state: { ...state, retries }, action: 'retry', attempt: n + 1 }
 }
 
+// A step passed: it joins the finished list with its result; its retry count starts over
+// (so a later re-run, after an undo or a gate going back, gets its own 2 retries and checkpoint).
 export function finish(state, step, result) {
+  const retries = { ...(state.retries || {}) }
+  delete retries[step.id]
   return {
     ...state,
     finished: state.finished.includes(step.id) ? state.finished : [...state.finished, step.id],
     results: result ? { ...state.results, ...result } : state.results,
+    resultsBy: result ? { ...(state.resultsBy || {}), [step.id]: result } : (state.resultsBy || {}),
+    retries,
     current: null,
     status: 'idle',
     startedAt: null,
   }
+}
+
+// The plain-words undo list: one line per finished step, newest first.
+// Going back to before a step puts back the files it and every later step wrote (their `writes`)
+// and runs them again. Changes outside `writes` (a commit, a push) are not undone; the line says so.
+export function undoList(p, state) {
+  const out = []
+  state.finished.forEach((id, i) => {
+    const s = stepById(p, id)
+    if (!s) return
+    const later = state.finished.slice(i).map(x => stepById(p, x)).filter(Boolean)
+    const files = [...new Set(later.flatMap(x => x.writes || []))]
+    const untracked = later.filter(x => (x.kind === 'script' || x.kind === 'flow') && !(x.writes || []).length).map(x => x.id)
+    const what = s.description ? `${s.id} (${s.description})` : s.id
+    let line = `go back to before "${what}"`
+    line += files.length ? `: puts back ${files.join(', ')}` : ': no files to put back'
+    line += `; runs ${later.length === 1 ? 'that step' : `${later.length} steps`} again`
+    if (untracked.length) line += `; anything ${untracked.join(', ')} changed outside its files stays as it is`
+    out.unshift({ step: id, line, files, redo: later.map(x => x.id) })
+  })
+  return out
+}
+
+// Undo: back to before `stepId`. Returns { state, redo } (redo = the steps taken off, newest first,
+// the order their checkpoints are put back in), or { error } in plain words.
+export function undoTo(p, state, stepId) {
+  if (state.status === 'working') return { error: `step "${state.current}" is still running; undo once it has finished or is BLOCKED` }
+  const i = state.finished.indexOf(stepId)
+  if (i < 0) return { error: `"${stepId}" isn't a finished step; pick one of: ${state.finished.join(', ') || 'none yet'}` }
+  const redo = state.finished.slice(i).reverse()
+  const dropped = dropSteps(state, new Set(redo))
+  return { state: { ...dropped, current: null, status: 'idle', startedAt: null, blocked: null }, redo }
+}
+
+// The creative's "try again" on a BLOCKED step: the block is lifted and the step gets 2 fresh retries.
+export function unblock(state) {
+  if (state.status !== 'blocked' || !state.blocked) return { error: 'nothing is BLOCKED' }
+  const retries = { ...(state.retries || {}) }
+  delete retries[state.blocked.step]
+  return { state: { ...state, retries, status: 'idle', current: null, startedAt: null, blocked: null }, step: state.blocked.step }
 }
 
 export function begin(state, step, now) {
@@ -258,7 +318,7 @@ export function answerGate(p, state, step, answer) {
   const back = step.backTo
   if (!back) return { state, approved: false }
   const drop = new Set([back, ...p.steps.filter(s => (s.needs || []).includes(back)).map(s => s.id)])
-  return { state: { ...state, finished: state.finished.filter(id => !drop.has(id)), current: null, status: 'idle', startedAt: null }, approved: false }
+  return { state: { ...dropSteps(state, drop), current: null, status: 'idle', startedAt: null }, approved: false }
 }
 
 // Watchdog: is the current step past its time limit?
@@ -291,12 +351,56 @@ export function rebuildFromJournal(pipelineId, lines) {
     let j
     try { j = JSON.parse(raw) } catch (err) { continue }
     if (j.ev === 'step.start') s = { ...s, current: j.step, status: j.kind === 'gate' ? 'waiting' : 'working', startedAt: j.t }
-    if (j.ev === 'step.done') s = { ...s, finished: s.finished.includes(j.step) ? s.finished : [...s.finished, j.step], results: { ...s.results, ...(j.result || {}) }, current: null, status: 'idle', startedAt: null }
-    if (j.ev === 'gate.back') s = { ...s, finished: s.finished.filter(id => !(j.dropped || []).includes(id)), current: null, status: 'idle' }
-    if (j.ev === 'blocked') s = { ...s, status: 'blocked', blocked: { step: j.step, why: j.why } }
-    if (j.ev === 'pipeline.done') s = { ...s, status: 'done', current: null }
+    if (j.ev === 'step.done') s = finish(s, { id: j.step }, j.result || null)
+    if (j.ev === 'retry') s = { ...s, retries: { ...s.retries, [j.step]: (s.retries[j.step] || 0) + 1 } }
+    if (j.ev === 'gate.back') s = { ...dropSteps(s, new Set(j.dropped || [])), current: null, status: 'idle', startedAt: null }
+    if (j.ev === 'undo') s = { ...dropSteps(s, new Set(j.redo || [])), current: null, status: 'idle', startedAt: null, blocked: null }
+    if (j.ev === 'blocked') s = { ...s, status: 'blocked', blocked: { step: j.step, why: j.why }, retries: { ...s.retries, [j.step]: MAX_RETRIES + 1 } }
+    if (j.ev === 'unblock') s = unblock(s).state || s
+    if (j.ev === 'pipeline.done') s = { ...s, status: 'done', current: null, startedAt: null }
   }
   return s
+}
+
+// The parts of the state the journal decides; the doctor compares only these.
+const decided = s => JSON.stringify({ finished: s.finished, current: s.current, status: s.status, blocked: s.blocked && s.blocked.step, results: s.results })
+
+// Doctor: checks "where are we" against the journal, and says what went wrong, in plain words.
+// stateText = .bmuz/state.json as read (null = missing). Returns { lines, state, fixed }:
+// `state` is the one to keep (the journal's when they disagree), `fixed` says it changed.
+export function doctor(p, stateText, journalLines, lock, sessionId, now) {
+  const lines = []
+  const rebuilt = rebuildFromJournal(p.id, journalLines)
+  let kept = null
+  if (stateText === null) lines.push('The state file was missing: rebuilt it from the journal.')
+  else {
+    try { kept = JSON.parse(stateText) } catch (err) { lines.push('The state file was damaged (not JSON): rebuilt it from the journal.') }
+  }
+  const events = journalLines.filter(l => l.trim()).map(l => { try { return JSON.parse(l) } catch (err) { return null } })
+  const torn = events.filter(x => x === null).length
+  if (torn) lines.push(`${torn} journal line${torn > 1 ? 's were' : ' was'} unreadable and skipped.`)
+  let fixed = !kept
+  const anyEvents = events.some(x => x && x.ev)
+  if (kept && !anyEvents) {
+    if (kept.finished && kept.finished.length) lines.push('The journal is empty: kept the state file as it is.')
+  } else if (kept && decided(kept) !== decided(rebuilt)) {
+    lines.push(`The state file disagreed with the journal (state: ${kept.status} at ${kept.current || 'no step'}, ${kept.finished.length} finished; journal: ${rebuilt.status} at ${rebuilt.current || 'no step'}, ${rebuilt.finished.length} finished): went with the journal.`)
+    fixed = true
+  }
+  const state = fixed ? { ...rebuilt, flow: kept && kept.flow } : kept
+  if (lock && lock.step && !lock.closed && lock.session !== sessionId) lines.push(`The last session (${String(lock.session).slice(0, 8)}) ended without closing, during step "${lock.step}" (${lock.status}).`)
+  if (state.status === 'blocked' && state.blocked) lines.push(`Step "${state.blocked.step}" is BLOCKED: ${state.blocked.why}. Say "bmuz retry" to give it 2 more tries, or "bmuz undo" to go back further.`)
+  for (const [id, n] of Object.entries(state.retries || {})) if (n && !(state.blocked && state.blocked.step === id)) lines.push(`Step "${id}" has used ${n} of its ${MAX_RETRIES} retries.`)
+  const devs = events.filter(x => x && x.ev === 'deviation')
+  if (devs.length) {
+    lines.push(`${devs.length} out-of-order action${devs.length > 1 ? 's were' : ' was'} refused; the last ${Math.min(5, devs.length)}:`)
+    for (const d of devs.slice(-5)) lines.push(`  - in step "${d.step}": ${d.tool}${d.agentId ? ' (a helper)' : ''}`)
+  }
+  const fails = events.filter(x => x && (x.ev === 'watchdog.restart-failed' || x.ev === 'watchdog.stop-failed' || x.ev === 'crash.detected'))
+  for (const f of fails.slice(-3)) lines.push(`Earlier trouble: ${f.ev} at step "${f.step || f.lockStep}".`)
+  if (!lines.length) lines.push('All good: the state file matches the journal and nothing went wrong.')
+  lines.unshift(`BMUZ doctor · ${bandText(p, state, now)}`)
+  return { lines, state, fixed }
 }
 
 // Reads the flow result out of a task-notification text.

@@ -4,7 +4,7 @@
   "type": "module",
   "description": "BMUZ — Muzzy's game-making process, run by an engine inside Claude Code",
   "scripts": {
-    "test:node": "node --test tests/engine.node.test.mjs tests/pipeline-format.node.test.mjs",
+    "test:node": "node --test \"tests/*.node.test.mjs\"",
     "test:plugin": "claude plugin validate plugin && claude plugin test plugin",
     "check:pipelines": "node plugin/scripts/check-pipeline.mjs",
     "check:fast": "npm run check:pipelines && npm run test:node && npm run test:plugin"

@@ -10,7 +10,7 @@ const band = atom({ plugin: 'bmuz', key: 'band' } as const, null)
 
 // Rebuilt from project files at every session start (a reload loses module values).
 let ctx: any = null
-let pending: null | "advance" | "resume" = null
+let pending: null | "advance" | "resume" | "retry" | { undo: string } = null
 let watchdogBusy = false
 
 const SAFE_DENY = 'BMUZ engine hit an error in its own code, so it refused this action to be safe. Run /bmuz-doctor.'
@@ -67,17 +67,19 @@ async function loadCtx($: any) {
     c.pipeline = { id: '?', steps: [] }
     c.cfg = {}
   }
-  const stateText = await readText($, `${dir}/.bmuz/state.json`)
-  if (stateText !== null) {
-    c.state = JSON.parse(stateText)
-  } else {
-    // Doctor: no state file, so rebuild it from the journal (or start fresh).
-    const lines = ((await readText($, `${dir}/.bmuz/journal.jsonl`)) ?? '').split('\n')
-    c.state = E.rebuildFromJournal(c.pipeline.id, lines)
-    c.rebuilt = true
-  }
-  c.lock = JSON.parse((await readText($, `${dir}/.bmuz/lock.json`)) ?? 'null')
+  // Doctor at every start: the journal is the record, so a missing, damaged or lagging state file
+  // (a crash between writing the journal and the state) is rebuilt from it.
+  try { c.lock = JSON.parse((await readText($, `${dir}/.bmuz/lock.json`)) ?? 'null') } catch (err) { c.lock = null }
+  const report = await runDoctor($, c)
+  c.state = report.state
+  if (report.fixed) c.rebuilt = report.lines
   return c
+}
+
+async function runDoctor($: any, c: any) {
+  const stateText = await readText($, `${c.dir}/.bmuz/state.json`)
+  const lines = ((await readText($, `${c.dir}/.bmuz/journal.jsonl`)) ?? '').split('\n')
+  return E.doctor(c.pipeline, stateText, lines, c.lock, c.sessionId, await $.clock.now())
 }
 
 async function craftOf($: any, step: any) {
@@ -85,17 +87,21 @@ async function craftOf($: any, step: any) {
   return (await readText($, `${ctx.root}/${step.craft}`)) ?? ''
 }
 
+// Saves the step's `writes` files as they are before its first try. Retries and resumes keep it,
+// so a rollback or an undo always goes back to before the step began.
 async function checkpoint($: any, step: any) {
-  if (ctx.state.retries[step.id]) return // a retry keeps the checkpoint from before the first try
+  if (!(step.writes || []).length) return
   const saved: Record<string, string | null> = {}
-  for (const f of step.writes || []) if (E.isSafePath(f)) saved[f] = await readText($, `${ctx.dir}/${f}`)
+  for (const f of step.writes) if (E.isSafePath(f)) saved[f] = await readText($, `${ctx.dir}/${f}`)
   await $.fs.write(`${ctx.dir}/.bmuz/checkpoint-${step.id}.json`, JSON.stringify(saved))
+  await journal($, { ev: 'checkpoint', step: step.id, files: Object.keys(saved) })
 }
 
 async function rollback($: any, step: any) {
   const text = await readText($, `${ctx.dir}/.bmuz/checkpoint-${step.id}.json`)
   if (text === null) return []
-  const saved = JSON.parse(text)
+  let saved: any
+  try { saved = JSON.parse(text) } catch (err) { return [] }
   const undone: string[] = []
   for (const [f, body] of Object.entries(saved)) {
     // The checkpoint file can be hand-edited: re-check each path right before writing or deleting.
@@ -116,8 +122,9 @@ async function look($: any, step: any, result: any) {
 // A step's done-check passed or failed: finish, retry or block. Returns 'next' | 'retry' | 'stop'.
 async function settle($: any, step: any, verdict: any, result: any) {
   if (verdict.ok) {
+    const ms = typeof ctx.state.startedAt === 'number' ? (await $.clock.now()) - ctx.state.startedAt : null
     ctx.state = E.finish(ctx.state, step, result)
-    await journal($, { ev: 'step.done', step: step.id, kind: step.kind, result: result ?? null })
+    await journal($, { ev: 'step.done', step: step.id, kind: step.kind, result: result ?? null, ms })
     await save($)
     return 'next'
   }
@@ -144,7 +151,6 @@ async function startTalk($: any, step: any, why: string) {
 }
 
 async function startFlow($: any, step: any) {
-  await checkpoint($, step)
   const args = E.fillDeep({ ...step.args, ...(ctx.cfg.flowArgs || {}) }, vars())
   ctx.state = { ...ctx.state, flow: { args, toolUseId: null, taskId: null } }
   await save($)
@@ -152,7 +158,6 @@ async function startFlow($: any, step: any) {
 }
 
 async function runScript($: any, step: any) {
-  await checkpoint($, step)
   const argv = E.fillDeep(step.run, vars())
   const ran = await $.process.run(argv, { cwd: ctx.dir, timeoutMs: 60000 })
   await journal($, { ev: 'script.ran', step: step.id, exitCode: ran.exitCode, stdout: ran.stdout.trim().slice(0, 300) })
@@ -209,6 +214,7 @@ async function advance($: any, resume: boolean) {
     if (isRestart && resume) await journal($, { ev: 'resume', step: step.id, status: s.status })
     ctx.state = E.begin(ctx.state, step, await $.clock.now())
     await journal($, { ev: 'step.start', step: step.id, kind: step.kind, attempt: (ctx.state.retries[step.id] || 0) + 1 })
+    if (!isRestart) await checkpoint($, step)
     await save($)
     resume = false
 
@@ -245,6 +251,48 @@ async function stepDone($: any, e: any) {
     return { result: `Not done: ${verdict.why}. Fix it and call ${E.ENGINE_TOOL} again (retry ${ctx.state.retries[step.id]} of ${E.MAX_RETRIES}).` }
   }
   return { result: `BLOCKED: ${verdict.why}. Stop and tell the creative in one line.` }
+}
+
+// The creative's "go back to before <step>": puts back each later step's checkpoint, newest first,
+// so the files end as they were before <step> began. Returns plain words for the chat.
+async function doUndo($: any, stepId: string) {
+  const out = E.undoTo(ctx.pipeline, ctx.state, stepId)
+  if (out.error) return `BMUZ engine: can't undo: ${out.error}.`
+  const restored: string[] = []
+  for (const id of out.redo) {
+    const step = E.stepById(ctx.pipeline, id)
+    if (step) restored.push(...(await rollback($, step)))
+  }
+  ctx.state = out.state
+  await journal($, { ev: 'undo', to: stepId, redo: out.redo, restored })
+  await save($)
+  const files = [...new Set(restored)]
+  return `BMUZ engine: went back to before "${stepId}". ${files.length ? `Put back: ${files.join(', ')}.` : 'No files to put back.'} Steps to run again: ${out.redo.slice().reverse().join(', ')}. Say "bmuz go" to carry on from there.`
+}
+
+async function doRetry($: any) {
+  const out = E.unblock(ctx.state)
+  if (out.error) return { text: `BMUZ engine: ${out.error}.`, ok: false }
+  ctx.state = out.state
+  await journal($, { ev: 'unblock', step: out.step })
+  await save($)
+  return { text: `BMUZ engine: step "${out.step}" gets 2 more tries.`, ok: true }
+}
+
+function undoMenu() {
+  const list = E.undoList(ctx.pipeline, ctx.state)
+  if (!list.length) return 'BMUZ: nothing to undo yet.'
+  return ['BMUZ undo list (newest first). Say "bmuz undo <step>":', ...list.map((u: any) => `- ${u.step}: ${u.line}`)].join('\n')
+}
+
+async function doctorNow($: any) {
+  const report = await runDoctor($, ctx)
+  if (report.fixed) {
+    ctx.state = report.state
+    await journal($, { ev: 'doctor.fixed', why: report.lines.slice(1) })
+    await save($)
+  }
+  return report.lines.join('\n')
 }
 
 async function flowFinished($: any, n: any) {
@@ -302,7 +350,7 @@ export const register: Register = on => {
     if (ctx.lock && ctx.lock.step && !ctx.lock.closed && ctx.lock.session !== ctx.sessionId) {
       await journal($, { ev: 'crash.detected', lockStep: ctx.lock.step, lockStatus: ctx.lock.status, lockSession: ctx.lock.session })
     }
-    if (ctx.rebuilt) await journal($, { ev: 'doctor.rebuilt', state: ctx.state })
+    if (ctx.rebuilt) await journal($, { ev: 'doctor.rebuilt', why: ctx.rebuilt.slice(1), state: ctx.state })
     await $.tool.register({
       name: 'step_done',
       description: 'BMUZ engine: call this when the current talk step is finished, with its result object (for example {"name": "Moon Goat"}).',
@@ -312,6 +360,9 @@ export const register: Register = on => {
     await $.command.register({ name: 'bmuz-go', description: 'BMUZ: start or resume the pipeline' })
     await $.command.register({ name: 'bmuz-approve', description: 'BMUZ: answer the open gate', argumentHint: '<option>' })
     await $.command.register({ name: 'bmuz-status', description: 'BMUZ: where are we' })
+    await $.command.register({ name: 'bmuz-doctor', description: 'BMUZ: check the state against the journal and say what went wrong' })
+    await $.command.register({ name: 'bmuz-undo', description: 'BMUZ: the undo list, or go back to before a step', argumentHint: '[step]' })
+    await $.command.register({ name: 'bmuz-retry', description: 'BMUZ: give a BLOCKED step 2 more tries' })
     await save($)
     $.clock.every(ctx.cfg.watchdogTickMs ?? 15000, () => { watchdog($) })
     if (ctx.interactive && ctx.state.status !== 'done' && ctx.state.finished.length + (ctx.state.current ? 1 : 0) > 0) {
@@ -372,6 +423,17 @@ export const register: Register = on => {
       return next({ ...(e as any), text: `BMUZ engine: the "${step.id}" helper finished and the engine checked its work. Reply with one short line; the engine starts the next step itself.` })
     }
     if (kind === 'plugin' || kind === 'peer') return next(e)
+    const say = (words: string) => next({ ...(e as any), text: `${text}\n(${words}\nShow the creative these lines as they are, then end your turn.)` })
+    const cmd = text.match(/^\s*bmuz (undo|retry|doctor)\b\s*(.*)$/i)
+    if (cmd) {
+      if (ctx.broken) return say(`BMUZ engine: ${ctx.broken}`)
+      const what = cmd[1].toLowerCase()
+      if (what === 'doctor') return say(await doctorNow($))
+      if (what === 'undo') return say(cmd[2].trim() ? await doUndo($, cmd[2].trim()) : undoMenu())
+      const out = await doRetry($)
+      if (out.ok) pending = 'advance'
+      return say(out.text)
+    }
     const go = text.match(/^\s*bmuz (go|approve)\s*(.*)$/i)
     if (go && go[1].toLowerCase() === 'approve') {
       const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
@@ -428,6 +490,27 @@ export const register: Register = on => {
   on('command.run', { command: 'bmuz-status' }, async $ => {
     if (!ctx) return { text: 'No bmuz.json here.' }
     return { text: `${E.bandText(ctx.pipeline, ctx.state, await $.clock.now())}\n${JSON.stringify(ctx.state)}` }
+  })
+
+  on('command.run', { command: 'bmuz-doctor' }, async $ => {
+    if (!ctx) return { text: 'No bmuz.json here.' }
+    if (ctx.broken) return { text: `BMUZ engine: ${ctx.broken}` }
+    return { text: await doctorNow($) }
+  })
+
+  on('command.run', { command: 'bmuz-undo' }, async ($, e) => {
+    if (!ctx) return { text: 'No bmuz.json here.' }
+    if (ctx.broken) return { text: `BMUZ engine: ${ctx.broken}` }
+    const to = String((e as any).args || '').trim()
+    return { text: to ? await doUndo($, to) : undoMenu() }
+  })
+
+  on('command.run', { command: 'bmuz-retry' }, async $ => {
+    if (!ctx) return { text: 'No bmuz.json here.' }
+    if (ctx.broken) return { text: `BMUZ engine: ${ctx.broken}` }
+    const out = await doRetry($)
+    if (out.ok) $.clock.after(50, () => { advance($, false) })
+    return { text: out.text }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
