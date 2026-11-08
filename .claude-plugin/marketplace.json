@@ -1,0 +1,11 @@
+{
+  "name": "bmuz",
+  "owner": { "name": "Muzzy" },
+  "plugins": [
+    {
+      "name": "bmuz",
+      "source": "./plugin",
+      "description": "BMUZ: runs a game project's steps from a pipeline file — Discover, Define, Develop, Deliver"
+    }
+  ]
+}

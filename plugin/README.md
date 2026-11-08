@@ -30,3 +30,11 @@ A session nobody can answer (`claude -p`, `claude --bg`), or a project with `"au
 - A turn that ends without finishing its step counts as a failed try (2 retries, then BLOCKED), so a plain-text question can't stall the run.
 - Gates are never answered: the run stops at the gate and the question goes into `questions.md`.
 - Start it with the settings that pre-answer Claude Code's own questions: `--settings <plugin>/settings/auto-run.json`.
+
+## Install
+From this repo's folder on each machine (the plugin is read straight from it, so `git pull` updates it):
+```
+claude plugin marketplace add C:/Users/Muzzy/Documents/dev/bmuz
+claude plugin install bmuz@bmuz
+```
+From GitHub instead (reads the default branch): `/plugin install bmuz --marketplace TheBlueMuzzy/bmuz`
