@@ -9,6 +9,8 @@ import * as E from '../hooks/engine.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const plugin = JSON.parse(readFileSync(join(root, '.claude-plugin', 'plugin.json'), 'utf8')).name
+// Unattended runs must never stop at Claude Code's own "run this workflow?" question: each workflow is pre-approved there.
+const autoAllow = JSON.parse(readFileSync(join(root, 'settings', 'auto-run.json'), 'utf8')).permissions.allow
 
 export function checkFile(file) {
   let p
@@ -25,6 +27,9 @@ export function checkFile(file) {
     if (s && s.kind === 'flow' && typeof s.workflow === 'string' && s.workflow.startsWith(`${plugin}:`)) {
       const wf = s.workflow.slice(plugin.length + 1)
       if (!existsSync(join(root, 'workflows', `${wf}.js`))) problems.push(`step "${s.id}": the workflow ${s.workflow} has no file workflows/${wf}.js`)
+    }
+    if (s && s.kind === 'flow' && typeof s.workflow === 'string' && !autoAllow.includes(`Workflow(${s.workflow})`)) {
+      problems.push(`step "${s.id}": add "Workflow(${s.workflow})" to settings/auto-run.json's permissions.allow, or an overnight run stops at Claude Code's "run this workflow?" question`)
     }
     if (s && s.kind === 'script' && Array.isArray(s.run)) {
       for (const arg of s.run) {

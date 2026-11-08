@@ -150,17 +150,14 @@ async function settle($: any, step: any, verdict: any, result: any) {
 
 async function startTalk($: any, step: any, why: string) {
   const craft = await craftOf($, step)
-  const lead = why ? `The last try did not pass: ${why}.\n` : ''
-  await $.prompt.submit({
-    text: `BMUZ step "${step.id}".\n${lead}${craft}\nWhen it is done, call ${E.ENGINE_TOOL} with result ${JSON.stringify({ [step.done?.key ?? 'ok']: '...' })} and end your turn.`,
-  })
+  await $.prompt.submit({ text: E.talkPrompt(step, craft, why, ctx.auto) })
 }
 
 async function startFlow($: any, step: any) {
   const args = E.fillDeep({ ...step.args, ...(ctx.cfg.flowArgs || {}) }, vars())
   ctx.state = { ...ctx.state, flow: { args, toolUseId: null, taskId: null } }
   await save($)
-  await $.command.run({ command: step.workflow, args: JSON.stringify(args) })
+  await $.prompt.submit({ text: E.flowPrompt(step, args) })
 }
 
 async function runScript($: any, step: any) {
@@ -173,8 +170,10 @@ async function runScript($: any, step: any) {
 }
 
 async function askGate($: any, step: any) {
-  if (!ctx.interactive) {
-    await journal($, { ev: 'gate.pending', step: step.id, why: 'no one to ask in this session; answer with /bmuz-approve' })
+  if (ctx.auto) {
+    // A gate is the creative's own OK: an auto run never answers it, and never opens a dialog that waits.
+    await journal($, { ev: 'gate.pending', step: step.id, why: 'auto run: nobody to ask; answer with "bmuz approve <option>"' })
+    await addQuestions($, step.id, [{ question: `${E.fill(step.question, vars())} (the run stopped here; answer with "bmuz approve ${step.approve}" or another option)` }])
     return null
   }
   try {
@@ -242,9 +241,21 @@ async function advance($: any, resume: boolean) {
   }
 }
 
+// An auto run's questions go to .bmuz/questions.md for the creative, each with the default it took.
+async function addQuestions($: any, stepId: string, asks: any) {
+  const day = new Date(await $.clock.now()).toISOString().slice(0, 10)
+  const lines = E.askLines(stepId, asks, day)
+  if (!lines.length) return
+  const path = `${ctx.dir}/.bmuz/questions.md`
+  const old = (await readText($, path)) ?? '# Questions for the creative\nAn auto run took the default where it would have asked. Change anything you disagree with.\n\n'
+  await $.fs.write(path, old + lines.join('\n') + '\n')
+  await journal($, { ev: 'ask', step: stepId, count: lines.length })
+}
+
 async function stepDone($: any, e: any) {
   const step = E.stepById(ctx.pipeline, ctx.state.current)
-  const result = e.result && typeof e.result === 'object' ? e.result : {}
+  const { asks, ...result } = e.result && typeof e.result === 'object' ? e.result : ({} as any)
+  await addQuestions($, step.id, asks)
   const verdict = E.doneCheck(step, vars(), await look($, step, result))
   const next = await settle($, step, verdict, result)
   if (next === 'next') {
@@ -354,8 +365,11 @@ export const register: Register = on => {
     lastBand = ''
     if (!ctx) return r
     ctx.interactive = (e as any).isInteractive === true
-    if (ctx.lock && ctx.lock.step && !ctx.lock.closed && ctx.lock.session !== ctx.sessionId) {
-      await journal($, { ev: 'crash.detected', lockStep: ctx.lock.step, lockStatus: ctx.lock.status, lockSession: ctx.lock.session })
+    // An auto run never asks: a session nobody can answer (-p, a background session), or bmuz.json "auto": true.
+    ctx.auto = !ctx.interactive || ctx.cfg.auto === true
+    // A window closed at a gate used to look like a clean stop (live check L2); only a clean end counts as one now.
+    if (E.diedLastTime(ctx.lock, ctx.sessionId)) {
+      await journal($, { ev: 'crash.detected', lockStep: ctx.lock.step, lockStatus: ctx.lock.status, lockSession: ctx.lock.session, endReason: ctx.lock.endReason ?? null })
     }
     if (ctx.rebuilt) await journal($, { ev: 'doctor.rebuilt', why: ctx.rebuilt.slice(1), state: ctx.state })
     await $.tool.register({
@@ -383,7 +397,8 @@ export const register: Register = on => {
   on('session.end', async ($, e, next) => {
     if (ctx) {
       const lock = JSON.parse((await readText($, `${ctx.dir}/.bmuz/lock.json`)) ?? '{}')
-      await $.fs.write(`${ctx.dir}/.bmuz/lock.json`, JSON.stringify({ ...lock, closed: true }))
+      // The reason tells a clean /exit from a closed window ("other"), which counts as a crash next time.
+      await $.fs.write(`${ctx.dir}/.bmuz/lock.json`, JSON.stringify({ ...lock, closed: true, endReason: (e as any).reason ?? null }))
     }
     return next(e)
   })
@@ -393,8 +408,8 @@ export const register: Register = on => {
     if (!ctx) return next(e)
     if (await $.fs.exists(`${ctx.dir}/.bmuz/test-fault`)) throw new Error('injected fault (test)')
     if (ctx.broken) return { deny: `BMUZ engine: ${ctx.broken}` }
-    const call = { tool: String(e.tool), agentId: (e as any).agentId }
-    const verdict = E.judgeTool(ctx.pipeline, ctx.state, call)
+    const call = { tool: String(e.tool), agentId: (e as any).agentId, input: e }
+    const verdict = E.judgeTool(ctx.pipeline, ctx.state, call, { auto: ctx.auto })
     if (!verdict.allow) {
       await journal($, { ev: 'deviation', step: ctx.state.current, tool: call.tool, agentId: call.agentId ?? null, why: verdict.why })
       return { deny: verdict.why }
@@ -469,7 +484,19 @@ export const register: Register = on => {
       await advance($, resume)
     } else if (ctx.state.status === 'working') {
       const step = E.stepById(ctx.pipeline, ctx.state.current)
-      if (step && step.kind === 'talk') await journal($, { ev: 'turn.ended-open', step: step.id })
+      if (step && step.kind === 'talk') {
+        await journal($, { ev: 'turn.ended-open', step: step.id })
+        // Auto run: a turn that ends without step_done is Claude waiting on someone (live check L5: it asked
+        // "red or blue?" in plain text and stopped). The engine answers "nobody's coming" and counts it as a failed try.
+        if (ctx.auto) {
+          const outcome = await settle($, step, { ok: false, why: 'the turn ended without step_done; in an auto run nobody will answer, so take the default and finish' }, null)
+          if (outcome === 'retry') {
+            ctx.state = { ...ctx.state, current: step.id }
+            await save($)
+            await startTalk($, step, 'the turn ended without step_done; in an auto run nobody will answer, so take the default and finish')
+          }
+        }
+      }
     }
     return r
   })

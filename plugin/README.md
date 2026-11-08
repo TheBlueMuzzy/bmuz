@@ -22,3 +22,11 @@ Try it: in a project folder with `{"pipeline": "hello"}` in `bmuz.json`, start `
 - `state.json` — where we are; rebuilt from the journal at every start if it's missing, damaged or behind
 - `lock.json` — the step under way; left open means the window was killed
 - `checkpoint-<step>.json` — the step's `writes` files from before its first try
+
+## Unattended runs (overnight, background)
+A session nobody can answer (`claude -p`, `claude --bg`), or a project with `"auto": true` in `bmuz.json`, is an **auto run**:
+- Claude never asks: the question tool is refused, and each talk step tells Claude to take the default and list the question in its result.
+- Those questions go into `.bmuz/questions.md`, each with the default that was taken.
+- A turn that ends without finishing its step counts as a failed try (2 retries, then BLOCKED), so a plain-text question can't stall the run.
+- Gates are never answered: the run stops at the gate and the question goes into `questions.md`.
+- Start it with the settings that pre-answer Claude Code's own questions: `--settings <plugin>/settings/auto-run.json`.

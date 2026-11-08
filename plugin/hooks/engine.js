@@ -168,6 +168,44 @@ export function nextStep(p, state) {
   return null
 }
 
+// How a session ended, from session.end's reason. Only these are a clean end; anything else
+// (a closed window reports "other"; a kill reports nothing) is read as a crash at the next start.
+export const CLEAN_ENDS = ['prompt_input_exit', 'clear', 'logout', 'resume']
+
+// Did the last session die? lock = .bmuz/lock.json as read.
+export function diedLastTime(lock, sessionId) {
+  if (!lock || !lock.step || lock.session === sessionId) return false
+  return !lock.closed || !CLEAN_ENDS.includes(lock.endReason)
+}
+
+// An auto run's questions, as the lines that go in .bmuz/questions.md.
+export function askLines(stepId, asks, day) {
+  return (Array.isArray(asks) ? asks : [])
+    .map(a => (typeof a === 'string' ? { question: a } : a))
+    .filter(a => a && typeof a.question === 'string' && a.question.trim())
+    .map(a => `- [ ] ${day} · step ${stepId}: ${a.question.trim()}${a.picked ? ` — went with: ${String(a.picked).trim()}` : ''}`)
+}
+
+// The words that start a talk step. An auto run gets the never-ask rule up front.
+export function talkPrompt(step, craft, why, auto) {
+  const lines = [`BMUZ step "${step.id}" — this message comes from the BMUZ engine, not the creative; do the step without commenting on the engine.`]
+  if (why) lines.push(`The last try did not pass: ${why}.`)
+  if (auto) lines.push(`Auto run: the creative is away. Never ask and never wait for an answer, with AskUserQuestion or in plain text. Where you would ask, pick the sensible default, list it in the result's "asks" as {"question": "...", "picked": "..."}, and carry on.`)
+  lines.push(craft)
+  lines.push(`When it is done, call ${ENGINE_TOOL} with result ${JSON.stringify({ [(step.done && step.done.key) || 'ok']: '...' })} and end your turn.`)
+  return lines.join('\n')
+}
+
+// The words that launch a flow step's workflow. They come as the engine's own message (live check L3:
+// the old route, running the workflow's /command, showed in the chat as if the creative had typed it).
+// The guard pins the Workflow call's name and inputs to these whatever Claude sends.
+export function flowPrompt(step, args) {
+  return [
+    `BMUZ step "${step.id}" — this message comes from the BMUZ engine, not the creative; don't comment on it or offer to stop it.`,
+    `Call the Workflow tool now with name "${step.workflow}" and args ${JSON.stringify(args)}. Then end your turn; the engine checks the result itself.`,
+  ].join('\n')
+}
+
 // Fills {name}-style holes from the step results and extra values.
 export function fill(text, vars) {
   return String(text).replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined ? String(vars[k]) : m))
@@ -180,9 +218,25 @@ export function fillDeep(v, vars) {
   return v
 }
 
+// Plan mode's own moves: loading and calling ExitPlanMode, and writing its plan file
+// (~/.claude/plans/*.md, outside the project). A mod can't switch plan mode off, so the engine lets
+// these through and nothing else; the work itself still waits for the step's own tools
+// (live check L4: Claude couldn't even hand in its plan).
+export function isPlanModeMove(call) {
+  if (call.tool === 'ExitPlanMode' || call.tool === 'EnterPlanMode') return true
+  const input = call.input || {}
+  if (call.tool === 'ToolSearch') return /^select:\s*(ExitPlanMode|EnterPlanMode)\s*$/.test(String(input.query || ''))
+  if (call.tool === 'Write' || call.tool === 'Edit') return /[\\/]\.claude[\\/]plans[\\/][^\\/]+\.md$/.test(String(input.file_path || ''))
+  return false
+}
+
 // Decides one tool call. Returns { allow: true } or { allow: false, why }.
-// call = { tool, agentId?, workflowName? }
-export function judgeTool(p, state, call) {
+// call = { tool, agentId?, input? }; opts.auto = an unattended run (nobody to answer).
+export function judgeTool(p, state, call, opts = {}) {
+  if (!call.agentId && isPlanModeMove(call)) return { allow: true }
+  if (opts.auto && call.tool === 'AskUserQuestion') {
+    return { allow: false, why: `BMUZ engine: auto run, nobody is here to answer. Don't ask: pick the sensible default, add {"question": "...", "picked": "..."} to the "asks" list in ${ENGINE_TOOL}'s result, and carry on.` }
+  }
   // step_done only closes an open talk step; called between steps, it has nothing to finish.
   if (call.tool === ENGINE_TOOL && !call.agentId && !(state.status === 'working' && (stepById(p, state.current) || {}).kind === 'talk')) {
     return { allow: false, why: 'BMUZ engine: no talk step is open, so there is nothing to finish. End your turn; the engine starts the next step itself.' }

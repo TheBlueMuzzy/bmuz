@@ -39,14 +39,16 @@ A step runs when everything it `needs` is finished. A step can only need steps *
 
 **gate** — the engine stops and asks the creative with buttons; nothing else runs until they answer.
 - `question` (needed): the words, `{holes}` allowed.
-- `options` (needed): 2 or more different answers. Today the first one approves; any other goes back to `backTo`. (Changing in F211 task 4: Approve is never pre-selected.)
+- `options` (needed): 2 or more different answers. **The first one is what a stray Enter picks, so put the safe choice first.**
+- `approve` (needed): the option that says yes, word for word. It can't be the first option. Any other answer goes back to `backTo`.
+- An auto run (nobody can answer: `-p`, a background session, or `"auto": true` in bmuz.json) never answers a gate: the run stops there and the question goes into `.bmuz/questions.md`.
 - `backTo`: an earlier step to redo when the creative doesn't approve. That step and the steps needing it are run again.
 
 **script** — the engine runs a command itself, no Claude involved.
 - `run` (needed): the command as a list, like `["node", "{plugin}/scripts/write-plan.mjs", "{project}", "{name}"]`. It runs in the project folder.
 - `done`, `writes`.
 
-**flow** — the engine launches a saved workflow with its inputs pinned (Claude can't change them) and reads its result.
+**flow** — the engine launches a saved workflow with its inputs pinned (Claude can't change them) and reads its result. Every workflow a pipeline launches must be pre-approved in `plugin/settings/auto-run.json` (`Workflow(<plugin:name>)`), so an overnight run never stops at Claude Code's "run this workflow?" question; the check refuses a pipeline whose workflow isn't listed.
 - `workflow` (needed): `plugin:name`, like `bmuz:hello-flow` → `plugin/workflows/hello-flow.js`.
 - `args`: the workflow's inputs, `{holes}` allowed.
 - `agentTools`: the only tools the workflow's helpers may use.

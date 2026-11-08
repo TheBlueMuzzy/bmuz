@@ -114,7 +114,8 @@ test('the command line: exit 0 for good files, exit 1 with plain words for broke
     writeFileSync(file, JSON.stringify(p))
     let out = ''
     assert.throws(() => execFileSync('node', [script, file], { encoding: 'utf8' }), e => { out = e.stdout; return e.status === 1 })
-    assert.match(out, /✘ broken.json: 2 problems/)
+    assert.match(out, /✘ broken.json: 3 problems/)
+    assert.match(out, /add "Workflow\(bmuz:no-such-flow\)" to settings\/auto-run.json/)
     assert.match(out, /workflow bmuz:no-such-flow has no file workflows\/no-such-flow.js/)
     assert.match(out, /craft note craft\/gone.md is missing/)
     writeFileSync(join(dir, 'other.json'), JSON.stringify(copy()))

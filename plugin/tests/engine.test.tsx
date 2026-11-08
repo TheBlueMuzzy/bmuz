@@ -68,8 +68,8 @@ async function start($: any, interactive: boolean) {
 test('check 1: a tool from a later step is refused, and the deviation is journaled', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const w = world(on, base({ current: 'name', status: 'working' }))
-  // the plugin reads its pipeline from its own root; point the fake disk at it
-  await start($, false)
+  // a live window: someone is there to answer, so the step's question is allowed
+  await start($, true)
   const write: any = await $.tool.call({ tool: 'Write', file_path: '/proj/x.txt', content: 'x' } as any)
   expect(refused(write)).toBe(true)
   expect(why(write)).toMatch(/out of order/)
@@ -77,6 +77,40 @@ test('check 1: a tool from a later step is refused, and the deviation is journal
   expect(refused(ask)).toBe(false)
   expect(w.reached).toEqual(['AskUserQuestion'])
   expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"deviation".*"tool":"Write"/)
+})
+
+test('check 15 (fix 1): an auto run never asks; its questions land in questions.md with the default taken', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  await start($, false) // nobody can answer: an auto run
+  const ask: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+  expect(refused(ask)).toBe(true)
+  expect(why(ask)).toMatch(/auto run, nobody is here to answer/)
+  const done: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { name: 'Moon Goat', asks: [{ question: 'Name the game?', picked: 'Moon Goat' }] } } as any)
+  expect(refused(done)).toBe(false)
+  expect(w.files['/proj/.bmuz/questions.md']).toMatch(/- \[ \] \d{4}-\d\d-\d\d · step name: Name the game\? — went with: Moon Goat/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).results).toEqual({ name: 'Moon Goat' }) // "asks" isn't a result
+})
+
+test('check 15 (fix 1): an auto run whose turn ends without step_done is told nobody is coming, then BLOCKS', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  await start($, false)
+  for (let i = 0; i < 3; i++) await $.turn.complete({ answer: 'Red or blue?', durationMs: 1, isAborted: false, turnId: `t${i}` } as any)
+  expect(prompts.filter(p => /nobody will answer/.test(p)).length).toBe(2)
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(st.status).toBe('blocked')
+})
+
+test('fix 7: a window closed at a gate is journaled as a crash at the next start', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ current: 'approve', status: 'waiting', finished: ['name'] }))
+  w.files['/proj/.bmuz/lock.json'] = JSON.stringify({ step: 'approve', status: 'waiting', session: 'old', closed: true, endReason: 'other' })
+  await start($, false)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"crash.detected","lockStep":"approve","lockStatus":"waiting","lockSession":"old","endReason":"other"/)
 })
 
 test('check 12: the review step reads but cannot edit, write or run commands', async ($, on) => {

@@ -1,0 +1,9 @@
+{
+  "_help": "Settings for unattended BMUZ runs (overnight, background): claude --settings <plugin>/settings/auto-run.json. Nothing may wait for an answer. Every workflow a pipeline launches is pre-approved here (npm run check:pipelines checks the list).",
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": ["Workflow(bmuz:hello-flow)"]
+  },
+  "askUserQuestionTimeout": "60s",
+  "skipWorkflowUsageWarning": true
+}
