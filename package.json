@@ -7,7 +7,8 @@
     "test:node": "node --test \"tests/*.node.test.mjs\"",
     "test:plugin": "claude plugin validate plugin && claude plugin test plugin",
     "check:pipelines": "node plugin/scripts/check-pipeline.mjs",
-    "check:fast": "npm run check:pipelines && npm run test:node && npm run test:plugin",
-    "check:headless": "node tests/headless.mjs"
+    "check:fast": "npm run check:version && npm run check:pipelines && npm run test:node && npm run test:plugin",
+    "check:headless": "node tests/headless.mjs",
+    "check:version": "node tests/claude-version.mjs"
   }
 }
