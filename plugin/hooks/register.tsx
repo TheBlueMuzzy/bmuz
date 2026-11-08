@@ -13,6 +13,7 @@ let ctx: any = null
 let pending: null | "advance" | "resume" | "retry" | { undo: string } = null
 let watchdogBusy = false
 let sessionInteractive = false
+let sessionAuto = false // "bmuz auto" typed: this session runs unattended
 
 const SAFE_DENY = 'BMUZ engine hit an error in its own code, so it refused this action to be safe. Run /bmuz-doctor.'
 
@@ -110,9 +111,35 @@ async function startEngine($: any) {
   }
   if (!ctx) return false
   ctx.interactive = sessionInteractive
-  // An auto run never asks: a session nobody can answer (-p, a background session), or bmuz.json "auto": true.
-  ctx.auto = !ctx.interactive || ctx.cfg.auto === true
+  ctx.canAsk = (await questionToolExists($)) && !(await unattendedSettings($))
+  // An auto run never asks: a session nobody can answer, or bmuz.json "auto": true, or "bmuz auto" typed.
+  // A background session says it is interactive (headless check 15, 2026-11-08) but has no question
+  // tool, so "can anyone answer?" is read from the tool list, not from the session's word.
+  ctx.auto = !ctx.interactive || !ctx.canAsk || ctx.cfg.auto === true || sessionAuto
   return !ctx.broken
+}
+
+// Started with settings/auto-run.json? It sets BMUZ_AUTO=1 in the session's environment, which a
+// child process sees. Unknown (it can't be read) counts as no.
+async function unattendedSettings($: any) {
+  try {
+    const ran: any = await $.process.run(['node', '-e', 'process.stdout.write(process.env.BMUZ_AUTO || "")'], { timeoutMs: 10000 })
+    return String(ran?.stdout ?? '').trim() === '1'
+  } catch (err) {
+    return false
+  }
+}
+
+// Is AskUserQuestion in this session's tool list? Unknown (the list can't be read) counts as yes,
+// so a normal window never loses its questions; the other signs still catch -p.
+async function questionToolExists($: any) {
+  try {
+    const list: any = await $.tool.list()
+    const names = (Array.isArray(list) ? list : (list?.tools ?? list?.value ?? [])).map((t: any) => (typeof t === 'string' ? t : t?.name))
+    return names.length === 0 ? true : names.includes('AskUserQuestion')
+  } catch (err) {
+    return true
+  }
 }
 
 async function registerAll($: any) {
@@ -435,6 +462,7 @@ export const register: Register = on => {
     const r = await next(e)
     lastBand = ''
     sessionInteractive = (e as any).isInteractive === true
+    sessionAuto = false
     const ok = await startEngine($)
     if (!ctx) return r
     // Commands and timers exist even when the start failed, so /bmuz-doctor is there to get it going.
@@ -442,6 +470,8 @@ export const register: Register = on => {
     $.clock.every(ctx.cfg.watchdogTickMs ?? 15000, () => { watchdog($) })
     $.clock.every(1000, () => { showBand($).catch(() => {}) })
     if (!ok) return r
+    // What kind of session this is, for the record (and the doctor): an unattended run must be known as one.
+    await journal($, { ev: 'session', interactive: ctx.interactive, canAsk: ctx.canAsk, auto: ctx.auto, fields: Object.fromEntries(Object.entries(e as any).filter(([, v]) => typeof v !== 'object')) })
     // A window closed at a gate used to look like a clean stop (live check L2); only a clean end counts as one now.
     if (E.diedLastTime(ctx.lock, ctx.sessionId)) {
       await journal($, { ev: 'crash.detected', lockStep: ctx.lock.step, lockStatus: ctx.lock.status, lockSession: ctx.lock.session, endReason: ctx.lock.endReason ?? null })
@@ -477,6 +507,16 @@ export const register: Register = on => {
       return { deny: verdict.why }
     }
     if (call.tool === E.ENGINE_TOOL) return stepDone($, e)
+    if (call.tool === 'AskUserQuestion' && !ctx.auto) {
+      // A background session lists the question tool but refuses it (headless check 15): then nobody
+      // can answer, so from here this session is an auto run and the turn-end rule keeps it moving.
+      const res: any = await next(e)
+      if (res?.deny || res?.isError) {
+        ctx.auto = true
+        await journal($, { ev: 'auto.detected', why: 'the question tool was refused: nobody can answer in this session' })
+      }
+      return res
+    }
     if (verdict.rewriteWorkflow) {
       const step = E.stepById(ctx.pipeline, ctx.state.current)
       // One launch per try: a second Workflow call would run the helpers twice.
@@ -526,6 +566,14 @@ export const register: Register = on => {
       const out = await doRetry($)
       if (out.ok) pending = 'advance'
       return say(out.text)
+    }
+    // "bmuz auto": run unattended from here (overnight, "just go"), then start like "bmuz go".
+    if (/^\s*bmuz auto\s*$/i.test(text) && !ctx.broken) {
+      sessionAuto = true
+      ctx.auto = true
+      await journal($, { ev: 'auto.on' })
+      pending = 'resume'
+      return next({ ...(e as any), text: `${text}\n(BMUZ engine: unattended run. Nobody will answer questions now; take sensible defaults and note them. Reply with one short line; the engine runs the steps itself.)` })
     }
     const go = text.match(/^\s*bmuz (go|approve)\s*(.*)$/i)
     if (go && go[1].toLowerCase() === 'approve') {

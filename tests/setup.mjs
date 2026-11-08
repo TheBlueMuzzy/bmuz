@@ -5,7 +5,8 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const project = new URL('../project/', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
+// BMUZ_PROJECT: another test project folder (a background session only runs in a folder a person trusted once)
+const project = process.env.BMUZ_PROJECT || new URL('../project/', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
 let [where = 'fresh', cfg = '{}'] = process.argv.slice(2)
 if (where === 'stall') {
   where = 'at-hello'

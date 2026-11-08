@@ -105,6 +105,31 @@ test('check 15 (fix 1): an auto run whose turn ends without step_done is told no
   expect(st.status).toBe('blocked')
 })
 
+test('check 15: a session that lists the question tool but refuses it (a background session) turns into an auto run', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: 'not available in this session', isError: true }))
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  await start($, true) // says it's interactive, like a background session does
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"auto.detected"/)
+  await $.turn.complete({ answer: 'What is your game called?', durationMs: 1, isAborted: false, turnId: 't1' } as any)
+  expect(prompts.some(p => /nobody will answer/.test(p))).toBe(true) // the turn-end rule keeps it moving
+})
+
+test('"bmuz auto" makes the session an auto run from then on', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz auto' } as any)
+  const ask: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+  expect(why(ask)).toMatch(/auto run/)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"auto.on"/)
+})
+
 test('fix 7: a window closed at a gate is journaled as a crash at the next start', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const w = world(on, base({ current: 'approve', status: 'waiting', finished: ['name'] }))
@@ -281,12 +306,13 @@ test('check 2: at a gate the engine asks with buttons and waits for the answer',
   expect(asked.questions[0].options.map((o: any) => o.label)).toEqual(['Change the name', 'Approve']) // Approve is never the pre-selected first button
   await clock.advance(60_000)
   expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('waiting') // nothing moved while unanswered
-  expect(w.runs).toEqual([])
+  const steps = () => w.runs.filter(r => r[1] !== '-e') // not the start-up "unattended settings?" look
+  expect(steps()).toEqual([])
   const q = asked.questions[0].question
   answer({ result: { questions: asked.questions, answers: { [q]: 'Approve' } } })
   await clock.advance(10)
   expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"gate.answer","step":"approve","answer":"Approve"/)
-  expect(w.runs.length).toBeGreaterThan(0) // the script step started after the yes
+  expect(steps().length).toBeGreaterThan(0) // the script step started after the yes
 })
 
 test('check 2b: an empty "bmuz approve" never says yes; only the approve option, word for word, does', async ($, on) => {

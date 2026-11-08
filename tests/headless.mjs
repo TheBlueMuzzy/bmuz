@@ -8,7 +8,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
-const project = join(here, '..', 'project')
+// BMUZ_PROJECT: another test project folder (a background session only runs in a folder a person trusted once)
+const project = process.env.BMUZ_PROJECT || join(here, '..', 'project')
 const plugin = join(here, '..', 'plugin')
 const settings = join(plugin, 'settings', 'auto-run.json')
 const env = { ...process.env, MSYS_NO_PATHCONV: '1' }
@@ -117,8 +118,10 @@ const scenarios = {
       return
     }
     for (let i = 0; i < 360 && evs('gate.pending', 'approve').length === 0; i++) await wait(500)
-    check('15: a background run took a default at the name step and went on to the gate by itself', evs('step.done', 'name').length === 1 && evs('gate.pending', 'approve').length > 0 && /step name:/.test(file('.bmuz/questions.md') || ''), `journal: ${events().map(j => j.ev).join(',')}`)
-    spawnSync('claude', ['stop', name], { env, encoding: 'utf8', timeout: 60_000 })
+    check('15: a background run took a default at the name step and went on to the gate by itself', evs('step.done', 'name').length === 1 && evs('gate.pending', 'approve').length > 0 && /step name:/.test(file('.bmuz/questions.md') || ''), `journal: ${events().map(j => j.ev).join(',')} · sessions: ${JSON.stringify(evs("session").map(j => ({ interactive: j.interactive, canAsk: j.canAsk, auto: j.auto })))} · auto: ${JSON.stringify(evs("auto.detected").concat(evs("auto.on")).map(j => j.ev))}`)
+    // `claude stop` takes the session's id, not its name (a name left 4 test sessions running, 2026-11-08)
+    const list = spawnSync('claude', ['agents', '--json'], { env, encoding: 'utf8', timeout: 60_000 }).stdout || '[]'
+    for (const a of JSON.parse(list.slice(list.indexOf('[')))) if (a.name === name) spawnSync('claude', ['stop', a.id], { env, encoding: 'utf8', timeout: 60_000 })
   },
 }
 
