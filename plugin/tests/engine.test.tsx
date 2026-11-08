@@ -169,6 +169,68 @@ test('check 6d: bmuz.json naming a pipeline outside the plugin refuses every too
   expect(w.reached).toEqual([])
 })
 
+test('check 6e: an error while reading a prompt refuses it instead of letting it through unread', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const seen: string[] = []
+  on('prompt.submit', (_: any, e: any) => { seen.push(String(e.text)); return { text: e.text } })
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  await start($, false)
+  w.files['/proj/.bmuz/test-fault-prompt'] = 'boom'
+  const r: any = await $.prompt.submit({ text: 'bmuz go' } as any)
+  expect(JSON.stringify(r)).toMatch(/held it back to be safe/)
+  expect(seen).toEqual([])
+  // and from then on every tool is refused until the doctor runs
+  const t: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+  expect(refused(t)).toBe(true)
+  expect(why(t)).toMatch(/reading a prompt; run \/bmuz-doctor/)
+})
+
+test('check 6f: an error while starting up keeps the engine on and refusing, until /bmuz-doctor gets it going', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  w.files['/proj/.bmuz/test-fault-start'] = 'boom'
+  await start($, true)
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+  expect(refused(r)).toBe(true)
+  expect(why(r)).toMatch(/failed to start/)
+  expect(w.reached).toEqual([])
+  delete w.files['/proj/.bmuz/test-fault-start']
+  const d: any = await $.command.run({ command: 'bmuz-doctor', args: '' } as any)
+  expect(JSON.stringify(d)).toMatch(/BMUZ doctor/)
+  const again: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+  expect(refused(again)).toBe(false)
+})
+
+test('check 8: a flow launches once; a second Workflow call in the same try is refused', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ current: 'hello', status: 'working', finished: ['name', 'approve', 'plan'] }))
+  w.files.PIPELINE = JSON.stringify({ ...PIPE, steps: [...PIPE.steps.slice(0, 3), { id: 'hello', kind: 'flow', needs: ['plan'], workflow: 'bmuz:hello-flow', args: { name: '{name}' } }, { ...PIPE.steps[3], needs: ['hello'] }] })
+  w.files['/proj/.bmuz/state.json'] = state({ current: 'hello', status: 'working', finished: ['name', 'approve', 'plan'], flow: { args: { name: 'Moon Goat' }, toolUseId: null, taskId: null } })
+  await start($, true)
+  const first: any = await $.tool.call({ tool: 'Workflow', name: 'something-else', args: { name: 'Sun Goat' }, tool_use_id: 'tu1' } as any)
+  expect(refused(first)).toBe(false)
+  const second: any = await $.tool.call({ tool: 'Workflow', name: 'bmuz:hello-flow', args: { name: 'Moon Goat' }, tool_use_id: 'tu2' } as any)
+  expect(refused(second)).toBe(true)
+  expect(why(second)).toMatch(/already running/)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"flow.launched","step":"hello","workflow":"bmuz:hello-flow","args":\{"name":"Moon Goat"\}/)
+})
+
+test('check 4: the watchdog stands down when the stopped helper had already finished (no failed try)', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  on('tool.call', { tool: 'TaskStop' }, () => ({ result: 'Task wf1 is not running (completed)' }))
+  const w = world(on, base({}))
+  w.files['/proj/bmuz.json'] = '{"pipeline":"hello","watchdogMs":1000,"watchdogTickMs":500}'
+  w.files['/proj/.bmuz/state.json'] = state({ current: 'plan', status: 'working', finished: ['name', 'approve'], startedAt: 1000, flow: { args: {}, toolUseId: 'tu1', taskId: 'wf1' } })
+  // a flow step in place of the script, so the watchdog stops a task
+  w.files.PIPELINE = JSON.stringify({ ...PIPE, steps: PIPE.steps.map(s => (s.id === 'plan' ? { id: 'plan', kind: 'flow', needs: ['approve'], workflow: 'bmuz:hello-flow' } : s)) })
+  await start($, false) // no resume timer: only the watchdog acts
+  await clock.advance(5000)
+  const j = w.files['/proj/.bmuz/journal.jsonl'] ?? ''
+  expect((j.match(/"ev":"watchdog.late"/g) || []).length).toBe(1) // once, not every tick
+  expect(j).not.toMatch(/"ev":"retry"/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('working')
+})
+
 test('check 2: at a gate the engine asks with buttons and waits for the answer', async ($, on) => {
   const clock = mock.clock(on, { now: 1000 })
   let asked: any = null

@@ -331,6 +331,7 @@ async function watchdog($: any) {
   watchdogBusy = true
   try {
     const limit = ctx.cfg.watchdogMs ?? ctx.pipeline.watchdogMs ?? 1200000
+    if (ctx.state.flow?.late) return // the helper finished; its result is on the way
     if (!E.isStalled(ctx.pipeline, ctx.state, await $.clock.now(), limit)) return
     const step = E.stepById(ctx.pipeline, ctx.state.current)
     await journal($, { ev: 'watchdog', step: step.id, limitMs: limit, taskId: ctx.state.flow?.taskId ?? null })
@@ -338,7 +339,15 @@ async function watchdog($: any) {
     if (step.kind === 'flow' && ctx.state.flow?.taskId) {
       try {
         const stopped: any = await $.tool.call({ tool: 'TaskStop', task_id: ctx.state.flow.taskId } as any)
-        await journal($, { ev: 'watchdog.stopped', step: step.id, deny: stopped.deny ?? null, text: String(stopped.text ?? '').slice(0, 160) })
+        const said = String(stopped.text ?? stopped.result ?? '')
+        // Run 9's race: the helper finished as the watchdog fired. Its result is on the way; no failed try.
+        if (E.taskAlreadyEnded(said)) {
+          ctx.state = { ...ctx.state, flow: { ...ctx.state.flow, late: true } }
+          await journal($, { ev: 'watchdog.late', step: step.id, text: said.slice(0, 160) })
+          await save($)
+          return
+        }
+        await journal($, { ev: 'watchdog.stopped', step: step.id, deny: stopped.deny ?? null, text: said.slice(0, 160) })
       } catch (err) {
         await journal($, { ev: 'watchdog.stop-failed', step: step.id, why: String(err).slice(0, 200) })
       }
@@ -361,8 +370,16 @@ async function watchdog($: any) {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const r = await next(e)
-    ctx = await loadCtx($)
     lastBand = ''
+    try {
+      if ((await $.fs.exists(`${String(await $.session.cwd()).replace(/\\/g, '/')}/.bmuz/test-fault-start`))) throw new Error('injected fault (test)')
+      ctx = await loadCtx($)
+    } catch (err) {
+      // A start-up error used to leave the engine off, so every tool was allowed in a BMUZ project.
+      // Now the engine stays on and refuses everything until the doctor sorts it out.
+      ctx = { dir: String(await $.session.cwd()).replace(/\\/g, '/'), broken: `the engine failed to start (${String(err).slice(0, 160)}); run /bmuz-doctor`, pipeline: { id: '?', steps: [] }, cfg: {}, state: E.freshState('?') }
+      return r
+    }
     if (!ctx) return r
     ctx.interactive = (e as any).isInteractive === true
     // An auto run never asks: a session nobody can answer (-p, a background session), or bmuz.json "auto": true.
@@ -417,6 +434,12 @@ export const register: Register = on => {
     if (call.tool === E.ENGINE_TOOL) return stepDone($, e)
     if (verdict.rewriteWorkflow) {
       const step = E.stepById(ctx.pipeline, ctx.state.current)
+      // One launch per try: a second Workflow call would run the helpers twice.
+      if (ctx.state.flow?.toolUseId) {
+        const why = `BMUZ engine: step ${step.id}'s workflow is already running; end your turn and the engine reads its result`
+        await journal($, { ev: 'deviation', step: step.id, tool: 'Workflow', agentId: null, why })
+        return { deny: why }
+      }
       const want = ctx.state.flow?.args ?? E.fillDeep(step.args, vars())
       const ran: any = await next({ ...(e as any), name: step.workflow, args: want, script: undefined, scriptPath: undefined })
       const res = ran.result || {}
@@ -434,6 +457,7 @@ export const register: Register = on => {
   // the one place where starting a turn, a command or a question is allowed.
   on('prompt.submit', async ($, e, next) => {
     if (!ctx) return next(e)
+    if (await $.fs.exists(`${ctx.dir}/.bmuz/test-fault-prompt`)) throw new Error('injected fault (test)')
     const kind = (e as any).origin?.kind
     const text = String((e as any).text)
     if (kind === 'task-notification') {
@@ -473,6 +497,13 @@ export const register: Register = on => {
       return next({ ...(e as any), text: `${text}\n(BMUZ engine: starting. Reply with one short line; the engine runs the step itself.)` })
     }
     return next(e)
+    // Without this, an error here let the prompt through unread (proof check 6), so a flow's result could
+    // be lost. Now the prompt is dropped (it goes back to the input with the reason) and every tool is
+    // refused until /bmuz-doctor. A prompt hook refuses with { drop } (mods docs, events: prompt.submit).
+  }).catch(($, e, next) => {
+    if (next.called) return next(e)
+    if (ctx) ctx.broken = 'the engine hit an error in its own code reading a prompt; run /bmuz-doctor'
+    return { drop: 'BMUZ engine hit an error in its own code reading this prompt, so it held it back to be safe. Run /bmuz-doctor, then send it again.' }
   })
 
   on('turn.complete', async ($, e, next) => {
@@ -528,7 +559,11 @@ export const register: Register = on => {
 
   on('command.run', { command: 'bmuz-doctor' }, async $ => {
     if (!ctx) return { text: 'No bmuz.json here.' }
-    if (ctx.broken) return { text: `BMUZ engine: ${ctx.broken}` }
+    if (ctx.broken) {
+      // Try the start again: a fixed pipeline file or bmuz.json takes effect without a restart.
+      try { ctx = (await loadCtx($)) ?? ctx } catch (err) { return { text: `BMUZ engine: still can't start: ${String(err).slice(0, 200)}` } }
+      if (ctx.broken) return { text: `BMUZ engine: ${ctx.broken}` }
+    }
     return { text: await doctorNow($) }
   })
 

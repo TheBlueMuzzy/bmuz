@@ -378,6 +378,11 @@ export function answerGate(p, state, step, answer) {
   return { state: { ...dropSteps(state, drop), current: null, status: 'idle', startedAt: null }, approved: false }
 }
 
+// TaskStop's answer when the task had already finished (proof run 9: "not running (completed)").
+export function taskAlreadyEnded(text) {
+  return /not running|already (finished|completed|stopped)|\(completed\)/i.test(String(text || ''))
+}
+
 // Watchdog: is the current step past its time limit?
 export function isStalled(p, state, now, defaultMs) {
   if (state.status !== 'working' || !state.startedAt) return false

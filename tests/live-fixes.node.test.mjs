@@ -57,6 +57,13 @@ test('fix 7: a closed window (or a kill) at a gate is a crash; only a clean end 
   assert.equal(E.diedLastTime(null, 'new'), false)
 })
 
+test('watchdog race (proof run 9): TaskStop saying the task already ended is not a stall', () => {
+  assert.equal(E.taskAlreadyEnded('Task wfa14su1h is not running (completed)'), true)
+  assert.equal(E.taskAlreadyEnded('Task already finished'), true)
+  assert.equal(E.taskAlreadyEnded('Successfully stopped task wfa14su1h'), false)
+  assert.equal(E.taskAlreadyEnded(undefined), false)
+})
+
 test('fix 3: the shipped gate puts the safe choice first', () => {
   const gate = E.stepById(P, 'approve')
   assert.notEqual(gate.options[0], gate.approve)
