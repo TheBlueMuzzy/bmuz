@@ -61,7 +61,9 @@ export function readShelves(text) {
     const text = clean(p ? body.slice(0, p.index) : body)
     const tail = p ? p[2].split(' · ').map(clean).filter(Boolean) : []
     const by = tail[0] || ''
-    const source = !p ? 'hand-added' : by === "the creative's words" ? 'creative' : by === 'picked by the creative' ? 'picked' : by === "Claude's suggestion" ? 'Claude' : 'research'
+    // (F225: "from your material" = the creative's own words, quoted from what they shared at the start;
+    // "Claude's reading of your material" = Claude's words for something in it that had no quote)
+    const source = !p ? 'hand-added' : by === "the creative's words" ? 'creative' : by === 'from your material' ? 'material' : by === 'picked by the creative' ? 'picked' : by === "Claude's suggestion" || by === "Claude's reading of your material" ? 'Claude' : 'research'
     const lab = text.match(/^([^:]{2,48}): /)
     const label = lab && KNOWN_LABELS.has(lab[1]) ? lab[1] : ''
     shelf.bricks.push({

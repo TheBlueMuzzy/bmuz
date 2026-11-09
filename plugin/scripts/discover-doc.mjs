@@ -143,8 +143,10 @@ const linkCites = (line, sources) => line.replace(/((?:\s*\[\d+\])+)/g, m => {
 // ---- One run: everything it collected, as bricks ----
 // steps = the pipeline's steps; state = .bmuz/state.json; reports = [{ step, label, path, text }].
 export function collectRun({ steps, state, reports, date, key }) {
-  const skipped = state.skipped || []
-  const ran = steps.filter(s => state.finished.includes(s.id) && !skipped.includes(s.id))
+  // (F225: steps the start's material answered count as skipped too, but they weren't wrapped up early)
+  const entered = (state.entered && state.entered.skipped) || []
+  const skipped = (state.skipped || []).filter(id => !entered.includes(id))
+  const ran = steps.filter(s => state.finished.includes(s.id) && !skipped.includes(s.id) && !entered.includes(s.id))
   const results = Object.assign({}, ...ran.filter(s => s.kind === 'talk').map(s => (state.resultsBy || {})[s.id] || {}))
   const bricks = []
   for (const [k, [shelf, label]] of Object.entries(TALK_KEYS)) {
@@ -187,6 +189,7 @@ export function collectRun({ steps, state, reports, date, key }) {
     youAre: itemText('youAre', listOf(results.youAre)[0]),
     steps: ran.map(s => s.id),
     skipped,
+    entered,
     questions: listOf(results.questions).map(q => itemText('questions', q)).filter(Boolean),
     bricks,
     reports: read.map(r => {
@@ -280,7 +283,9 @@ export function mergeDoc(oldText, run, { reportLink = p => p } = {}) {
     KEY_MARK(run.key || `${run.date}-${n}`),
     `- Brief, in the creative's words: ${run.brief ? `"${run.brief}"` : 'not given'}`,
     ...(run.youAre ? [`- You are: ${run.youAre}`] : []),
-    `- Steps run: ${run.steps.join(', ') || 'none'}${run.skipped.length ? ` · skipped (wrapped up early): ${run.skipped.join(', ')}` : ''}`,
+    `- Steps run: ${run.steps.join(', ') || 'none'}${run.skipped.length ? ` · skipped (wrapped up early): ${run.skipped.join(', ')}` : ''}${run.entered && run.entered.length ? ` · answered by your material: ${run.entered.join(', ')}` : ''}`,
+    // (F225: a run made from what the creative shared at the start: where it came from)
+    ...(run.material && run.material.length ? [`- From your material: ${run.material.join(' · ')}`] : []),
     ...(run.questions.length ? ['- Research questions:', ...run.questions.map((q, i) => `  ${i + 1}. ${q}`)] : []),
     `- Bricks added: ${Object.keys(added).length ? Object.entries(added).map(([s, c]) => `[${s}](${anchor(s)}) ${c}`).join(' · ') : 'none new'}${again ? ` · ${again} already on the shelves, marked "again in run ${n}"` : ''}`,
   ]
@@ -335,8 +340,11 @@ function main() {
   // the same run (a crash between writing and the engine's record) finds its key and adds nothing twice.
   const journal = existsSync(join(project, '.bmuz/journal.jsonl')) ? readFileSync(join(project, '.bmuz/journal.jsonl'), 'utf8').split('\n') : []
   const first = pipeline.steps[0].id
-  const starts = journal.map(l => { try { return JSON.parse(l) } catch (e) { return null } }).filter(j => j && j.ev === 'step.start' && j.step === first)
-  const key = starts.length ? String(starts[starts.length - 1].t) : ''
+  const evs = journal.map(l => { try { return JSON.parse(l) } catch (e) { return null } }).filter(Boolean)
+  const starts = evs.filter(j => j.ev === 'step.start' && j.step === first)
+  // (F225: a run entered at a later step never starts its first step; the stage's own first line marks it)
+  const entered = evs.find(j => j.ev === 'stage.enter') || evs.find(j => j.ev === 'step.start')
+  const key = starts.length ? String(starts[starts.length - 1].t) : entered ? String(entered.t) : ''
   const vars = { ...state.results }
   const reports = []
   for (const s of pipeline.steps) {

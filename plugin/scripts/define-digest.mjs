@@ -11,8 +11,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DIGEST, DISCOVER, GDD, PART1, allBricks, fieldText, gddRuns, readGdd, readShelves } from './define-doc.mjs'
 
-const SOURCE_WORDS = { creative: "the creative's words", picked: 'picked by the creative', Claude: "Claude's suggestion", research: 'research', 'hand-added': 'added by hand' }
-const tag = b => `(${b.source === 'research' ? 'research' : b.source === 'hand-added' ? 'added by hand' : b.source === 'creative' ? 'their words' : b.source === 'picked' ? 'they picked it' : 'Claude'}${b.defineNotes.length ? ` · ${b.defineNotes.join(' · ')}` : ''})`
+const SOURCE_WORDS = { creative: "the creative's words", material: 'from their material', picked: 'picked by the creative', Claude: "Claude's suggestion", research: 'research', 'hand-added': 'added by hand' }
+const tag = b => `(${b.source === 'research' ? 'research' : b.source === 'hand-added' ? 'added by hand' : b.source === 'creative' ? 'their words' : b.source === 'material' ? 'their words, from their material' : b.source === 'picked' ? 'they picked it' : 'Claude'}${b.defineNotes.length ? ` · ${b.defineNotes.join(' · ')}` : ''})`
 
 // The digest's text. doc = readShelves(DISCOVER.md); gddText = GDD.md or null.
 export function digest(doc, gddText, date) {
