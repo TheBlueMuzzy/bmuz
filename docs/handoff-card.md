@@ -56,4 +56,4 @@ The engine records each one in `.bmuz/decisions.json` (`{key, q, answer, at}`) a
 A later card asking a question whose `key` is already decided is refused with the earlier answer: an answered question is never asked again (V38). The talk step's prompt lists the decisions so Claude can use them.
 
 ## How it is shown
-At the end of the hand-off step's turn the engine sends its own labelled message: the card, to show word for word, and end the turn. The card is also kept in `.bmuz/last-card.md`.
+The engine saves the card in `.bmuz/last-card.md`. At the end of the hand-off step's turn it sends its own labelled message: read that file, show its text word for word, and end the turn. The message points at the file rather than carrying the card, so the creative sees the card once (a message carrying it showed it twice). Reading that one file is allowed between steps, when every other tool waits.

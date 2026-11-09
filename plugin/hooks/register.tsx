@@ -694,9 +694,9 @@ export const register: Register = on => {
     if (!ctx || (e as any).agentId) return r
     if (pending && typeof pending === 'object' && 'card' in pending) {
       // The hand-off card, as the engine's own message; the next step starts when that turn ends.
-      const text = pending.card
+      // (handOff already saved the card's text in .bmuz/last-card.md; the message points Claude at it)
       pending = 'advance'
-      await $.prompt.submit({ text: E.cardPrompt(text) })
+      await $.prompt.submit({ text: E.cardPrompt(`${ctx.dir}/.bmuz/last-card.md`) })
     } else if (pending) {
       const resume = pending === 'resume'
       pending = null

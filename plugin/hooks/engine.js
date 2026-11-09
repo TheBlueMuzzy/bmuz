@@ -208,11 +208,11 @@ export function talkPrompt(step, craft, why, auto, decided = []) {
 }
 
 // The engine's own message that shows a hand-off card (sent at turn.complete, like every engine message).
-export function cardPrompt(text) {
+// It points at the saved card instead of carrying it: a message with the card in it showed the card twice,
+// once in the engine's message and once in Claude's copy (Muzzy's live look, 2026-11-09: "yes" show it once).
+export function cardPrompt(path) {
   return [
-    'BMUZ hand-off card — this message comes from the BMUZ engine, not the creative. Show the creative the card below exactly as written, word for word, with nothing before or after it, then end your turn.',
-    '',
-    text,
+    `BMUZ hand-off card — this message comes from the BMUZ engine, not the creative. Read ${path} and show the creative its text exactly as written, word for word, with nothing before or after it, then end your turn.`,
   ].join('\n')
 }
 
@@ -462,6 +462,8 @@ export function isPlanModeMove(call) {
 export function judgeTool(p, state, call, opts = {}) {
   // (not in an auto run: leaving plan mode waits for a person's OK)
   if (!call.agentId && !opts.auto && isPlanModeMove(call)) return { allow: true }
+  // Reading the saved hand-off card is always allowed: the engine asks for it between steps (cardPrompt).
+  if (!call.agentId && call.tool === 'Read' && /[\\/]\.bmuz[\\/]last-card\.md$/.test(String((call.input || {}).file_path || ''))) return { allow: true }
   if (opts.auto && call.tool === 'AskUserQuestion') {
     return { allow: false, why: `BMUZ engine: auto run, nobody is here to answer. Don't ask: pick the sensible default, add {"question": "...", "picked": "..."} to the "asks" list in ${ENGINE_TOOL}'s result, and carry on.` }
   }
