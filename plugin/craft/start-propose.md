@@ -11,7 +11,7 @@ Read .planning/research/intake.json first ("where", "proposal", "gaps").
 
 Hand back:
 - "stage": "discover" | "define" | "design" | "develop" | "release", or "later" for Not now
-- "at": the step to start at — the proposal's "at" for its own stage, "first" for any other stage unless they named a step (Discover's steps: spark, experience, theme, simulation, mechanisms; Define's: digest, direction, story, bricks, pillars, scope, risks)
+- "at": the step to start at — the proposal's "at" for its own stage, "first" for any other stage (and for "later") unless they named a step; never empty (Discover's steps: spark, experience, theme, simulation, mechanisms; Define's: digest, direction, story, bricks, pillars, scope, risks)
 The engine then moves into that stage itself and opens it with the stage's short intro; don't describe the stage yourself.
 
 Auto run (nobody to answer): "Start there", unless a test run's answers say otherwise.

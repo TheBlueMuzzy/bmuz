@@ -85,6 +85,58 @@ const DEFINE_ANSWERS = {
   },
 }
 
+// ---- F225: the entry scenarios, each in its own scratch folder (never Muzzy's live-look folders) ----
+const scratch = name => {
+  if (!/^bmuz-entry-/.test(name)) throw new Error(`entry scenarios use .scratch/bmuz-entry-* folders only, not ${name}`)
+  const dir = join(here, '..', '..', '.scratch', name)
+  for (const f of ['.bmuz', '.planning', 'bmuz.json', 'rules.md']) rmSync(join(dir, f), { recursive: true, force: true })
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+const journalOf = dir => (existsSync(join(dir, '.bmuz/journal.jsonl')) ? readFileSync(join(dir, '.bmuz/journal.jsonl'), 'utf8') : '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l) } catch (e) { return {} } })
+// (stream: every assistant message of the run, not only the last one -p prints: a step shown mid-turn counts)
+const runIn = (dir, prompt, tools, stream = false) => {
+  const took = Date.now()
+  const r = spawnSync('claude', ['-p', prompt, ...base, '--allowedTools', tools, ...(stream ? ['--output-format', 'stream-json', '--verbose'] : [])], { cwd: dir, env: { ...env, BMUZ_TEST: '1' }, encoding: 'utf8', input: '', timeout: 3_000_000, maxBuffer: 64 * 1024 * 1024 })
+  let out = (r.stdout || '') + (r.stderr || '')
+  if (stream) out = out.split('\n').map(l => { try { const j = JSON.parse(l); return j.type === 'assistant' ? (j.message?.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') : '' } catch (e) { return '' } }).filter(Boolean).join('\n')
+  console.log(`      (${Math.round((Date.now() - took) / 1000)} s; last lines: ${out.trim().split('\n').slice(-4).join(' / ').slice(0, 400)})`)
+  return out
+}
+const LIGHTHOUSE_CONCEPT = 'Lamplight: a cosy game about keeping a lighthouse. You are the keeper of a lighthouse on a small rocky island. The feeling I want most is quiet care: being the calm one who keeps everyone safe. Each night you trim the wick, wind the clockwork and polish the lens while storms roll in, and you guide the fishing boats home with the light. It is not a stressful time-management game: no timers racing you. It reminds me of Unpacking and A Short Hike.'
+const ENTRY_CONCEPT_ANSWERS = {
+  opening: {
+    "Where's your game right now?": 'A concept',
+    'What do you want from this pass?': 'Pin it down',
+    'Paste it here, or name the files': LIGHTHOUSE_CONCEPT,
+  },
+  propose: { 'Start there?': 'Start there' },
+  ...DEFINE_ANSWERS,
+  direction: { ...DEFINE_ANSWERS.direction, 'Anything my concept already says': 'Keep it, exactly as my concept says it.' },
+}
+const RULEBOOK = [
+  '# Tidekeeper — rules (draft 3)',
+  'You are the keeper of a lighthouse on a rocky island, keeping the light burning through one stormy night.',
+  '## Setup',
+  'Shuffle the 20 weather cards. Each player takes 4 oil tokens and the lamp starts at brightness 3.',
+  '## Each night turn',
+  '1. Draw a weather card: calm, fog or storm. A storm lowers the lamp by 1.',
+  '2. Spend oil to trim the wick (+1 brightness) or wind the clockwork (the light keeps turning).',
+  '3. If the lamp is at 2 or more, one boat reaches the harbour.',
+  '## End',
+  'At dawn, count the boats home. Nobody loses: the night just ends.',
+  '## Playtest notes',
+  'Played twice with my partner: the storms felt tense in a good way; trimming felt like busywork after round 5.',
+].join('\n') + '\n'
+const ENTRY_RULEBOOK_ANSWERS = {
+  opening: {
+    "Where's your game right now?": 'Something written or played',
+    'What do you want from this pass?': 'Work it out',
+    'Paste it here, or name the files': 'Read rules.md in this folder: that is my rulebook, with my playtest notes at the end.',
+  },
+  propose: { 'Start there?': 'Somewhere else', 'Where would you like to start?': 'Not now' },
+}
+
 const scenarios = {
   // Checks 1, 8, 9, 15 (headless part): the engine starts every step itself; an auto run takes a
   // default instead of asking; it stops at the gate; the script and the workflow run with their inputs.
@@ -267,6 +319,76 @@ const scenarios = {
     const outside = files.filter(f => !/^(\.bmuz\/|\.planning\/|bmuz\.json$)/.test(f))
     check('F218: nothing was written outside .planning/ and the engine\'s .bmuz/', outside.length === 0, outside.join(', '))
     console.log(`      GDD Part 1: ${(gdd.split('## Part 1 — The concept')[1] || '').split('## Part 2')[0].split('\n').filter(l => /^\*\*/.test(l)).length} fields · DISCOVER.md marks: ${marked} · lint: ${lint.stdout.trim().split('\n')[0]}`)
+  },
+
+  // F225 (a): "bmuz new" in an empty folder → the start's opening (an auto run takes "Nothing yet") → no proposal
+  // question (nothing to read) → Discover's first step, opened with Discover's intro. Stopped there: the rest is the
+  // discover scenario's (an hour of research).
+  async 'entry-nothing'() {
+    const dir = scratch('bmuz-entry-nothing')
+    rmSync(join(dir, 'bmuz.json'), { force: true })
+    const child = spawn('claude', ['-p', 'bmuz new', ...base, '--allowedTools', TOOLS], { cwd: dir, env, stdio: 'ignore' })
+    const took = Date.now()
+    const evsIn = () => journalOf(dir)
+    for (let i = 0; i < 900 && !evsIn().some(j => j.ev === 'intro') && child.exitCode === null; i++) await wait(1000)
+    child.kill('SIGKILL')
+    await wait(2000)
+    console.log(`      (${Math.round((Date.now() - took) / 1000)} s)`)
+    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
+    const start = (read('.bmuz/stages/1-start/journal.jsonl') || '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l) } catch (e) { return {} } })
+    const trail = js => js.map(j => j.ev + (j.step ? ':' + j.step : '') + (j.why ? ` (${String(j.why).slice(0, 120)})` : '')).join(' ')
+    check('F225: "bmuz new" made the folder a BMUZ project and ran the start: opening → intake → propose', JSON.stringify([...new Set(start.filter(j => j.ev === 'step.done').map(j => j.step))]) === JSON.stringify(['opening', 'intake', 'propose']), trail(start))
+    const opening = (start.find(j => j.ev === 'step.done' && j.step === 'opening') || {}).result || {}
+    const propose = (start.find(j => j.ev === 'step.done' && j.step === 'propose') || {}).result || {}
+    check('F225: "Nothing yet" (the auto run\'s pick) went straight to Discover\'s spark, nothing read', opening.where === 'nothing' && propose.stage === 'discover' && propose.at === 'spark' && /Nothing to read yet/.test(read('.planning/research/intake.md') || '') && !existsSync(join(dir, '.planning/DISCOVER.md')), JSON.stringify({ opening, propose }))
+    const now = evsIn()
+    const intro = now.find(j => j.ev === 'intro')
+    check('F225: the project moved on to Discover (start\'s record kept) and its first step opened with the intro', JSON.parse(read('bmuz.json') || '{}').pipeline === 'discover' && now[0]?.ev === 'stage.enter' && now[0]?.from === 'start' && intro?.step === 'spark' && intro?.stage === 'discover' && JSON.parse(read('.bmuz/stages.json') || '[]')[0]?.pipeline === 'start', trail(now))
+  },
+
+  // F225 (b): a pasted lighthouse concept, "Pin it down" → the proposal says Define → Define runs with what the concept
+  // already chose shown as one-tap Keep, every step in order to the lock gate (an auto run never answers it).
+  async 'entry-concept'() {
+    const dir = scratch('bmuz-entry-concept')
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'start', testAnswers: ENTRY_CONCEPT_ANSWERS }, null, 2))
+    const out = runIn(dir, 'bmuz go', `${TOOLS} ToolSearch`)
+    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
+    const all = journalOf(dir)
+    const trail = () => all.map(j => j.ev + (j.step ? ':' + j.step : '') + (j.why ? ` (${String(j.why).slice(0, 140)})` : '')).join(' ')
+    const intake = JSON.parse(read('.planning/research/intake.json') || '{}')
+    check('F225: the concept was read and the proposal said Define (pin it down), with the gap map for all five stages', intake.proposal?.stage === 'define' && /## Proposal\n[\s\S]*Define \(the blocks\): (partly|covered)[\s\S]*Release \(the public\): /.test(read('.planning/research/intake.md') || ''), JSON.stringify(intake.proposal))
+    const discover = read('.planning/DISCOVER.md') || ''
+    check('F225: the concept\'s material is on DISCOVER.md\'s shelves in the creative\'s own words, marked "from your material"', (discover.match(/ — run 1 · from your material$/gm) || []).length >= 2 && /\n- From your material: pasted text\n/.test(discover), discover.split('## Runs')[0].slice(-800))
+    const UP_TO_LOCK = ['digest', 'direction', 'story', 'bricks', 'pillars', 'fit-check', 'tensions', 'scope', 'risks', 'write', 'concept-lint', 'concept-review', 'review', 'lock']
+    const starts = [...new Set(all.filter(j => j.ev === 'step.start').map(j => j.step))]
+    check('F225: the project moved on to Define, which ran every step in order to the lock gate', JSON.parse(read('bmuz.json') || '{}').pipeline === 'define' && all[0]?.ev === 'stage.enter' && JSON.stringify(starts) === JSON.stringify(UP_TO_LOCK) && all.some(j => j.ev === 'gate.pending' && j.step === 'lock'), trail())
+    check('F225: Define opened with its intro, once', all.filter(j => j.ev === 'intro').length === 1 && all.find(j => j.ev === 'intro')?.step === 'direction')
+    // Keep: an item the concept already chose comes back in Define's result, word for word
+    const state = JSON.parse(read('.bmuz/state.json') || '{}')
+    const given = state.given || {}
+    const texts = v => (Array.isArray(v) ? v : [v]).map(x => String(x && typeof x === 'object' ? x.text : x || '').toLowerCase())
+    const kept = Object.entries(given).filter(([k, v]) => Array.isArray(v) && v.length && Object.values(state.resultsBy || {}).some(r => r && r[k] !== undefined && texts(r[k]).some(t => texts(v).includes(t))))
+    check('F225: what the concept already chose was kept (one tap) in Define\'s results', kept.length >= 1, `given keys: ${Object.keys(given).join(', ')}; direction: ${JSON.stringify((state.resultsBy || {}).direction).slice(0, 300)}`)
+    const card = read('.bmuz/last-card.md') || ''
+    check('F225: it ended with Define\'s concept card', /^## Concept.* — ready for you to check\n/.test(card) && out.includes(card.trim().split('\n')[0]), card.slice(0, 300))
+  },
+
+  // F225 (c): a short rulebook in the folder → read → the proposal screen with its gap map (Design partly: rules
+  // written), shown to the creative; "Somewhere else → Not now" stops there, nothing moves.
+  async 'entry-rulebook'() {
+    const dir = scratch('bmuz-entry-rulebook')
+    writeFileSync(join(dir, 'rules.md'), RULEBOOK)
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'start', testAnswers: ENTRY_RULEBOOK_ANSWERS }, null, 2))
+    const out = runIn(dir, 'bmuz go', TOOLS, true)
+    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
+    const all = journalOf(dir)
+    const trail = () => all.map(j => j.ev + (j.step ? ':' + j.step : '') + (j.why ? ` (${String(j.why).slice(0, 140)})` : '')).join(' ')
+    const intake = JSON.parse(read('.planning/research/intake.json') || '{}')
+    const md = read('.planning/research/intake.md') || ''
+    check('F225: the rulebook file was read (rules.md is the source) and the gap map covers all five stages, Design at least partly', (intake.sources || []).some(s => s.name === 'rules.md') && ['discover', 'define', 'design', 'develop', 'release'].every(s => intake.gaps?.[s]) && intake.gaps.design !== 'not yet', JSON.stringify({ sources: intake.sources, gaps: intake.gaps }))
+    check('F225: the proposal screen: what I read, what it covers, where I\'d start you with one line why, "Start there" first', /\*\*What I read:\*\*\n- "/.test(md) && /\*\*Where I'd start you:\*\* \w+.* — .+/.test(md) && /## Options\n- Start there: /.test(md), md.slice(0, 900))
+    check('F225: the rulebook\'s own words are on the shelves, marked "from your material"', /from your material$/m.test(read('.planning/DISCOVER.md') || ''), (read('.planning/DISCOVER.md') || '').slice(0, 400))
+    check('F225: the creative was shown the proposal; "Not now" kept them in the start, nothing moved', /What it already covers/.test(out) && JSON.parse(read('bmuz.json') || '{}').pipeline === 'start' && all.some(j => j.ev === 'pipeline.done') && !existsSync(join(dir, '.bmuz/stages.json')) && (all.find(j => j.ev === 'step.done' && j.step === 'propose') || {}).result?.stage === 'later', `${trail()}\n      out: ${out.slice(-400)}`)
   },
 
   // Check 16: motor B — "bmuz next" from a shell reads the same pipeline and state.
