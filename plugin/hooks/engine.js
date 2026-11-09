@@ -201,9 +201,12 @@ export function talkPrompt(step, craft, why, auto) {
 // The words that launch a flow step's workflow. They come as the engine's own message (live check L3:
 // the old route, running the workflow's /command, showed in the chat as if the creative had typed it).
 // The guard pins the Workflow call's name and inputs to these whatever Claude sends.
-export function flowPrompt(step, args) {
+// tryNo: 1 for the first try. A retry says so: the same words twice looked like the engine asking again
+// for a run already going, and Claude refused the real retry (live check 2026-11-08).
+export function flowPrompt(step, args, tryNo = 1) {
   return [
     `BMUZ step "${step.id}" — this message comes from the BMUZ engine, not the creative; don't comment on it or offer to stop it.`,
+    ...(tryNo > 1 ? [`This is try ${tryNo} of ${MAX_RETRIES + 1}: the engine itself stopped the last try (it ran too long or failed its check), so no earlier run is still going. Start this fresh one.`] : []),
     `Call the Workflow tool now with name "${step.workflow}" and args ${JSON.stringify(args)}. Then end your turn; the engine checks the result itself.`,
   ].join('\n')
 }
@@ -420,7 +423,9 @@ export function bandText(p, state, now) {
   const step = stepById(p, state.current) || nextStep(p, state)
   const n = step ? p.steps.indexOf(step) + 1 : state.finished.length
   const word = { working: 'working', waiting: 'waiting for you', blocked: 'BLOCKED', idle: 'next up', stalled: 'stalled' }[state.status] || state.status
-  const timed = typeof state.startedAt === 'number'
+  // The clock counts only while something is running (Muzzy 2026-11-09: a clock still ticking on BLOCKED
+  // read as "it's doing something").
+  const timed = state.status === 'working' && typeof state.startedAt === 'number'
   const secs = timed ? Math.max(0, Math.floor((now - state.startedAt) / 1000)) : 0
   const clock = `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`
   return `BMUZ · step ${n} of ${total} · ${step ? step.id : '?'} · ${word}${timed ? ' · ' + clock : ''}`

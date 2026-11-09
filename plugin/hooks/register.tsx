@@ -241,7 +241,7 @@ async function startFlow($: any, step: any) {
   const args = E.fillDeep({ ...step.args, ...(ctx.cfg.flowArgs || {}) }, vars())
   ctx.state = { ...ctx.state, flow: { args, toolUseId: null, taskId: null } }
   await save($)
-  await $.prompt.submit({ text: E.flowPrompt(step, args) })
+  await $.prompt.submit({ text: E.flowPrompt(step, args, (ctx.state.retries[step.id] || 0) + 1) })
 }
 
 async function runScript($: any, step: any) {

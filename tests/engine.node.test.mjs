@@ -94,6 +94,15 @@ test('check 5: band words for working / waiting / done', () => {
   assert.match(E.bandText(P, E.begin(at([]), E.stepById(P, 'name'), 0), 65_000), /step 1 of 5 · name · working · 01:05/)
   assert.match(E.bandText(P, E.begin(at(['name']), E.stepById(P, 'approve'), 0), 0), /waiting for you/)
   assert.match(E.bandText(P, { ...at([]), status: 'done' }, 0), /all 5 steps done/)
+  // the clock counts only while a step runs: no ticking on a gate or a BLOCK
+  assert.doesNotMatch(E.bandText(P, { ...E.begin(at(['name']), E.stepById(P, 'approve'), 0), status: 'waiting' }, 65_000), /\d\d:\d\d/)
+  assert.doesNotMatch(E.bandText(P, { ...E.begin(at([]), E.stepById(P, 'name'), 0), status: 'blocked' }, 65_000), /\d\d:\d\d/)
+})
+
+test('a flow retry says it is a fresh try after the engine stopped the last one; the first try does not', () => {
+  const step = { id: 'hello', kind: 'flow', workflow: 'bmuz:hello-flow' }
+  assert.doesNotMatch(E.flowPrompt(step, {}, 1), /try \d of/)
+  assert.match(E.flowPrompt(step, {}, 2), /try 2 of 3: the engine itself stopped the last try.*no earlier run is still going/)
 })
 
 test('check 3 / doctor: state rebuilt from the journal alone lands on the right step', () => {

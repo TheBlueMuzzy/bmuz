@@ -456,7 +456,7 @@ test('check 5: the band above the prompt shows the step and its status', async (
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'bmuz', surface, component: 'AbovePrompt', props: { bodyColumns: 80, hasSurvey: false } } as any)
     const t = await ui.find({ type: 'Text', text: /BMUZ/ })
-    expect(t?.text).toBe('BMUZ · step 2 of 4 · approve · waiting for you · 01:00')
+    expect(t?.text).toBe('BMUZ · step 2 of 4 · approve · waiting for you') // no clock: nothing is running
     await ui.unmount()
   }
 })

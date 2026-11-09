@@ -1,3 +1,12 @@
 {
-  "pipeline": "hello"
+  "pipeline": "hello",
+  "flowArgs": {
+    "stallTest": 150
+  },
+  "testAgentTools": [
+    "Bash",
+    "ToolSearch"
+  ],
+  "watchdogMs": 25000,
+  "watchdogTickMs": 3000
 }
