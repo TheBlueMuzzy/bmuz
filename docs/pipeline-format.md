@@ -35,6 +35,7 @@ A step runs when everything it `needs` is finished. A step can only need steps *
 **talk** — Claude works in the chat, limited to the step's tools, then calls `step_done` with a result.
 - `tools` (needed): the only tools Claude may use in this step. Everything else is refused and logged as a deviation.
 - `craft` (needed): a `.md` note in the plugin telling Claude what to do, like `craft/review.md`.
+- `handoff`: `true` = the step hands its work back to the creative. Its `step_done` result must carry a hand-off card's words (`card`, docs/handoff-card.md); a missing or empty part fails the step like a done-check. The engine writes the card and shows it at the end of the turn, then starts the next step. Talk steps only.
 - `done`, `writes`: see below.
 
 **gate** — the engine stops and asks the creative with buttons; nothing else runs until they answer.
@@ -79,4 +80,4 @@ Any other hole is refused (a typo like `{nmae}` would otherwise reach the script
 A filled-in path that leaves the project (a result holding `../`) is refused when the step is checked.
 
 ## Example
-`plugin/pipelines/hello.json`: talk "name" → gate "approve" → script "plan" → flow "hello" → talk "review" (read-only).
+`plugin/pipelines/hello.json`: talk "name" → gate "approve" → script "plan" → flow "hello" → talk "review" (read-only; hands back the card).

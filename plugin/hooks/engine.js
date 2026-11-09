@@ -12,7 +12,7 @@ export const NAME_RE = /^[a-z][a-z0-9-]*$/
 const TOP_KEYS = ['id', 'version', 'description', 'watchdogMs', 'steps']
 const STEP_KEYS = {
   common: ['id', 'kind', 'needs', 'description', 'timeoutMs'],
-  talk: ['tools', 'craft', 'done', 'writes'],
+  talk: ['tools', 'craft', 'done', 'writes', 'handoff'],
   gate: ['question', 'options', 'approve', 'backTo'],
   script: ['run', 'writes', 'done'],
   flow: ['workflow', 'args', 'agentTools', 'writes', 'craft', 'done'],
@@ -98,6 +98,7 @@ export function checkPipeline(p) {
       }
     }
     if (s.kind === 'talk') {
+      if (s.handoff !== undefined && typeof s.handoff !== 'boolean') problems.push(`${at}: "handoff" must be true or false`)
       if (!isList(s.tools)) problems.push(`${at} (talk) needs "tools": the list of tools Claude may use in it`)
       if (!s.craft) problems.push(`${at} (talk) needs a "craft" note telling Claude what to do`)
     }
@@ -189,13 +190,30 @@ export function askLines(stepId, asks, day) {
 }
 
 // The words that start a talk step. An auto run gets the never-ask rule up front.
-export function talkPrompt(step, craft, why, auto) {
+// decided = the project's decisions list (a hand-off step is told them, so it doesn't ask them again).
+export function talkPrompt(step, craft, why, auto, decided = []) {
   const lines = [`BMUZ step "${step.id}" — this message comes from the BMUZ engine, not the creative; do the step without commenting on the engine.`]
   if (why) lines.push(`The last try did not pass: ${why}.`)
   if (auto) lines.push(`Auto run: the creative is away. Never ask and never wait for an answer, with AskUserQuestion or in plain text. Where you would ask, pick the sensible default, list it in the result's "asks" as {"question": "...", "picked": "..."}, and carry on.`)
   lines.push(craft)
-  lines.push(`When it is done, call ${ENGINE_TOOL} with result ${JSON.stringify({ [(step.done && step.done.key) || 'ok']: '...' })} and end your turn.`)
+  const result = { [(step.done && step.done.key) || 'ok']: '...' }
+  if (step.handoff) {
+    // The engine writes the card from these words (docs/handoff-card.md); Claude doesn't write it in the chat.
+    result.card = { title: '...', done: '...', see: '...', try: '...', proof: ['...'], todos: 'none', questions: [], next: '...' }
+    lines.push(`This step hands back to the creative: put the hand-off card's words in the result's "card" (every part filled; "none" where there is nothing). Don't write the card in the chat: the engine shows it. Questions go in "questions" as {"key": "short-slug", "q": "...?", "kind": "taste" | "want" | "choice", "options": ["..."]}: taste = how it looks, feels or plays (no "pick": the creative's view comes first); want / choice may add "pick" (one of the options). Engineering calls are yours: decide them and say why in "done", never ask.`)
+    if (decided.length) lines.push(`Already decided (use these, never ask them again): ${decided.map(d => `${d.key} = ${d.answer}`).join('; ')}.`)
+  }
+  lines.push(`When it is done, call ${ENGINE_TOOL} with result ${JSON.stringify(result)} and end your turn.`)
   return lines.join('\n')
+}
+
+// The engine's own message that shows a hand-off card (sent at turn.complete, like every engine message).
+export function cardPrompt(text) {
+  return [
+    'BMUZ hand-off card — this message comes from the BMUZ engine, not the creative. Show the creative the card below exactly as written, word for word, with nothing before or after it, then end your turn.',
+    '',
+    text,
+  ].join('\n')
 }
 
 // The words that launch a flow step's workflow. They come as the engine's own message (live check L3:

@@ -45,6 +45,7 @@
       "needs": ["hello"],
       "tools": ["Read", "Glob", "Grep"],
       "craft": "craft/review.md",
+      "handoff": true,
       "done": { "type": "result-has", "key": "verdict" }
     }
   ]

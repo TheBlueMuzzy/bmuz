@@ -48,3 +48,14 @@ test('questions are numbered, end in "?", options indented under them', () => {
   assert.match(E.checkCard({ ...CARD, questions: [{ key: 'colour', q: 'Pick a colour', kind: 'choice' }] }).why, /must be a question ending in "\?"/)
   assert.match(E.checkCard({ ...CARD, questions: [{ key: 'colour', kind: 'choice' }] }).why, /question 1 has no "q"/)
 })
+
+test('"handoff" is a talk-step setting: true or false, and the talk prompt asks for the card', () => {
+  const talk = { id: 'r', kind: 'talk', tools: ['Read'], craft: 'craft/r.md' }
+  assert.deepEqual(E.checkPipeline({ id: 'x', version: 1, steps: [{ ...talk, handoff: true }] }), [])
+  assert.ok(E.checkPipeline({ id: 'x', version: 1, steps: [{ ...talk, handoff: 'yes' }] }).some(p => /"handoff" must be true or false/.test(p)))
+  assert.ok(E.checkPipeline({ id: 'x', version: 1, steps: [{ id: 's', kind: 'script', run: ['x'], handoff: true }] }).some(p => /unknown setting "handoff"/.test(p)))
+  const words = E.talkPrompt({ ...talk, handoff: true, done: { type: 'result-has', key: 'verdict' } }, 'Review it.', '', false, [{ key: 'colour', answer: 'blue' }])
+  assert.match(words, /"card":\{"title"/)
+  assert.match(words, /Already decided \(use these, never ask them again\): colour = blue/)
+  assert.doesNotMatch(E.talkPrompt(talk, 'x', '', false), /card/)
+})

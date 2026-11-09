@@ -10,7 +10,8 @@ const band = atom({ plugin: 'bmuz', key: 'band' } as const, null)
 
 // Rebuilt from project files at every session start (a reload loses module values).
 let ctx: any = null
-let pending: null | "advance" | "resume" | "retry" | { undo: string } = null
+// { card }: a hand-off card to show at the end of this turn; the next step starts after it is shown.
+let pending: null | "advance" | "resume" | "retry" | { undo: string } | { card: string } = null
 let watchdogBusy = false
 let sessionInteractive = false
 let sessionAuto = false // "bmuz auto" typed: this session runs unattended
@@ -343,12 +344,28 @@ async function addQuestions($: any, stepId: string, asks: any) {
   await journal($, { ev: 'ask', step: stepId, count: lines.length })
 }
 
+// A hand-off step passed: the engine writes its card (kept in .bmuz/last-card.md too, in case the
+// session ends before it is shown). Returns the card's text.
+async function handOff($: any, step: any, card: any) {
+  const shown = (card.questions || []).map((q: any, i: number) => ({ ...q, n: i + 1 }))
+  const text = E.renderCard(card, shown)
+  await $.fs.write(`${ctx.dir}/.bmuz/last-card.md`, text + '\n')
+  await journal($, { ev: 'card', step: step.id, questions: shown.map((q: any) => q.n) })
+  return text
+}
+
 async function stepDone($: any, e: any) {
   const step = E.stepById(ctx.pipeline, ctx.state.current)
-  const { asks, ...result } = e.result && typeof e.result === 'object' ? e.result : ({} as any)
+  const { asks, card, ...result } = e.result && typeof e.result === 'object' ? e.result : ({} as any)
   await addQuestions($, step.id, asks)
-  const verdict = E.doneCheck(step, vars(), await look($, step, result))
+  // A hand-off step without a good card is not done, the same as a failed done-check (retries, then BLOCKED).
+  const cardVerdict = step.handoff ? E.checkCard(card) : { ok: true }
+  const verdict = cardVerdict.ok ? E.doneCheck(step, vars(), await look($, step, result)) : cardVerdict
   const next = await settle($, step, verdict, result)
+  if (next === 'next' && step.handoff) {
+    pending = { card: await handOff($, step, card) }
+    return { result: 'Recorded. End your turn now; the BMUZ engine shows the hand-off card itself.' }
+  }
   if (next === 'next') {
     pending = "advance"
     return { result: 'Recorded. End your turn now; the BMUZ engine starts the next step itself.' }
@@ -623,7 +640,12 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
     if (!ctx || (e as any).agentId) return r
-    if (pending) {
+    if (pending && typeof pending === 'object' && 'card' in pending) {
+      // The hand-off card, as the engine's own message; the next step starts when that turn ends.
+      const text = pending.card
+      pending = 'advance'
+      await $.prompt.submit({ text: E.cardPrompt(text) })
+    } else if (pending) {
       const resume = pending === 'resume'
       pending = null
       await advance($, resume)

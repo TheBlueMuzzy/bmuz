@@ -8,9 +8,12 @@ const PIPE = {
     { id: 'name', kind: 'talk', needs: [], tools: ['AskUserQuestion'], craft: 'craft/name.md', done: { type: 'result-has', key: 'name' } },
     { id: 'approve', kind: 'gate', needs: ['name'], question: 'Approve {name}?', options: ['Change the name', 'Approve'], approve: 'Approve', backTo: 'name' },
     { id: 'plan', kind: 'script', needs: ['approve'], run: ['node', 'x.mjs'], writes: ['plan.json'], done: { type: 'file-json-has', path: 'plan.json', key: 'name' } },
-    { id: 'review', kind: 'talk', needs: ['plan'], tools: ['Read', 'Glob', 'Grep'], craft: 'craft/review.md', done: { type: 'result-has', key: 'verdict' } },
+    { id: 'review', kind: 'talk', needs: ['plan'], tools: ['Read', 'Glob', 'Grep'], craft: 'craft/review.md', handoff: true, done: { type: 'result-has', key: 'verdict' } },
   ],
 }
+
+// A hand-off card with every part (F213, docs/handoff-card.md).
+const CARD = { title: 'Hello page for Moon Goat', done: 'it matches the plan', see: 'a heading', try: 'open hello.html', proof: ['read both files'], todos: 'none', next: 'nothing to type' }
 
 function state(over: Record<string, unknown>) {
   return JSON.stringify({ pipeline: 'hello', current: null, status: 'idle', results: { name: 'Moon Goat' }, retries: {}, finished: [], blocked: null, startedAt: 1, ...over })
@@ -459,4 +462,47 @@ test('check 5: the band above the prompt shows the step and its status', async (
     expect(t?.text).toBe('BMUZ · step 2 of 4 · approve · waiting for you') // no clock: nothing is running
     await ui.unmount()
   }
+})
+
+// ---- F213: the engine-written hand-off card ----
+
+// At the review step (a hand-off step), with prompts and turn ends recorded.
+function atReview(on: any, extra: Record<string, string> = {}) {
+  mock.clock(on, { now: Date.UTC(2026, 10, 9) })
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, { ...base({ current: 'review', status: 'working', finished: ['name', 'approve', 'plan'] }), ...extra })
+  return { w, prompts }
+}
+
+const endTurn = ($: any, id: string) => $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: id } as any)
+
+test('F213: a hand-off step\'s step_done without a full card is refused like a failed done-check', async ($, on) => {
+  const { w } = atReview(on)
+  await start($, false)
+  const { see, ...noSee } = CARD
+  const r: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { verdict: 'ok', card: noSee } } as any)
+  expect(String(r.result ?? r.text ?? JSON.stringify(r))).toMatch(/Not done: the card's "see" is missing or empty.*retry 1 of 2/)
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(st.status).toBe('working')
+  expect(st.retries.review).toBe(1)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"retry","step":"review"/)
+})
+
+test('F213: a good card is shown by the engine\'s own message at turn.complete, then the pipeline finishes', async ($, on) => {
+  const { w, prompts } = atReview(on)
+  await start($, false)
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { verdict: 'matches', card: CARD } } as any)
+  expect(prompts).toEqual([]) // nothing is sent from inside the tool hook
+  await endTurn($, 't1')
+  expect(prompts.length).toBe(1)
+  expect(prompts[0]).toMatch(/^BMUZ hand-off card — this message comes from the BMUZ engine/)
+  expect(prompts[0]).toMatch(/## Hello page for Moon Goat — ready for you to check\n\*\*Done:\*\* it matches the plan\n/)
+  expect(prompts[0]).toMatch(/\*\*Questions:\*\* none\n\*\*Next:\*\* nothing to type$/)
+  expect(w.files['/proj/.bmuz/last-card.md']).toMatch(/^## Hello page for Moon Goat/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('idle') // the card turn comes first
+  await endTurn($, 't2')
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('done')
+  expect(prompts.length).toBe(1)
 })
