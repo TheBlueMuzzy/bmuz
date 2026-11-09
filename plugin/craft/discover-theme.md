@@ -12,4 +12,5 @@ The questions:
 
 Then draft 3 to 5 research questions for the theme dig: about the subject itself (what it really is, its systems, history, textures, conflicts; its things and their states; what acts on them), never an answer ("What does a lighthouse keeper's day actually involve?", not "Should the game have a day-night cycle?"). Show them numbered, one line each, and ask once with AskUserQuestion: keep them, veto one, edit one, or add one. The research looks at each question through four lenses (Mainstream, Extremes & failures, Outside the field, Disconfirm), so don't write one question per lens.
 
+Every key comes back as a JSON list. Never write who said it inside an item's text (DISCOVER.md marks that). In an auto run (nobody to answer) fill each list with 2–4 suggestions of your own, built from the idea and the recap: bricks to react to later, never left empty.
 Hand back (lists, [] when empty): "senses", "known", "life", "outside", "tone", and "questions": ["...?"] (3–5, each ending in "?").

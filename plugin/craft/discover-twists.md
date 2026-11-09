@@ -9,4 +9,5 @@ Ask the way the earlier steps did (AskUserQuestion, 1–3 per call, short option
 33. What if we took something away (no words, one button, only cards)? Any limit that sounds fun?
 34. What's the most extreme version of this idea?
 
+Every key comes back as a JSON list. Never write who said it inside an item's text (DISCOVER.md marks that). In an auto run (nobody to answer) fill each list with 2–4 suggestions of your own, built from the idea and the recap: bricks to react to later, never left empty.
 Hand back (lists, [] when empty): "missed", "anchors", "hooks", "twists" (take-aways, limits, odd mashups), "extremes".

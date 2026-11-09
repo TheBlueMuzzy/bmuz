@@ -17,6 +17,7 @@ The questions:
 30. Before the research looks for games like this: any games this reminds you of already? What do you love or hate in them?
 Then build the verb × noun grid yourself (the main verbs × the main nouns): what each verb does to each noun. Flag a cell "empty" when the verb does nothing to it, "surprising" when it does something unexpected: those cells are where new mechanisms come from. Show the flagged cells and ask if any spark something.
 
+Every key comes back as a JSON list. Never write who said it inside an item's text (DISCOVER.md marks that). In an auto run (nobody to answer) fill each list with 2–4 suggestions of your own, built from the idea and the recap: bricks to react to later, never left empty.
 Hand back (lists, [] when empty):
 - "nouns": [{"thing", "states": [...], "acts": "acts on / acted on by …", "wants", "stops", "his"?}] (wants/stops for living things)
 - "verbs": [{"theme": "trim", "outcome": "keep a resource from running down", "combines": "...", "his"?}]

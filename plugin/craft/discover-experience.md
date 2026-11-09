@@ -13,6 +13,7 @@ The questions:
 14. What kind of player do you picture, and what do they believe about themselves as a player (explorer, collector, schemer)?
 If they have little to say on one, move on: every question is optional, and wrapping up is always open.
 
+Every key comes back as a JSON list. Never write who said it inside an item's text (DISCOVER.md marks that). In an auto run (nobody to answer) fill each list with 2–4 suggestions of your own, built from the idea and the recap: bricks to react to later, never left empty.
 Hand back (each a list, [] when empty):
 - "experiences": [situations]; "stories": [what a player tells a friend]; "aesthetics": [MDA words they marked]; "fantasies": ["I want to …"]
 - "curiosity": [questions in the player's head]; "toy": [the toy in it]; "players": [the player they picture]

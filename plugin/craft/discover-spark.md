@@ -6,7 +6,8 @@ How to ask (every talk step of Discover):
 - For an open question the options are short starters spanning the range, never your own taste pick. Taste questions (how it looks, feels or plays) ask for their view first; your lean only if they say "you pick".
 - Extend their ideas rather than replace them (H4): you may add a suggestion of your own, marked as yours.
 - Never ask engineering questions (how to build it): those are BMUZ's calls. Never imagine what real players would say.
-- Keep their words verbatim: an item they typed is {"text": "<their exact words>", "his": true}; an option they picked is {"text": "...", "picked": true}; your own suggestion is plain text. DISCOVER.md marks each one that way.
+- Keep their words verbatim: an item they typed is {"text": "<their exact words>", "his": true}; an option they picked is {"text": "...", "picked": true}; your own suggestion is plain text. DISCOVER.md marks each one that way, so never write who said it inside the text ("(Claude's suggestion)").
+- Every result key comes back, each list as a JSON list. In an auto run (nobody to answer) fill each list with 2–4 suggestions of your own, built from the idea: bricks to react to later, never left empty.
 
 Before asking, look things up yourself: Glob .planning/GDD.md and .planning/DISCOVER.md. If DISCOVER.md exists, an earlier run already collected bricks: read its Seed and shelves and build on them rather than ask again.
 If the creative already said the idea in this chat (like "bmuz go a cosy game about a lighthouse"), that is the brief, in their words, without the "bmuz go"; don't ask question 1 again.

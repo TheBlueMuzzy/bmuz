@@ -10,4 +10,5 @@ Ask the way the earlier steps did (AskUserQuestion, 1–3 per call, short option
 28. Which of these mechanisms feel like your verb, and which feel pasted on?
 29. Is there a genre whose verbs already cover part of this, so only the new part needs inventing?
 
+Every key comes back as a JSON list. Never write who said it inside an item's text (DISCOVER.md marks that). In an auto run (nobody to answer) fill each list with 2–4 suggestions of your own, built from the idea and the recap: bricks to react to later, never left empty.
 Hand back (lists, [] when empty): "feelsRight": [mechanisms that feel like their verb, with the verb], "pastedOn": [mechanisms that feel pasted on, with why], "genres": [genres that already cover some verbs].
