@@ -1,0 +1,50 @@
+{
+  "id": "discover",
+  "version": 1,
+  "description": "Discover: the idea in the creative's words, a research flow with every source checked, the players and the feeling, then the hand-off card",
+  "watchdogMs": 1200000,
+  "steps": [
+    {
+      "id": "what",
+      "kind": "talk",
+      "needs": [],
+      "description": "what are we discovering: a whole game, a feature in a game, or an itch",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob"],
+      "craft": "craft/discover-what.md",
+      "done": { "type": "result-has", "key": "topic" }
+    },
+    {
+      "id": "research",
+      "kind": "flow",
+      "needs": ["what"],
+      "description": "three helpers research the topic, one merges, every source checked",
+      "workflow": "bmuz:research-flow",
+      "args": { "topic": "{topic}", "out": ".planning/research/discover.md" },
+      "agentTools": ["ToolSearch", "WebSearch", "WebFetch", "StructuredOutput", "Write"],
+      "writes": [".planning/research/discover.md"],
+      "craft": "craft/discover-research.md",
+      "timeoutMs": 1800000,
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/check-sources.mjs", ".planning/research/discover.md"] }
+    },
+    {
+      "id": "shape",
+      "kind": "talk",
+      "needs": ["research"],
+      "description": "the players, the feeling, references, rough experience targets",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Write", "Edit"],
+      "craft": "craft/discover-shape.md",
+      "writes": [".planning/research/discover-notes.md"],
+      "done": { "type": "file-contains", "path": ".planning/research/discover-notes.md", "text": "## Experience targets" }
+    },
+    {
+      "id": "handoff",
+      "kind": "talk",
+      "needs": ["shape"],
+      "description": "the hand-off card: what was found, where, the questions for the creative",
+      "tools": ["Read", "Glob", "Grep"],
+      "craft": "craft/discover-handoff.md",
+      "handoff": true,
+      "done": { "type": "result-has", "key": "found" }
+    }
+  ]
+}
