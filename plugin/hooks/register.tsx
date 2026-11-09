@@ -552,7 +552,16 @@ export const register: Register = on => {
   // work in every session kind. The engine's own work then runs at turn.complete,
   // the one place where starting a turn, a command or a question is allowed.
   on('prompt.submit', async ($, e, next) => {
-    if (!ctx) return next(e)
+    if (!ctx) {
+      // Outside a BMUZ project the engine stays off, but a typed "bmuz go" gets a plain answer, not a guess
+      // (Muzzy 2026-11-08: "if I type bmuz go into the normal cli, is the expected result the same?").
+      const typed = String((e as any).text)
+      const origin = (e as any).origin?.kind
+      if (origin !== 'plugin' && origin !== 'peer' && origin !== 'task-notification' && /^\s*bmuz (go|approve|auto|undo|retry|doctor)\b/i.test(typed)) {
+        return next({ ...(e as any), text: `${typed}\n(BMUZ engine: off in this folder: there is no bmuz.json here, so nothing runs. Tell the creative that in one plain line: BMUZ steps run inside a BMUZ project folder.)` })
+      }
+      return next(e)
+    }
     if (await $.fs.exists(`${ctx.dir}/.bmuz/test-fault-prompt`)) throw new Error('injected fault (test)')
     const kind = (e as any).origin?.kind
     const text = String((e as any).text)

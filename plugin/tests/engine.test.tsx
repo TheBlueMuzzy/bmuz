@@ -149,6 +149,18 @@ test('live check 2026-11-08: "bmuz go" while this try\'s flow launch is on its w
   expect(w.files['/proj/.bmuz/journal.jsonl']).not.toMatch(/"ev":"resume"/)
 })
 
+test('outside a BMUZ project, a typed "bmuz go" is told plainly that BMUZ is off here', async ($, on) => {
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  const w = world(on, {})
+  delete w.files['/proj/bmuz.json']
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await $.prompt.submit({ text: 'make me a sandwich' } as any)
+  expect(prompts[0]).toMatch(/off in this folder: there is no bmuz.json here/)
+  expect(prompts[1]).toBe('make me a sandwich')
+})
+
 test('"bmuz auto" makes the session an auto run from then on', async ($, on) => {
   mock.clock(on, { now: 1000 })
   on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
