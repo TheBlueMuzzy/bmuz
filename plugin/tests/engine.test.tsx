@@ -119,6 +119,36 @@ test('check 15: a session that lists the question tool but refuses it (a backgro
   expect(prompts.some(p => /nobody will answer/.test(p))).toBe(true) // the turn-end rule keeps it moving
 })
 
+test('live check 2026-11-08: a person pressing Esc on the question does not make the session an auto run', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: "The user doesn't want to proceed with this tool use. The tool use was rejected.", isError: true }))
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  await start($, true)
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).not.toMatch(/"ev":"auto.detected"/)
+  // still a person's window: plan mode may hand in its plan
+  const exit: any = await $.tool.call({ tool: 'ExitPlanMode' } as any)
+  expect(refused(exit)).toBe(false)
+})
+
+test('live check 2026-11-08: "bmuz go" while this try\'s flow launch is on its way does not ask again', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, base({ current: null, status: 'idle', finished: ['name', 'approve', 'plan'] }))
+  w.files.PIPELINE = JSON.stringify({ ...PIPE, steps: [...PIPE.steps.slice(0, 3), { id: 'hello', kind: 'flow', needs: ['plan'], workflow: 'bmuz:hello-flow', args: { name: '{name}' } }, { ...PIPE.steps[3], needs: ['hello'] }] })
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as any)
+  const asks = () => prompts.filter(p => /Call the Workflow tool/.test(p)).length
+  expect(asks()).toBe(1)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't2' } as any)
+  expect(asks()).toBe(1)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).not.toMatch(/"ev":"resume"/)
+})
+
 test('"bmuz auto" makes the session an auto run from then on', async ($, on) => {
   mock.clock(on, { now: 1000 })
   on('prompt.submit', (_: any, e: any) => ({ text: e.text }))

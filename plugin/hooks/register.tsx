@@ -14,6 +14,9 @@ let pending: null | "advance" | "resume" | "retry" | { undo: string } = null
 let watchdogBusy = false
 let sessionInteractive = false
 let sessionAuto = false // "bmuz auto" typed: this session runs unattended
+// The flow try this session already asked Claude to launch ("hello#2"). A "bmuz go" while it is on its
+// way must not ask again (live check 2026-11-08: the second ask made Claude refuse the next real try).
+let flowAskedHere = ''
 
 const SAFE_DENY = 'BMUZ engine hit an error in its own code, so it refused this action to be safe. Run /bmuz-doctor.'
 
@@ -296,6 +299,8 @@ async function advance($: any, resume: boolean) {
       }
     } else if (s.status === 'working' && !resume && step.kind !== 'script') {
       return // a talk or flow step is already under way
+    } else if (s.status === 'working' && step.kind === 'flow' && flowAskedHere === `${step.id}#${s.retries[step.id] || 0}`) {
+      return // this session already asked for this try's launch; the watchdog covers it if it never comes
     }
     if (isRestart && resume) await journal($, { ev: 'resume', step: step.id, status: s.status })
     ctx.state = E.begin(ctx.state, step, await $.clock.now())
@@ -307,7 +312,10 @@ async function advance($: any, resume: boolean) {
     resume = false
 
     if (step.kind === 'talk') return startTalk($, step, '')
-    if (step.kind === 'flow') return startFlow($, step)
+    if (step.kind === 'flow') {
+      flowAskedHere = `${step.id}#${ctx.state.retries[step.id] || 0}`
+      return startFlow($, step)
+    }
     if (step.kind === 'gate') {
       const answer = await askGate($, step)
       if (answer === null) return
@@ -463,6 +471,7 @@ export const register: Register = on => {
     lastBand = ''
     sessionInteractive = (e as any).isInteractive === true
     sessionAuto = false
+    flowAskedHere = ''
     const ok = await startEngine($)
     if (!ctx) return r
     // Commands and timers exist even when the start failed, so /bmuz-doctor is there to get it going.
@@ -510,8 +519,10 @@ export const register: Register = on => {
     if (call.tool === 'AskUserQuestion' && !ctx.auto) {
       // A background session lists the question tool but refuses it (headless check 15): then nobody
       // can answer, so from here this session is an auto run and the turn-end rule keeps it moving.
+      // A person pressing Esc on the question is someone saying no, not nobody being there (live check
+      // 2026-11-08: Esc turned a live window into an auto run, which then blocked plan mode's hand-in).
       const res: any = await next(e)
-      if (res?.deny || res?.isError) {
+      if ((res?.deny || res?.isError) && !E.isPersonDeclining(res)) {
         ctx.auto = true
         await journal($, { ev: 'auto.detected', why: 'the question tool was refused: nobody can answer in this session' })
       }

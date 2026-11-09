@@ -220,6 +220,14 @@ export function fillDeep(v, vars) {
   return v
 }
 
+// A refused question that a person refused (Esc, or "no" on the box): Claude Code's fixed wording for a
+// tool use the user rejected. Only other refusals mean nobody can answer in this session.
+export function isPersonDeclining(res) {
+  // (the whole result is read: which field carries the words isn't in the mod docs)
+  const text = JSON.stringify(res ?? '')
+  return /doesn't want to proceed|tool use was rejected/i.test(text)
+}
+
 // Plan mode's own moves: loading and calling ExitPlanMode, and writing its plan file
 // (~/.claude/plans/*.md, outside the project). A mod can't switch plan mode off, so the engine lets
 // these through and nothing else; the work itself still waits for the step's own tools
