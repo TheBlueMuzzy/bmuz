@@ -20,7 +20,8 @@ function state(over: Record<string, unknown>) {
 }
 
 // A fake disk and session beneath the plugin. Returns the files, the calls the tools got, and the runs.
-function world(on: any, files: Record<string, string>) {
+// onRun: what a command answers (default: exit 0, "{}").
+function world(on: any, files: Record<string, string>, onRun?: (argv: string[]) => { exitCode: number, stdout: string }) {
   const reached: string[] = []
   const runs: string[][] = []
   on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
@@ -44,7 +45,8 @@ function world(on: any, files: Record<string, string>) {
   on('ui.toast', () => ({ value: undefined }))
   on('process.run', (_: any, e: any) => {
     runs.push([...e.argv])
-    return { value: { exitCode: 0, stdout: '{}', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    const said = onRun ? onRun([...e.argv]) : { exitCode: 0, stdout: '{}' }
+    return { value: { ...said, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('tool.call', (_: any, e: any) => { reached.push(String(e.tool)); return { result: 'ran' } })
   files['/proj/bmuz.json'] = '{"pipeline":"hello","watchdogTickMs":3600000}'
@@ -564,4 +566,56 @@ test('F213: a damaged questions.json is said plainly; the message still goes thr
   expect(prompts[1]).toBe('hello')
   const read: any = await $.tool.call({ tool: 'Read', file_path: '/proj/hello.html' } as any)
   expect(refused(read)).toBe(false)
+})
+
+// F217: a flow step whose done-check is a command (the research flow's source check).
+function sourcedFlow(on: any, exitCodes: number[]) {
+  // the source check's answers, in order; other commands pass
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  const w = world(on, base({}), argv => {
+    const code = /check-sources/.test(argv.join(' ')) ? (exitCodes.shift() ?? 0) : 0
+    return { exitCode: code, stdout: code ? '✘ r.md: 1 source problem\n  - source 2 (https://x.test/gone) is a dead link: answered 404' : '✔ r.md' }
+  })
+  const ran = w.runs
+  const research = { id: 'research', kind: 'flow', needs: ['approve'], workflow: 'bmuz:research-flow', args: { topic: '{name}', out: 'r.md' }, writes: ['r.md'], done: { type: 'script-ok', run: ['node', '{plugin}/scripts/check-sources.mjs', 'r.md'] } }
+  w.files.PIPELINE = JSON.stringify({ ...PIPE, steps: PIPE.steps.map(s => (s.id === 'plan' ? research : s.id === 'review' ? { ...s, needs: ['research'] } : s)) })
+  w.files['/proj/.bmuz/state.json'] = state({ current: 'research', status: 'working', finished: ['name', 'approve'], flow: { args: { topic: 'Moon Goat', out: 'r.md' }, toolUseId: 'tu1', taskId: 'wf1' } })
+  const result = () => $result('wf1', 'tu1')
+  return { w, ran, result }
+}
+const $result = (task: string, tu: string) => ({ text: `<task-notification>\n<task-id>${task}</task-id>\n<tool-use-id>${tu}</tool-use-id>\n<status>completed</status>\n<result>{"wrote":"r.md"}</result>\n</task-notification>`, origin: { kind: 'task-notification' } })
+
+test('F217: a flow\'s "script-ok" check runs its command in the project; exit 0 finishes the step', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, ran, result } = sourcedFlow(on, [0])
+  await start($, false)
+  await $.prompt.submit(result() as any)
+  const check = ran.find(r => /check-sources/.test(r.join(' ')))!
+  expect(check.slice(-1)).toEqual(['r.md'])
+  expect(check[1]).toMatch(/scripts.check-sources\.mjs$/) // {plugin} filled in
+  const j = w.files['/proj/.bmuz/journal.jsonl']
+  expect(j).toMatch(/"ev":"check.ran","step":"research","exitCode":0/)
+  expect(j).toMatch(/"ev":"step.done","step":"research"/)
+})
+
+test('F217: a failing source check is a failed try (the check\'s words as the reason); 3 fails BLOCK and roll back the report', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, result } = sourcedFlow(on, [1, 1, 1])
+  w.files['/proj/.bmuz/checkpoint-research.json'] = JSON.stringify({ 'r.md': null }) // no report before the step
+  w.files['/proj/r.md'] = '## Summary\n- a claim [2]\n'
+  await start($, false)
+  await $.prompt.submit(result() as any)
+  const j = () => w.files['/proj/.bmuz/journal.jsonl']
+  expect(j()).toMatch(/"ev":"retry","step":"research","attempt":2,"why":"the check node check-sources\.mjs said: ✘ r\.md: 1 source problem\\n  - source 2 \(https:\/\/x\.test\/gone\) is a dead link: answered 404"/)
+  // two more tries come back failing the same way
+  for (const tu of ['tu2', 'tu3']) {
+    const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+    w.files['/proj/.bmuz/state.json'] = JSON.stringify({ ...st, current: 'research', status: 'working', flow: { args: {}, toolUseId: tu, taskId: 'wf' } })
+    await $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: false })
+    await $.prompt.submit($result('wf', tu) as any)
+  }
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(st.status).toBe('blocked')
+  expect(st.blocked.why).toMatch(/dead link/)
+  expect(j()).toMatch(/"ev":"blocked","step":"research".*"rolledBack":\["r\.md"\]/)
 })

@@ -21,6 +21,21 @@ const refuses = (p, want) => {
 test('the shipped pipelines pass, files included', () => {
   assert.deepEqual(E.checkPipeline(HELLO), [])
   assert.deepEqual(checkFile(fileURLToPath(new URL('../plugin/pipelines/hello.json', import.meta.url))), [])
+  // F217: the discover pipeline (a "script-ok" done-check, the research flow pre-approved for auto runs)
+  assert.deepEqual(checkFile(fileURLToPath(new URL('../plugin/pipelines/discover.json', import.meta.url))), [])
+})
+
+test('a "script-ok" check naming a {plugin} script that is missing is refused', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bmuz-pipe-'))
+  try {
+    const p = JSON.parse(readFileSync(new URL('../plugin/pipelines/discover.json', import.meta.url), 'utf8'))
+    p.id = 'gone'
+    p.steps.find(s => s.id === 'research').done.run[1] = '{plugin}/scripts/no-such-check.mjs'
+    writeFileSync(join(dir, 'gone.json'), JSON.stringify(p))
+    assert.ok(checkFile(join(dir, 'gone.json')).some(x => /the script scripts\/no-such-check\.mjs is missing/.test(x)))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('the whole file: not an object, no steps, wrong version, unknown or bad top settings', () => {
