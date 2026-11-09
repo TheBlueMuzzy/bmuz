@@ -51,6 +51,7 @@ A step runs when everything it `needs` is finished. A step can only need steps *
 
 **script** — the engine runs a command itself, no Claude involved.
 - `run` (needed): the command as a list, like `["node", "{plugin}/scripts/write-plan.mjs", "{project}", "{name}"]`. It runs in the project folder.
+- A command that exits with an error is a failed try, and what it printed is the reason (the retry, the BLOCK and the band say it). A script that refuses should print why in plain words, like Define's stage: "Not ready for Design: the pillars (step "pillars") is still open…".
 - `done`, `writes`.
 
 **flow** — the engine launches a saved workflow with its inputs pinned (Claude can't change them) and reads its result. Every workflow a pipeline launches must be pre-approved in `plugin/settings/auto-run.json` (`Workflow(<plugin:name>)`), so an overnight run never stops at Claude Code's "run this workflow?" question; the check refuses a pipeline whose workflow isn't listed.
@@ -92,6 +93,11 @@ Text in `question`, `run`, `args` and a done-check's `path` / `text` / `run` can
 
 Any other hole is refused (a typo like `{nmae}` would otherwise reach the script as it is).
 A filled-in path that leaves the project (a result holding `../`) is refused when the step is checked.
+
+## Test-only settings in bmuz.json
+For BMUZ's own tests; never in a real project.
+- `testAgentTools`: extra tools a flow's helpers may use (the stall test's helper runs Bash).
+- `testAnswers`: `{ "<talk step id>": <the creative's answers> }`. The engine adds them to that talk step's hidden instructions as the creative's own words, so a pipeline whose talk steps choose (Define: taste, which an auto run never does) can run end to end headless. **Refused unless the session runs with `BMUZ_TEST=1`** (the headless harness sets it): without it every tool is refused and the engine says why, so a stray setting can never choose for the creative.
 
 ## Example
 `plugin/pipelines/hello.json`: talk "name" → gate "approve" → script "plan" → flow "hello" → talk "review" (read-only; hands back the card).

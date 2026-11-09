@@ -273,6 +273,8 @@ export function talkPrompt(step, craft, why, auto, decided = [], more = {}) {
   // compacted chat (the conversation alone would forget it).
   const recap = Object.fromEntries(Object.entries(more.recap || {}).filter(([, v]) => v !== undefined && v !== null))
   if (Object.keys(recap).length) lines.push(`Collected so far by earlier steps (build on it; don't ask it again): ${JSON.stringify(recap)}`)
+  // A test run's stand-in for the creative (bmuz.json "testAnswers", only with BMUZ_TEST=1: testAnswersProblem).
+  if (more.answers !== undefined && more.answers !== null) lines.push(`Test run: these are the creative's own answers to this step's questions, as if they had typed them in the chat: ${JSON.stringify(more.answers)}. Treat them exactly as the creative's words ({"text": "...", "his": true}; a brick they named keeps its id). They replace the auto run's rule for the keys they answer; don't ask anything.`)
   lines.push(craft)
   const result = {}
   for (const k of step.results || []) result[k] = '...'
@@ -291,6 +293,20 @@ export function talkPrompt(step, craft, why, auto, decided = [], more = {}) {
   }
   lines.push(`When it is done, call ${ENGINE_TOOL} with result ${JSON.stringify(result)} and end your turn.`)
   return lines.join('\n')
+}
+
+// ---- Test answers (bmuz.json "testAnswers": BMUZ's own tests only) ----
+// A pipeline whose talk steps choose (Define: taste, so an auto run chooses nothing) can't be run end to end
+// headless unless something stands in for the creative. "testAnswers" = { <talk step id>: <the creative's
+// answers> } is that stand-in. It is refused unless the session runs with BMUZ_TEST=1 (the test harness sets
+// it), so a real project can't have its choices made for it by a stray setting.
+// Returns null when fine, else the plain-words problem.
+export function testAnswersProblem(cfg, testEnv) {
+  if (!cfg || cfg.testAnswers === undefined) return null
+  if (testEnv !== '1') return 'bmuz.json has "testAnswers", a setting for BMUZ\'s own tests only (it answers talk steps in the creative\'s place); it works only when BMUZ_TEST=1. Take it out of bmuz.json'
+  const a = cfg.testAnswers
+  if (!a || typeof a !== 'object' || Array.isArray(a) || !Object.keys(a).every(k => NAME_RE.test(k))) return 'bmuz.json "testAnswers" must be an object of talk step ids, like {"direction": "..."}'
+  return null
 }
 
 // The one line the creative sees when a talk step starts; talkPrompt's words travel with it as hidden context

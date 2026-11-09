@@ -86,6 +86,9 @@ async function loadCtx($: any) {
     if (problems.length) c.broken = `pipeline ${c.cfg.pipeline} has problems: ${problems.join('; ')}`
     // Test only: let flow helpers use extra tools (the stall test's helper runs Bash sleep).
     for (const s of c.pipeline.steps) if (s.kind === 'flow' && c.cfg.testAgentTools) s.agentTools = [...(s.agentTools || []), ...c.cfg.testAgentTools]
+    // Test only: answers that stand in for the creative at talk steps, refused without BMUZ_TEST=1.
+    const answersProblem = c.cfg.testAnswers === undefined ? null : E.testAnswersProblem(c.cfg, await envValue($, 'BMUZ_TEST'))
+    if (answersProblem && !c.broken) c.broken = answersProblem
   } catch (err) {
     c.broken = `could not load the pipeline: ${String(err)}`
     c.pipeline = { id: '?', steps: [] }
@@ -130,11 +133,16 @@ async function startEngine($: any) {
 // Started with settings/auto-run.json? It sets BMUZ_AUTO=1 in the session's environment, which a
 // child process sees. Unknown (it can't be read) counts as no.
 async function unattendedSettings($: any) {
+  return (await envValue($, 'BMUZ_AUTO')) === '1'
+}
+
+// One environment variable of the session, read by a child process ('' when unset or unreadable).
+async function envValue($: any, name: string) {
   try {
-    const ran: any = await $.process.run(['node', '-e', 'process.stdout.write(process.env.BMUZ_AUTO || "")'], { timeoutMs: 10000 })
-    return String(ran?.stdout ?? '').trim() === '1'
+    const ran: any = await $.process.run(['node', '-e', `process.stdout.write(process.env.${name} || "")`], { timeoutMs: 10000 })
+    return String(ran?.stdout ?? '').trim()
   } catch (err) {
-    return false
+    return ''
   }
 }
 
@@ -256,7 +264,8 @@ async function startTalk($: any, step: any, why: string) {
   // A hand-off step is told what is already decided, so it doesn't ask it again.
   const decided = step.handoff ? await readList($, 'decisions.json') : []
   const recap = Object.fromEntries((step.recap || []).map((k: string) => [k, ctx.state.results[k]]))
-  hiddenNotes = E.talkPrompt(step, craft, why, ctx.auto, decided, { recap, wrap: wrapWords(step) })
+  const answers = ctx.cfg.testAnswers ? ctx.cfg.testAnswers[step.id] : undefined
+  hiddenNotes = E.talkPrompt(step, craft, why, ctx.auto, decided, { recap, wrap: wrapWords(step), answers })
   await $.prompt.submit({ text: E.talkHeadline(step) })
 }
 
@@ -316,9 +325,13 @@ async function runScript($: any, step: any) {
   const argv = E.fillDeep(step.run, vars())
   const ran = await $.process.run(argv, { cwd: ctx.dir, timeoutMs: 60000 })
   await journal($, { ev: 'script.ran', step: step.id, exitCode: ran.exitCode, stdout: ran.stdout.trim().slice(0, 300) })
-  const verdict = E.doneCheck(step, vars(), await look($, step, null))
-  if (verdict.ok && ran.exitCode !== 0) return { ok: false, why: `script exited ${ran.exitCode}` }
-  return verdict
+  // A script that refuses says why in its output (Define's stage: "Not ready for Design: the pillars are still
+  // open…"): those words are the reason, in place of a done-check that could only say a file lacks a line.
+  if (ran.exitCode !== 0) {
+    const said = String(ran.stdout || ran.stderr || '').trim()
+    return { ok: false, why: `script exited ${ran.exitCode}${said ? `: ${said.length > 600 ? said.slice(0, 600) + '…' : said}` : ''}` }
+  }
+  return E.doneCheck(step, vars(), await look($, step, null))
 }
 
 async function askGate($: any, step: any) {
