@@ -817,7 +817,7 @@ export function rebuildFromJournal(pipelineId, lines) {
     if (j.ev === 'step.start') s = { ...s, current: j.step, status: j.kind === 'gate' ? 'waiting' : 'working', startedAt: j.t }
     if (j.ev === 'step.done') s = finish(s, { id: j.step }, j.result || null)
     if (j.ev === 'wrap') s = applyWrap(s, j.skipped || [], j.empties || {})
-    if (j.ev === 'retry') s ={ ...s, retries: { ...s.retries, [j.step]: (s.retries[j.step] || 0) + 1 } }
+    if (j.ev === 'retry') s = { ...s, retries: { ...s.retries, [j.step]: (s.retries[j.step] || 0) + 1 } }
     if (j.ev === 'gate.back') s = { ...dropSteps(s, new Set(j.dropped || [])), current: null, status: 'idle', startedAt: null }
     if (j.ev === 'undo') s = { ...dropSteps(s, new Set(j.redo || [])), current: null, status: 'idle', startedAt: null, blocked: null }
     if (j.ev === 'blocked') s = { ...s, status: 'blocked', blocked: { step: j.step, why: j.why }, retries: { ...s.retries, [j.step]: MAX_RETRIES + 1 } }

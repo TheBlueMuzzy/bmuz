@@ -117,7 +117,7 @@ const scenarios = {
   // .planning/DISCOVER.md, and ends with the engine's brick board card. Every source in the three research
   // reports must answer; nothing is written outside .planning/research and .planning/DISCOVER.md.
   async discover() {
-    const dir = process.env.BMUZ_DISCOVER_PROJECT || join(here, '..', '..', '.scratch', 'bmuz-discover-test')
+    const dir = process.env.BMUZ_DISCOVER_PROJECT || join(here, '..', '..', '.scratch', 'bmuz-discover-headless')
     rmSync(join(dir, '.bmuz'), { recursive: true, force: true })
     rmSync(join(dir, '.planning'), { recursive: true, force: true })
     mkdirSync(dir, { recursive: true })

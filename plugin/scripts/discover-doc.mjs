@@ -327,6 +327,8 @@ function main() {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..')
   const readJson = f => JSON.parse(readFileSync(join(project, f), 'utf8'))
   const cfg = readJson('bmuz.json')
+  // bmuz.json is hand-editable: the pipeline name must be a plain name before it goes into a path.
+  if (typeof cfg.pipeline !== 'string' || !E.NAME_RE.test(cfg.pipeline)) { console.log(`✘ bmuz.json "pipeline" isn't a plain pipeline name`); process.exit(1) }
   const pipeline = JSON.parse(readFileSync(join(root, 'pipelines', `${cfg.pipeline}.json`), 'utf8'))
   const state = readJson('.bmuz/state.json')
   // The run's key: when its first step last started (from the journal). A save step that runs again for
