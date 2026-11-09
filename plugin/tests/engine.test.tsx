@@ -619,3 +619,42 @@ test('F217: a failing source check is a failed try (the check\'s words as the re
   expect(st.blocked.why).toMatch(/dead link/)
   expect(j()).toMatch(/"ev":"blocked","step":"research".*"rolledBack":\["r\.md"\]/)
 })
+
+// F217: talk steps that hand back several keys ("results"), a slug naming the flow's file, lists as flow args.
+function framed(on: any) {
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, base({}))
+  w.files.PIPELINE = JSON.stringify({
+    id: 'hello', version: 1, steps: [
+      { id: 'frame', kind: 'talk', tools: ['Read'], craft: 'craft/name.md', results: ['brief', 'slug', 'assumptions'] },
+      { id: 'research', kind: 'flow', needs: ['frame'], workflow: 'bmuz:research-flow', args: { brief: '{brief}', assumptions: '{assumptions}', out: 'r/discover-{slug}.md' }, writes: ['r/discover-{slug}.md'] },
+      { id: 'review', kind: 'talk', needs: ['research'], tools: ['Read'], craft: 'craft/review.md', done: { type: 'result-has', key: 'verdict' } },
+    ],
+  })
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ pipeline: 'hello', current: 'frame', status: 'working', results: {}, retries: {}, finished: [], blocked: null, startedAt: 1 })
+  return { w, prompts }
+}
+
+test('F217: a step_done missing a "results" key is a failed try; a slug that is not a slug is too', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = framed(on)
+  await start($, false)
+  const short: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { brief: 'punchy shake', slug: 'punchy-shake' } } as any)
+  expect(String(short.result)).toMatch(/Not done: the result has no "assumptions"/)
+  const bad: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { brief: 'punchy shake', slug: '../escape', assumptions: [] } } as any)
+  expect(String(bad.result)).toMatch(/"slug" names a file, so it must be a short slug/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).retries.frame).toBe(2)
+})
+
+test('F217: the flow gets list results as lists, and its slug-named file is checkpointed', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = framed(on)
+  await start($, false)
+  const done: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { brief: 'punchy shake', slug: 'punchy-shake', assumptions: [{ text: 'more is more', important: true }] } } as any)
+  expect(String(done.result)).toMatch(/Recorded/)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as any)
+  expect(prompts.some(p => p.includes('"assumptions":[{"text":"more is more","important":true}]') && p.includes('"out":"r/discover-punchy-shake.md"'))).toBe(true)
+  expect(JSON.parse(w.files['/proj/.bmuz/checkpoint-research.json'])).toEqual({ 'r/discover-punchy-shake.md': null })
+})

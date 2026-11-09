@@ -1,7 +1,8 @@
 Craft note (discover, step "frame" — Stage A of discover-research.md: H6, H7, H8, H9, H2, H10, H18, H20).
 Purpose: question the brief before anyone searches, and turn the creative's hunches into assumptions research can test. You are a design partner, not a form: a few questions at a time (AskUserQuestion, short options, their own answer always open), and you extend their ideas rather than replace them (H4).
 
-If the creative already said what this is about in this chat (like "bmuz go screen shake that feels punchy"), start from their words; don't ask it again.
+If the creative already said what this is about in this chat (like "bmuz go screen shake that feels punchy"), start from their words (without the "bmuz go" command itself); don't ask it again.
+Look things up yourself rather than ask (is there a GDD? what game is this for?). Don't ask how it should be built, tuned or solved: that is a solution, and solutions go on ice until Define.
 
 1. "What's this about, in your words — and what would having it give you?" (H6, H7)
    - The second half is a short why-chain: 2 or 3 whys at most, never five. Stop as soon as the answer is a feeling or a goal, not a thing.

@@ -227,7 +227,9 @@ const merged = await agent([
 // no source is dropped. Strength is counted here too (H14): 2+ different sites = several sources.
 let dropped = 0
 const clean = us => [...new Set(list(us).filter(isLink).map(u => u.trim()).filter(u => known.has(u)))]
-const host = u => { try { return new URL(u).hostname.replace(/^www\./, '') } catch (e) { return u } }
+// (a regex, not new URL(): the workflow sandbox has no URL, and the fallback counted every link as its own
+// site, so two pages from one site were marked "several sources" — first headless run, 2026-11-09)
+const host = u => ((String(u).match(/^https?:\/\/([^\/?#:]+)/i) || [])[1] || String(u)).toLowerCase().replace(/^www\./, '')
 const strength = c => (c.interpretation ? 'interpretation only' : new Set(c.urls.map(host)).size >= 2 ? 'several sources' : 'one source')
 const sourcedOnly = xs => {
   const keep = xs.filter(x => x.text && x.urls.length)
@@ -266,7 +268,10 @@ const scoreboard = important.map((x, i) => {
 })
 const surprises = sourcedOnly((merged ? list(merged.surprises) : Object.values(raw).flatMap(r => r.notes).filter(n => n.q === 0).map(n => ({ text: n.says, urls: n.urls }))).map(s => ({ text: text(s.text), urls: clean(s.urls) }))).slice(0, 2)
 const probes = new Map()
-for (const o of [...(merged ? list(merged.open) : []), ...Object.values(raw).flatMap(r => r.open)]) {
+// The merge folds the lenses' open questions together; their raw lists are used only without a merge
+// (adding both gave 24 probes in the first headless run).
+const openIn = merged && list(merged.open).length ? list(merged.open) : Object.values(raw).flatMap(r => r.open)
+for (const o of openIn) {
   const q = text(o.question)
   if (q && !probes.has(q.toLowerCase())) probes.set(q.toLowerCase(), { question: q, probe: PROBES.includes(o.probe) ? o.probe : 'ask the creative' })
 }
@@ -291,7 +296,8 @@ const md = [
   '',
   'Made by the BMUZ research flow: four lenses (Mainstream, Extremes & failures, Outside the field, Disconfirm), each working alone, merged after. Strength: (several sources) = two or more different sites agree · (one source) · (interpretation only) = a helper\'s reading. Nothing here is a decision: choosing is /define\'s.',
   '',
-  `Lenses: ${LENSES.map(l => `${l.name}: ${raw[l.id].saturation}`).join(' · ')}`,
+  'Where each lens stopped (saturation or the cap):',
+  ...LENSES.map(l => `${l.name}: ${raw[l.id].saturation}`),
   '',
   '## Question',
   `- Brief as said: ${brief}`,

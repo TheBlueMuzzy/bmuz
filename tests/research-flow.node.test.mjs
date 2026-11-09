@@ -42,6 +42,7 @@ const lensNotes = id => ({
   notes: [
     { q: 1, says: `${id} says short shakes punch`, means: 'timing matters', urls: [`https://${id}.example/1`] },
     { q: 2, says: `${id} note with no source`, means: 'x', urls: [] },
+    { q: 2, says: `${id} second page`, means: 'x', urls: [`https://www.${id}.example/2`] },
   ],
   assumptions: id === 'disconfirm' ? [{ n: 1, bears: 'contradicts', says: 'big shakes read as noise', urls: ['https://disconfirm.example/1'] }] : [],
   open: [{ question: 'How much is too much on a small screen?', probe: 'sketch', why: 'feel' }],
@@ -63,6 +64,8 @@ function answer(prompt, opts) {
           { text: 'Timing carries the punch', urls: ['https://outside.example/1'], interpretation: true },
           { text: 'Invented claim', urls: ['https://invented.example/x'], interpretation: false },
           { text: 'Unsourced claim', urls: [], interpretation: false },
+          // two pages of one site are one source, not several (www. or not)
+          { text: 'Same site twice', urls: ['https://mainstream.example/1', 'https://www.mainstream.example/2'], interpretation: false },
         ],
         soWhat: { text: 'size may matter less than timing on a phone', urls: ['https://mainstream.example/1'] },
       },
@@ -100,9 +103,10 @@ test('research flow: the report has every section in order, strength marks, a sc
   assert.match(written, /^# Discover: punchy screen shake\n/)
   assert.match(written, /## Question\n- Brief as said: punchy screen shake\n- Goal underneath: hits that feel heavy without making anyone sick\n- Topic type: aesthetic \(look, feel, sound, juice; not MDA's "Aesthetics", which means what players feel\)/)
   assert.match(written, /- Short shakes read as impact \[1\]\[2\] \(several sources\)\n- Timing carries the punch \[3\] \(interpretation only\)\n/)
+  assert.match(written, /- Same site twice \[1\]\[4\] \(one source\)\n### 2\. Where does shake tip into nausea\?\n- none found: see Open questions/)
   assert.doesNotMatch(written, /Invented|Unsourced|no source/)
-  assert.match(written, /## Contradictions\n- big shakes feel strong \[1\] \(context: console games\) — but big shakes read as noise \[4\] \(context: phones\)/)
-  assert.match(written, /## Assumption scoreboard\n0 supported · 1 contradicted · 1 no evidence\n- Contradicted: "more shake is more punch" — big shakes read as noise \[4\]\n- No evidence: "players turn shake off"\n/)
+  assert.match(written, /## Contradictions\n- big shakes feel strong \[1\] \(context: console games\) — but big shakes read as noise \[5\] \(context: phones\)/)
+  assert.match(written, /## Assumption scoreboard\n0 supported · 1 contradicted · 1 no evidence\n- Contradicted: "more shake is more punch" — big shakes read as noise \[5\]\n- No evidence: "players turn shake off"\n/)
   assert.match(written, /## Open questions → probes\n- How much is too much on a small screen\? → sketch\n/)
   assert.match(written, /## On ice\n- trauma-based shake \(from the creative\)\n- a camera kick instead of a shake \(came up in research\)\n/)
   assert.match(written, /## So what \(draft for Define\)\n- Short beats big: size may matter less than timing on a phone \[1\]\n\nDraft for Define: How might we make a hit feel heavy on a small screen\?\n/)
@@ -117,7 +121,7 @@ test('research flow: with no merge, the notes are listed by question and the rep
   assert.deepEqual(checkReport(written).problems, [])
   assert.ok(logs.some(l => /merge helper gave no answer/.test(l)))
   assert.match(written, /- Contradicted: "more shake is more punch" — big shakes read as noise \[\d\]/) // from the Disconfirm helper's own evidence
-  assert.match(written, /### 2\. Where does shake tip into nausea\?\n- none found: see Open questions/)
+  assert.match(written, /### 2\. Where does shake tip into nausea\?\n\*\*Notes from the lenses\*\*\n- mainstream second page \[5\] \(one source\)/)
 })
 
 test('research flow: a helper past the source cap keeps its first 10 links; the rest are said, not silent', async () => {

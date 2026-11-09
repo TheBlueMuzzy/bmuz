@@ -111,8 +111,9 @@ const scenarios = {
     check('F213: "1 blue" was recorded as a decision', /heading be\? — \*\*blue\*\*/.test(file('.bmuz/decisions.md') || ''), file('.bmuz/decisions.md'))
   },
 
-  // F217: the discover pipeline end to end in its own scratch project, on a tiny topic: an auto run (-p)
-  // takes the idea from the "bmuz go" line, runs the research flow on the real web, and ends with the
+  // F217: the discover pipeline end to end in its own scratch project, on a small aesthetic topic (to prove
+  // it isn't game-design-shaped): an auto run (-p) frames the brief from the "bmuz go" line with defaults
+  // noted, writes the research questions, runs the four-lens research on the real web, and ends with the
   // engine's card. Every source in the report must answer; nothing is written outside .planning/research.
   async discover() {
     const dir = process.env.BMUZ_DISCOVER_PROJECT || join(here, '..', '..', '.scratch', 'bmuz-discover-test')
@@ -123,19 +124,21 @@ const scenarios = {
     const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
     const all = () => (read('.bmuz/journal.jsonl') || '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l) } catch (e) { return {} } })
     const took = Date.now()
-    const r = spawnSync('claude', ['-p', 'bmuz go a cosy two-player card game about trading seeds', ...base, '--allowedTools', `${TOOLS} Edit ToolSearch WebSearch WebFetch`], { cwd: dir, env, encoding: 'utf8', input: "", timeout: 570_000 })
+    const r = spawnSync('claude', ['-p', 'bmuz go screen shake that feels punchy but not nauseating in a 2D phone game', ...base, '--allowedTools', `${TOOLS} ToolSearch WebSearch WebFetch`], { cwd: dir, env, encoding: 'utf8', input: '', timeout: 570_000 })
     const out = (r.stdout || '') + (r.stderr || '')
     console.log(`      (${Math.round((Date.now() - took) / 1000)} s; last lines: ${out.trim().split('\n').slice(-4).join(' / ').slice(0, 400)})`)
     const starts = [...new Set(all().filter(j => j.ev === 'step.start').map(j => j.step))]
-    check('F217: the engine ran what → research → shape → handoff, then finished', JSON.stringify(starts) === JSON.stringify(['what', 'research', 'shape', 'handoff']) && all().some(j => j.ev === 'pipeline.done'), `${all().map(j => j.ev + (j.step ? ':' + j.step : '') + (j.why ? ` (${String(j.why).slice(0, 120)})` : '')).join(' ')}`)
-    const topic = (all().find(j => j.ev === 'step.done' && j.step === 'what') || {}).result?.topic || ''
-    check('F217: the topic came from the creative\'s words after "bmuz go"', /seed/i.test(topic) && /card/i.test(topic), topic)
-    const report = '.planning/research/discover.md'
+    check('F217: the engine ran frame → questions → research → handoff, then finished', JSON.stringify(starts) === JSON.stringify(['frame', 'questions', 'research', 'handoff']) && all().some(j => j.ev === 'pipeline.done'), `${all().map(j => j.ev + (j.step ? ':' + j.step : '') + (j.why ? ` (${String(j.why).slice(0, 120)})` : '')).join(' ')}`)
+    const framed = (all().find(j => j.ev === 'step.done' && j.step === 'frame') || {}).result || {}
+    check('F217: the frame came from the creative\'s words, typed aesthetic, with assumptions and a slug', /shake/i.test(framed.brief || '') && !/^\s*bmuz go/i.test(framed.brief || '') && framed.kind === 'aesthetic' && Array.isArray(framed.assumptions) && /^[a-z0-9-]+$/.test(framed.slug || ''), JSON.stringify(framed).slice(0, 400))
+    check('F217: the auto run noted the defaults it took', /step (frame|questions):/.test(read('.bmuz/questions.md') || ''), read('.bmuz/questions.md'))
+    const launched = all().find(j => j.ev === 'flow.launched') || {}
+    check('F217: the research flow got the framed brief and the questions as lists', Array.isArray(launched.args?.questions) && launched.args.questions.length >= 3 && Array.isArray(launched.args?.assumptions), JSON.stringify(launched.args).slice(0, 400))
+    const report = `.planning/research/discover-${framed.slug}.md`
     const sources = spawnSync('node', [join(plugin, 'scripts', 'check-sources.mjs'), report], { cwd: dir, encoding: 'utf8' })
-    check('F217: the research file has its sources, every claim cites one and every link answers', sources.status === 0 && /## Sources\n1\. /.test(read(report) || ''), sources.stdout)
-    check('F217: the notes file has rough experience targets', /## Experience targets\n/.test(read('.planning/research/discover-notes.md') || ''))
+    check('F217: the research file has every section, every finding sourced with its strength, and every link answers', sources.status === 0 && /## Assumption scoreboard\n/.test(read(report) || ''), sources.stdout)
     const card = read('.bmuz/last-card.md') || ''
-    check('F217: it ended with the engine\'s card, Next = /define', /^## .* — ready for you to check\n/.test(card) && /\*\*Next:\*\* .*\/define/.test(card) && out.includes(card.trim().split('\n')[0]), card.slice(0, 400))
+    check('F217: it ended with the engine\'s card: the two numbered questions, and a Next', /^## .* — ready for you to check\n/.test(card) && /Anything surprising or missing\?/.test(card) && /Loop back on one question, or lock it in\?/.test(card) && /\*\*Next:\*\* .*(\/define|\/sketch|discover)/.test(card) && out.includes(card.trim().split('\n')[0]), card.slice(0, 600))
     const files = []
     const walk = d => { for (const e of readdirSync(join(dir, d), { withFileTypes: true })) e.isDirectory() ? walk(join(d, e.name)) : files.push(join(d, e.name).split('\\').join('/')) }
     walk('.')
