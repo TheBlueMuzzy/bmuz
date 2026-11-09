@@ -111,10 +111,11 @@ const scenarios = {
     check('F213: "1 blue" was recorded as a decision', /heading be\? — \*\*blue\*\*/.test(file('.bmuz/decisions.md') || ''), file('.bmuz/decisions.md'))
   },
 
-  // F217: the discover pipeline end to end in its own scratch project, on a small aesthetic topic (to prove
-  // it isn't game-design-shaped): an auto run (-p) frames the brief from the "bmuz go" line with defaults
-  // noted, writes the research questions, runs the four-lens research on the real web, and ends with the
-  // engine's card. Every source in the report must answer; nothing is written outside .planning/research.
+  // F217: the creative discover pipeline end to end in its own scratch project, on a small game idea: an auto
+  // run (-p) takes the idea from the "bmuz go" line, collects bricks experience first (spark → experience →
+  // theme → theme dig → simulation → mechanisms → mechanism shelf → prior art → twists), saves them into
+  // .planning/DISCOVER.md, and ends with the engine's brick board card. Every source in the three research
+  // reports must answer; nothing is written outside .planning/research and .planning/DISCOVER.md.
   async discover() {
     const dir = process.env.BMUZ_DISCOVER_PROJECT || join(here, '..', '..', '.scratch', 'bmuz-discover-test')
     rmSync(join(dir, '.bmuz'), { recursive: true, force: true })
@@ -124,28 +125,38 @@ const scenarios = {
     const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
     const all = () => (read('.bmuz/journal.jsonl') || '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l) } catch (e) { return {} } })
     const took = Date.now()
-    const r = spawnSync('claude', ['-p', 'bmuz go screen shake that feels punchy but not nauseating in a 2D phone game', ...base, '--allowedTools', `${TOOLS} ToolSearch WebSearch WebFetch`], { cwd: dir, env, encoding: 'utf8', input: '', timeout: 570_000 })
+    const r = spawnSync('claude', ['-p', 'bmuz go a cosy game about running a lighthouse', ...base, '--allowedTools', `${TOOLS} ToolSearch WebSearch WebFetch`], { cwd: dir, env, encoding: 'utf8', input: '', timeout: 3_000_000 })
     const out = (r.stdout || '') + (r.stderr || '')
     console.log(`      (${Math.round((Date.now() - took) / 1000)} s; last lines: ${out.trim().split('\n').slice(-4).join(' / ').slice(0, 400)})`)
+    const STEPS = ['spark', 'experience', 'theme', 'theme-dig', 'simulation', 'mechanisms', 'mechanism-shelf', 'prior-art', 'twists', 'save', 'bricks']
     const starts = [...new Set(all().filter(j => j.ev === 'step.start').map(j => j.step))]
-    check('F217: the engine ran frame → questions → research → handoff, then finished', JSON.stringify(starts) === JSON.stringify(['frame', 'questions', 'research', 'handoff']) && all().some(j => j.ev === 'pipeline.done'), `${all().map(j => j.ev + (j.step ? ':' + j.step : '') + (j.why ? ` (${String(j.why).slice(0, 120)})` : '')).join(' ')}`)
-    const framed = (all().find(j => j.ev === 'step.done' && j.step === 'frame') || {}).result || {}
-    check('F217: the frame came from the creative\'s words, typed aesthetic, with assumptions and a slug', /shake/i.test(framed.brief || '') && !/^\s*bmuz go/i.test(framed.brief || '') && framed.kind === 'aesthetic' && Array.isArray(framed.assumptions) && framed.assumptions.length > 0 && framed.assumptions.every(x => ['desirable', 'feasible', 'viable'].includes(x.tag)) && /^[a-z0-9-]+$/.test(framed.slug || ''), JSON.stringify(framed).slice(0, 400))
-    check('F217: the auto run noted the defaults it took', /step (frame|questions):/.test(read('.bmuz/questions.md') || ''), read('.bmuz/questions.md'))
-    const launched = all().find(j => j.ev === 'flow.launched') || {}
-    check('F217: the research flow got the framed brief and the questions as lists', Array.isArray(launched.args?.questions) && launched.args.questions.length >= 3 && Array.isArray(launched.args?.assumptions), JSON.stringify(launched.args).slice(0, 400))
-    const report = `.planning/research/discover-${framed.slug}.md`
-    const sources = spawnSync('node', [join(plugin, 'scripts', 'check-sources.mjs'), report], { cwd: dir, encoding: 'utf8' })
-    check('F217: the research file has every section, every finding sourced with its strength, and every link answers', sources.status === 0 && /## Assumption scoreboard\n/.test(read(report) || ''), sources.stdout)
+    check('F217: the engine ran every creative step in order, experience first, then finished', JSON.stringify(starts) === JSON.stringify(STEPS) && all().some(j => j.ev === 'pipeline.done'), `${all().map(j => j.ev + (j.step ? ':' + j.step : '') + (j.why ? ` (${String(j.why).slice(0, 120)})` : '')).join(' ')}`)
+    const done = id => (all().find(j => j.ev === 'step.done' && j.step === id) || {}).result || {}
+    const spark = done('spark')
+    check('F217: the spark came from the creative\'s words, with a "You are" line and a slug', /lighthouse/i.test(spark.brief || '') && !/^\s*bmuz go/i.test(spark.brief || '') && Array.isArray(spark.youAre) && spark.youAre.length > 0 && /^[a-z0-9-]+$/.test(spark.slug || ''), JSON.stringify(spark).slice(0, 400))
+    const sim = done('simulation')
+    check('F217: the simulation breakdown gave nouns with states and verbs written twice (theme word → outcome)', Array.isArray(sim.nouns) && sim.nouns.some(n => n && n.states) && Array.isArray(sim.verbs) && sim.verbs.some(v => v && v.theme && v.outcome) && Array.isArray(sim.grid), JSON.stringify(sim).slice(0, 400))
+    check('F217: the auto run noted the defaults it took', /step (spark|experience|theme|simulation):/.test(read('.bmuz/questions.md') || ''), read('.bmuz/questions.md'))
+    const launched = id => (all().find(j => j.ev === 'flow.launched' && j.step === id) || {}).args || {}
+    check('F217: the research flows got their topic and the bricks so far as lists', launched('theme-dig').topic === 'theme' && Array.isArray(launched('theme-dig').collected?.experiences) && launched('mechanisms').topic === 'mechanisms' && Array.isArray(launched('mechanisms').collected?.verbs) && launched('mechanisms').collected.verbs.length > 0, JSON.stringify(launched('mechanisms')).slice(0, 400))
+    const reports = ['theme', 'mechanisms', 'prior-art'].map(t => `.planning/research/discover-${spark.slug}-${t}.md`)
+    for (const report of reports) {
+      const sources = spawnSync('node', [join(plugin, 'scripts', 'check-sources.mjs'), report], { cwd: dir, encoding: 'utf8' })
+      check(`F217: ${report.split('/').pop()} has every section, sourced bricks, and every link answers`, sources.status === 0 && /## Bricks\n### /.test(read(report) || ''), sources.stdout)
+    }
+    const doc = read('.planning/DISCOVER.md') || ''
+    const shelf = name => ((doc.split(`\n### ${name} — `)[1] || '').split('\n### ')[0].match(/\n- /g) || []).length
+    const filled = ['Spark', 'Experience goals', 'Theme', 'Nouns', 'Verbs', 'Mechanism shelf', 'Prior art']
+    check('F217: DISCOVER.md has its shelves filled and a run section linking the three reports', filled.every(n => shelf(n) > 0) && /\n### Run 1 — /.test(doc) && reports.every(p => doc.includes(p.replace('.planning/', ''))), filled.map(n => `${n}: ${shelf(n)}`).join(', '))
     const card = read('.bmuz/last-card.md') || ''
-    check('F217: it ended with the engine\'s card: the two numbered questions, and a Next', /^## .* — ready for you to check\n/.test(card) && /Anything surprising or missing\?/.test(card) && /Loop back on one question, or lock it in\?/.test(card) && /\*\*Next:\*\* .*(\/define|\/sketch|discover)/.test(card) && out.includes(card.trim().split('\n')[0]), card.slice(0, 600))
+    check('F217: it ended with the engine\'s brick board card: DISCOVER.md linked, the two numbered questions, Next /define', /^## Brick board.* — ready for you to check\n/.test(card) && /DISCOVER\.md/.test(card) && /Anything surprising or missing on the shelves\?/.test(card) && /On to \/define, or another discover pass/.test(card) && /\*\*Next:\*\* .*\/define/.test(card) && out.includes(card.trim().split('\n')[0]), card.slice(0, 600))
     const files = []
     const walk = d => { for (const e of readdirSync(join(dir, d), { withFileTypes: true })) e.isDirectory() ? walk(join(d, e.name)) : files.push(join(d, e.name).split('\\').join('/')) }
     walk('.')
     // (join drops the leading "./": paths come out as ".bmuz/journal.jsonl")
-    const outside = files.filter(f => !/^(\.bmuz\/|\.planning\/research\/|bmuz\.json$)/.test(f))
-    check('F217: nothing was written outside .planning/research (and the engine\'s .bmuz)', outside.length === 0, outside.join(', '))
-    if (existsSync(join(dir, report))) console.log(`      Sources:\n${(read(report).split('## Sources')[1] || '').trim().split('\n').map(l => `        ${l}`).join('\n')}`)
+    const outside = files.filter(f => !/^(\.bmuz\/|\.planning\/research\/|\.planning\/DISCOVER\.md$|bmuz\.json$)/.test(f))
+    check('F217: nothing was written outside .planning/research and .planning/DISCOVER.md (and the engine\'s .bmuz)', outside.length === 0, outside.join(', '))
+    console.log(`      DISCOVER.md shelves: ${filled.concat(['Verb × noun grid', 'Decisions', 'Hooks & anchors', 'Twists', 'On ice', 'Open questions', 'Hopes & fears']).map(n => `${n} ${shelf(n)}`).join(' · ')}`)
   },
 
   // Check 16: motor B — "bmuz next" from a shell reads the same pipeline and state.

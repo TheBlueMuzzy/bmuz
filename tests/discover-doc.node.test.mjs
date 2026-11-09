@@ -50,7 +50,7 @@ const state = over => ({
   skipped: [],
   results: { slug: 'lighthouse' },
   resultsBy: {
-    spark: { brief: 'a cosy game about running a lighthouse', slug: 'lighthouse', youAre: [{ text: 'You are the last keeper of a lighthouse', his: true }], spark: [{ text: 'the light sweeping over the water at night', his: true }, 'routine as comfort'], fears: [{ text: 'it will feel boring', his: true }], onIce: [{ text: 'a day-night cycle', his: true }] },
+    spark: { brief: 'a cosy game about running a lighthouse', slug: 'lighthouse', youAre: [{ text: 'You are the last keeper of a lighthouse', his: true }], spark: [{ text: 'the light sweeping over the water at night', his: true }, "routine as comfort (Claude's suggestion from the brief)"], fears: [{ text: 'it will feel boring', his: true }], onIce: [{ text: 'a day-night cycle', his: true }] },
     experience: { experiences: ['keeping the light lit through a storm'], aesthetics: ['Submission', 'Fantasy'] },
     simulation: { nouns: [{ thing: 'the lamp', states: ['lit', 'out', 'sooty'], acts: 'acted on by the keeper' }], verbs: [{ theme: 'trim', outcome: 'keep a resource from running down', combines: 'climb' }], grid: [{ verb: 'trim', noun: 'the fog', does: '', flag: 'empty' }] },
   },

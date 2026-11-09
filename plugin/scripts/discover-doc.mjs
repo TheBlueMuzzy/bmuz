@@ -61,8 +61,9 @@ export const TALK_KEYS = {
   grid: ['Verb × noun grid', ''],
   choices: ['Decisions', 'Choice'],
   problems: ['Decisions', 'Problem the player solves'],
-  reminds: ['Prior art', 'Reminds the creative of'],
-  feelsRight: ['Mechanism shelf', "Feels like the creative's verb"],
+  // (labels stay neutral: each line's own marker says whether the creative or Claude said it)
+  reminds: ['Prior art', 'Reminds of'],
+  feelsRight: ['Mechanism shelf', 'Feels like the verb'],
   pastedOn: ['Mechanism shelf', 'Feels pasted on'],
   genres: ['Mechanism shelf', 'Genre that already covers some verbs'],
   missed: ['Prior art', 'What they missed'],
@@ -78,10 +79,15 @@ const joined = v => listOf(v).map(clean).filter(Boolean).join(' / ')
 
 // One talk-result item as text. An item is text, or an object: {text, his} or a shelf's own fields
 // (a noun's thing/states/acts/wants/stops, a verb's theme/outcome/combines, a grid cell's verb/noun/does/flag).
+// A "who said it" note written inside the text ("(Claude's suggestion from the shelf)") is taken out: the
+// line's marker says it, and two markers could disagree (headless run 2026-11-09: haiku added them anyway).
+const WHO_NOTE = /\s*\((?:Claude's|Claude|Muzzy's|the creative's)\b[^()]*(?:suggestion|note|default|view|pick)[^()]*\)/gi
+const unNoted = s => clean(s).replace(WHO_NOTE, '').trim()
+
 export function itemText(key, x) {
-  if (typeof x === 'string') return clean(x)
+  if (typeof x === 'string') return unNoted(x)
   if (!x || typeof x !== 'object') return ''
-  if (x.text) return clean(x.text)
+  if (x.text) return unNoted(x.text)
   const parts = []
   if (key === 'nouns') {
     parts.push(clean(x.thing))
