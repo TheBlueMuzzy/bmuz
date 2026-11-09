@@ -15,6 +15,10 @@ let pending: null | "advance" | "resume" | "retry" | { undo: string } | { card: 
 let watchdogBusy = false
 let sessionInteractive = false
 let sessionAuto = false // "bmuz auto" typed: this session runs unattended
+// A talk step's full instructions, waiting for the engine's own short message to carry them as hidden
+// context (Muzzy's live look 2026-11-09: the wall of grey step notes "is the user supposed to do something
+// with this? can it be hidden?"). The creative sees one line; Claude reads the rest beside it.
+let hiddenNotes: string | null = null
 // The flow try this session already asked Claude to launch ("hello#2"). A "bmuz go" while it is on its
 // way must not ask again (live check 2026-11-08: the second ask made Claude refuse the next real try).
 let flowAskedHere = ''
@@ -252,7 +256,8 @@ async function startTalk($: any, step: any, why: string) {
   // A hand-off step is told what is already decided, so it doesn't ask it again.
   const decided = step.handoff ? await readList($, 'decisions.json') : []
   const recap = Object.fromEntries((step.recap || []).map((k: string) => [k, ctx.state.results[k]]))
-  await $.prompt.submit({ text: E.talkPrompt(step, craft, why, ctx.auto, decided, { recap, wrap: wrapWords(step) }) })
+  hiddenNotes = E.talkPrompt(step, craft, why, ctx.auto, decided, { recap, wrap: wrapWords(step) })
+  await $.prompt.submit({ text: E.talkHeadline(step) })
 }
 
 // The wrap-up question's words: what comes next if they keep going, and where wrapping up goes.
@@ -681,6 +686,12 @@ export const register: Register = on => {
       await flowFinished($, n)
       pending = 'advance'
       return next({ ...(e as any), text: `BMUZ engine: the "${step.id}" helper finished and the engine checked its work. Reply with one short line; the engine starts the next step itself.` })
+    }
+    // The engine's own talk-step line: its instructions ride along as context the creative never sees.
+    if (kind === 'plugin' && (e as any).origin?.name === 'bmuz' && hiddenNotes && E.isTalkHeadline(text)) {
+      const notes = hiddenNotes
+      hiddenNotes = null
+      return next({ ...(e as any), context: [...((e as any).context ?? []), notes] })
     }
     if (kind === 'plugin' || kind === 'peer') return next(e)
     const say = (words: string) => next({ ...(e as any), text: `${text}\n(${words}\nShow the creative these lines as they are, then end your turn.)` })

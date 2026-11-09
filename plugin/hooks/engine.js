@@ -293,6 +293,15 @@ export function talkPrompt(step, craft, why, auto, decided = [], more = {}) {
   return lines.join('\n')
 }
 
+// The one line the creative sees when a talk step starts; talkPrompt's words travel with it as hidden context
+// (register.tsx prompt.submit). It still says where it's from, so Claude never reads it as the creative's.
+export function talkHeadline(step) {
+  return `BMUZ step "${step.id}"${step.description ? ` — ${step.description}` : ''} (from the BMUZ engine; its instructions for this step are attached)`
+}
+export function isTalkHeadline(text) {
+  return /^BMUZ step "[a-z0-9-]+".* \(from the BMUZ engine; its instructions for this step are attached\)$/.test(String(text))
+}
+
 // The engine's own message that shows a hand-off card (sent at turn.complete, like every engine message).
 // It points at the saved card instead of carrying it: a message with the card in it showed the card twice,
 // once in the engine's message and once in Claude's copy (Muzzy's live look, 2026-11-09: "yes" show it once).

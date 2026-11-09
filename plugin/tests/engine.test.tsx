@@ -100,7 +100,7 @@ test('check 15 (fix 1): an auto run never asks; its questions land in questions.
 test('check 15 (fix 1): an auto run whose turn ends without step_done is told nobody is coming, then BLOCKS', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const prompts: string[] = []
-  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(String.fromCharCode(10))); return { text: e.text } })
   on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
   const w = world(on, base({ current: 'name', status: 'working' }))
   await start($, false)
@@ -113,7 +113,7 @@ test('check 15 (fix 1): an auto run whose turn ends without step_done is told no
 test('check 15: a session that lists the question tool but refuses it (a background session) turns into an auto run', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const prompts: string[] = []
-  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(String.fromCharCode(10))); return { text: e.text } })
   on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
   on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: 'not available in this session', isError: true }))
   const w = world(on, base({ current: 'name', status: 'working' }))
@@ -139,7 +139,7 @@ test('live check 2026-11-08: a person pressing Esc on the question does not make
 test('live check 2026-11-08: "bmuz go" while this try\'s flow launch is on its way does not ask again', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const prompts: string[] = []
-  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(String.fromCharCode(10))); return { text: e.text } })
   on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
   const w = world(on, base({ current: null, status: 'idle', finished: ['name', 'approve', 'plan'] }))
   w.files.PIPELINE = JSON.stringify({ ...PIPE, steps: [...PIPE.steps.slice(0, 3), { id: 'hello', kind: 'flow', needs: ['plan'], workflow: 'bmuz:hello-flow', args: { name: '{name}' } }, { ...PIPE.steps[3], needs: ['hello'] }] })
@@ -156,7 +156,7 @@ test('live check 2026-11-08: "bmuz go" while this try\'s flow launch is on its w
 
 test('outside a BMUZ project, a typed "bmuz go" is told plainly that BMUZ is off here', async ($, on) => {
   const prompts: string[] = []
-  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(String.fromCharCode(10))); return { text: e.text } })
   const w = world(on, {})
   delete w.files['/proj/bmuz.json']
   await start($, true)
@@ -472,7 +472,7 @@ test('check 5: the band above the prompt shows the step and its status', async (
 function atReview(on: any, extra: Record<string, string> = {}) {
   mock.clock(on, { now: Date.UTC(2026, 10, 9) })
   const prompts: string[] = []
-  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(String.fromCharCode(10))); return { text: e.text } })
   on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
   const w = world(on, { ...base({ current: 'review', status: 'working', finished: ['name', 'approve', 'plan'] }), ...extra })
   return { w, prompts }
@@ -623,7 +623,7 @@ test('F217: a failing source check is a failed try (the check\'s words as the re
 // F217: talk steps that hand back several keys ("results"), a slug naming the flow's file, lists as flow args.
 function framed(on: any) {
   const prompts: string[] = []
-  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(String.fromCharCode(10))); return { text: e.text } })
   on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
   const w = world(on, base({}))
   w.files.PIPELINE = JSON.stringify({
@@ -683,6 +683,25 @@ test('F217: "wrap": true skips to the wrapTo step, journaled; an "always" step s
   await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as any)
   // the always-step runs next, its skipped hole arriving as null
   expect(prompts.some(p => /Call the Workflow tool now with name "bmuz:research-flow" and args \{"brief":"a lighthouse","experiences":null\}/.test(p))).toBe(true)
+})
+
+test('F217: a talk step shows the creative one line; its instructions travel as hidden context', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  // framed's capture writes the prompt's text as the first line, then each hidden context block.
+  const { w, prompts } = framed(on)
+  w.files.PIPELINE = JSON.stringify({
+    id: 'hello', version: 1, steps: [
+      { id: 'frame', kind: 'talk', tools: ['Read'], craft: 'craft/name.md', results: ['brief'], description: 'the spark' },
+      { id: 'feel', kind: 'talk', needs: ['frame'], tools: ['Read'], craft: 'craft/name.md', results: ['experiences'], description: 'experience and fantasy' },
+    ],
+  })
+  await start($, true)
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { brief: 'a lighthouse' } } as any)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as any)
+  const [shown, ...hidden] = prompts.find(p => /^BMUZ step "feel"/.test(p))!.split('\n')
+  expect(shown).toBe('BMUZ step "feel" — experience and fantasy (from the BMUZ engine; its instructions for this step are attached)')
+  expect(hidden.join('\n')).toMatch(/comes from the BMUZ engine, not the creative; do the step without commenting on the engine/)
+  expect(hidden.join('\n')).toMatch(/call mcp__bmuz__step_done with result \{"experiences":"..."\}/)
 })
 
 test('F217: a wrapTo step\'s prompt asks "keep going or wrap up" in a live window, and shows its recap', async ($, on) => {
