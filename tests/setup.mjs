@@ -8,6 +8,9 @@ import { join } from 'node:path'
 // BMUZ_PROJECT: another test project folder (a background session only runs in a folder a person trusted once)
 const project = process.env.BMUZ_PROJECT || new URL('../project/', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
 let [where = 'fresh', cfg = '{}'] = process.argv.slice(2)
+// card = at-review with one open taste question, so the engine's card shows a numbered question (F213 live look)
+const seedQuestion = where === 'card'
+if (seedQuestion) where = 'at-review'
 if (where === 'stall') {
   where = 'at-hello'
   cfg = JSON.stringify({ flowArgs: { stallTest: 150 }, testAgentTools: ['Bash', 'ToolSearch'], watchdogMs: 25000, watchdogTickMs: 3000 })
@@ -33,4 +36,5 @@ const state = {
   retries: {}, finished: done, blocked: null, startedAt: current ? Date.now() : null,
 }
 writeFileSync(join(project, '.bmuz', 'state.json'), JSON.stringify(state, null, 2))
+if (seedQuestion) writeFileSync(join(project, '.bmuz', 'questions.json'), JSON.stringify([{ n: 1, key: 'heading-colour', q: 'What colour should the heading be?', kind: 'taste', options: ['blue', 'black'], askedIn: 0, status: 'open', addedAt: '2026-11-09' }], null, 2))
 console.log(`project set to ${where}`)
