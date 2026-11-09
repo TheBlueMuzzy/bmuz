@@ -6,7 +6,10 @@
   "permissions": {
     "defaultMode": "dontAsk",
     "allow": [
-      "Workflow(bmuz:hello-flow)"
+      "Workflow(bmuz:hello-flow)",
+      "Workflow(bmuz:research-flow)",
+      "WebSearch",
+      "WebFetch"
     ]
   },
   "askUserQuestionTimeout": "60s",
