@@ -12,7 +12,7 @@ export const NAME_RE = /^[a-z][a-z0-9-]*$/
 const TOP_KEYS = ['id', 'version', 'description', 'watchdogMs', 'steps']
 const STEP_KEYS = {
   common: ['id', 'kind', 'needs', 'description', 'timeoutMs'],
-  talk: ['tools', 'craft', 'done', 'writes', 'handoff'],
+  talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results'],
   gate: ['question', 'options', 'approve', 'backTo'],
   script: ['run', 'writes', 'done'],
   flow: ['workflow', 'args', 'agentTools', 'writes', 'craft', 'done'],
@@ -85,9 +85,11 @@ export function checkPipeline(p) {
       if (!isList(s.writes)) problems.push(`${at}: "writes" must be a list of file paths`)
       else for (const f of s.writes) {
         if (!isSafePath(f)) problems.push(`${at}: "writes" path "${f}" must stay inside the project (relative, forward slashes, no "..", not .bmuz)`)
-        else if (/[{}]/.test(f)) problems.push(`${at}: "writes" path "${f}" can't use {holes}; name the file`)
+        // (a {hole} in a "writes" path is checked below, once the step's known holes are worked out)
       }
     }
+    if (s.results !== undefined && !(isList(s.results) && s.results.every(k => /^\w+$/.test(k)))) problems.push(`${at}: "results" must be a list of result keys (letters, digits, _)`)
+    if (s.results !== undefined && s.kind !== 'talk') problems.push(`${at}: only talk steps hand back a result, so "results" can't be on a ${s.kind} step`)
     if (s.done !== undefined) {
       const d = s.done
       const keys = d && DONE_KEYS[d.type]
@@ -123,17 +125,24 @@ export function checkPipeline(p) {
     }
     // {holes} may name the project, the plugin, or a result an earlier talk step this one needs hands back.
     const known = new Set(BUILT_IN_HOLES)
+    const listed = new Set() // keys named in a needed talk step's "results": the only holes a "writes" path may use
     const seen = new Set()
     const walk = id => {
       if (seen.has(id) || !byId.has(id)) return
       seen.add(id)
       const n = byId.get(id)
       if (n.kind === 'talk' && n.done && n.done.type === 'result-has') known.add(n.done.key)
+      if (n.kind === 'talk' && isList(n.results)) for (const k of n.results) { known.add(k); listed.add(k) }
       for (const m of Array.isArray(n.needs) ? n.needs : []) walk(m)
     }
     for (const n of Array.isArray(s.needs) ? s.needs : []) walk(n)
     const filled = { question: s.question, run: s.run, args: s.args, path: s.done && s.done.path, text: s.done && s.done.text, check: s.done && s.done.run }
     for (const h of new Set(holesIn(filled))) if (!known.has(h)) problems.push(`${at}: {${h}} isn't known here (known: ${[...known].map(k => `{${k}}`).join(', ')}); a result comes from a talk step this step needs`)
+    // A file the engine may delete can be named by a result only when that result is checked as a slug
+    // (resultProblems): a "writes" hole must be a key in a needed talk step's "results".
+    for (const f of isList(s.writes) ? s.writes : []) {
+      for (const h of new Set(holesIn(f))) if (!listed.has(h)) problems.push(`${at}: "writes" path "${f}" can use only {holes} a needed talk step lists in "results" (their values are checked as slugs); {${h}} isn't one`)
+    }
     if (typeof s.id === 'string' && !byId.has(s.id)) byId.set(s.id, s)
   })
   return problems
@@ -200,7 +209,9 @@ export function talkPrompt(step, craft, why, auto, decided = []) {
   if (why) lines.push(`The last try did not pass: ${why}.`)
   if (auto) lines.push(`Auto run: the creative is away. Never ask and never wait for an answer, with AskUserQuestion or in plain text. Where you would ask, pick the sensible default, list it in the result's "asks" as {"question": "...", "picked": "..."}, and carry on.`)
   lines.push(craft)
-  const result = { [(step.done && step.done.key) || 'ok']: '...' }
+  const result = {}
+  for (const k of step.results || []) result[k] = '...'
+  if ((step.done && step.done.key) || !(step.results || []).length) result[(step.done && step.done.key) || 'ok'] = '...'
   if (step.handoff) {
     // The engine writes the card from these words (docs/handoff-card.md); Claude doesn't write it in the chat.
     result.card = { title: '...', done: '...', see: '...', try: '...', proof: ['...'], todos: 'none', questions: [], next: '...' }
@@ -429,6 +440,52 @@ export function answersNote(answers) {
   return lines.join(' ')
 }
 
+// What is wrong with a talk step's result against its "results" list (null = fine): every listed key
+// must be there (an empty list counts, an empty text doesn't), and a key some step names a file with
+// ("writes": ".../discover-{slug}.md") must be a slug, so the file stays where the pipeline says.
+export function resultProblems(p, step, result) {
+  const keys = step.results || []
+  if (!keys.length) return null
+  const r = result && typeof result === 'object' ? result : {}
+  const missing = keys.filter(k => r[k] === undefined || r[k] === null || (typeof r[k] === 'string' && !r[k].trim()))
+  if (missing.length) return `the result has no ${missing.map(k => `"${k}"`).join(', ')}; give ${missing.length > 1 ? 'them' : 'it'} in step_done's result`
+  const inPaths = new Set(p.steps.flatMap(s => (isList(s.writes) ? s.writes : []).flatMap(f => holesIn(f))))
+  for (const k of keys) {
+    if (inPaths.has(k) && !(typeof r[k] === 'string' && NAME_RE.test(r[k]) && r[k].length <= 60)) return `"${k}" names a file, so it must be a short slug in lower case letters, digits and dashes, like "screen-shake" (got ${JSON.stringify(r[k]).slice(0, 80)})`
+  }
+  return null
+}
+
+// A step's "writes" paths with their {holes} filled. A path whose hole isn't a slug, or that ends up
+// outside the project, is left out: the engine never saves or deletes it.
+export function writesOf(step, vars) {
+  const out = []
+  for (const f of isList(step.writes) ? step.writes : []) {
+    let ok = true
+    const path = f.replace(/\{(\w+)\}/g, (m, k) => {
+      const v = vars[k]
+      if (typeof v === 'string' && NAME_RE.test(v) && v.length <= 60) return v
+      ok = false
+      return m
+    })
+    if (ok && isSafePath(path)) out.push(path)
+  }
+  return out
+}
+
+// A flow's args: like fillDeep, but a value that is one whole hole ("{assumptions}") gets the result
+// itself, so a list or an object reaches the workflow as a list or an object, not as text.
+export function fillArgs(v, vars) {
+  if (typeof v === 'string') {
+    const whole = v.match(/^\{(\w+)\}$/)
+    if (whole && vars[whole[1]] !== null && typeof vars[whole[1]] === 'object') return JSON.parse(JSON.stringify(vars[whole[1]]))
+    return fill(v, vars)
+  }
+  if (Array.isArray(v)) return v.map(x => fillArgs(x, vars))
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fillArgs(x, vars)]))
+  return v
+}
+
 // Fills {name}-style holes from the step results and extra values.
 export function fill(text, vars) {
   return String(text).replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined ? String(vars[k]) : m))
@@ -584,7 +641,7 @@ export function undoList(p, state) {
     const s = stepById(p, id)
     if (!s) return
     const later = state.finished.slice(i).map(x => stepById(p, x)).filter(Boolean)
-    const files = [...new Set(later.flatMap(x => x.writes || []))]
+    const files = [...new Set(later.flatMap(x => writesOf(x, state.results || {})))]
     const untracked = later.filter(x => (x.kind === 'script' || x.kind === 'flow') && !(x.writes || []).length).map(x => x.id)
     const what = s.description ? `${s.id} (${s.description})` : s.id
     let line = `go back to before "${what}"`

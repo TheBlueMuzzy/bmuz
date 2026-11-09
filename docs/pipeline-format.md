@@ -36,6 +36,7 @@ A step runs when everything it `needs` is finished. A step can only need steps *
 - `tools` (needed): the only tools Claude may use in this step. Everything else is refused and logged as a deviation.
 - `craft` (needed): a `.md` note in the plugin telling Claude what to do, like `craft/review.md`.
 - `handoff`: `true` = the step hands its work back to the creative. Its `step_done` result must carry a hand-off card's words (`card`, docs/handoff-card.md); a missing or empty part fails the step like a done-check. The engine writes the card and shows it at the end of the turn, then starts the next step. Talk steps only.
+- `results`: the keys the step's result must carry, like `["brief", "goal", "slug", "assumptions"]`. A missing key (or empty text; an empty list is fine) fails the step like a done-check. Each key is a `{hole}` for later steps. A key used in a later `writes` path must come back as a slug (lower case letters, digits, dashes, at most 60), or the step fails.
 - `done`, `writes`: see below.
 
 **gate** — the engine stops and asks the creative with buttons; nothing else runs until they answer.
@@ -69,13 +70,14 @@ No `done` = the step passes when it ends.
 
 ## Files a step writes (`writes`)
 The project files the step may create or change. Before the step's first try the engine saves them (a checkpoint); a BLOCKED step puts them back, or deletes the ones that didn't exist.
-Because the engine may delete them, each path must stay inside the project: relative, forward slashes, no `..`, not in `.bmuz/`, and no `{holes}`.
+Because the engine may delete them, each path must stay inside the project: relative, forward slashes, no `..`, not in `.bmuz/`. The only `{holes}` allowed are keys from a needed talk step's `results` (they are checked as slugs), like `.planning/research/discover-{slug}.md`; the engine fills them before it saves or puts back a file, and leaves out any path that would leave the project.
 The engine checks this again right before it saves or puts back a file, so a hand-edited checkpoint can't reach outside the project either.
 
 ## `{holes}`
 Text in `question`, `run`, `args` and a done-check's `path` / `text` / `run` can carry `{holes}`, filled in when the step runs:
 - `{project}`: the project folder; `{plugin}`: the plugin folder.
-- A result from a talk step this step needs, directly or through other steps: `{name}` if an earlier talk step's done-check is `result-has` `name`.
+- A result from a talk step this step needs, directly or through other steps: `{name}` if an earlier talk step's done-check is `result-has` `name`, or any key in its `results`.
+- In a flow's `args`, a value that is one whole hole (`"{assumptions}"`) gets the result itself, so a list or an object reaches the workflow as a list or an object; holes inside longer text fill as text.
 
 Any other hole is refused (a typo like `{nmae}` would otherwise reach the script as it is).
 A filled-in path that leaves the project (a result holding `../`) is refused when the step is checked.

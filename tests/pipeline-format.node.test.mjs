@@ -101,7 +101,11 @@ test('writes: files the engine checkpoints and may delete stay inside the projec
     const p = copy(); step(p, 'plan').writes = [bad]
     refuses(p, /must stay inside the project/)
   }
-  let p = copy(); step(p, 'plan').writes = ['{name}.json']; refuses(p, /can't use \{holes\}/)
+  // a hole only from a "results" key (checked as a slug); {name} is a done-check result, free text
+  let p = copy(); step(p, 'plan').writes = ['{name}.json']; refuses(p, /can use only \{holes\} a needed talk step lists in "results".*\{name\} isn't one/)
+  p = copy(); step(p, 'plan').writes = ['{project}/x.json']; refuses(p, /\{project\} isn't one/)
+  p = copy(); step(p, 'name').results = ['slug']; step(p, 'plan').writes = ['out/{slug}.json']
+  assert.deepEqual(E.checkPipeline(p), [])
   p = copy(); step(p, 'plan').writes = 'plan.json'; refuses(p, /"writes" must be a list/)
   for (const good of ['plan.json', 'docs/plan.json', 'a-b/c_d.v2.json']) assert.equal(E.isSafePath(good), true, good)
 })

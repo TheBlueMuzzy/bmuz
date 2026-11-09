@@ -181,9 +181,11 @@ async function craftOf($: any, step: any) {
 // Saves the step's `writes` files as they are before its first try. Retries and resumes keep it,
 // so a rollback or an undo always goes back to before the step began.
 async function checkpoint($: any, step: any) {
-  if (!(step.writes || []).length) return
+  // (a "writes" path may carry a slug from an earlier result: .planning/research/discover-{slug}.md)
+  const files = E.writesOf(step, vars())
+  if (!files.length) return
   const saved: Record<string, string | null> = {}
-  for (const f of step.writes) if (E.isSafePath(f)) saved[f] = await readText($, `${ctx.dir}/${f}`)
+  for (const f of files) saved[f] = await readText($, `${ctx.dir}/${f}`)
   await $.fs.write(`${ctx.dir}/.bmuz/checkpoint-${step.id}.json`, JSON.stringify(saved))
   await journal($, { ev: 'checkpoint', step: step.id, files: Object.keys(saved) })
 }
@@ -277,7 +279,8 @@ async function recordAnswerLines($: any, text: string) {
 }
 
 async function startFlow($: any, step: any) {
-  const args = E.fillDeep({ ...step.args, ...(ctx.cfg.flowArgs || {}) }, vars())
+  // (fillArgs: a whole-hole arg like "{assumptions}" reaches the workflow as the list itself)
+  const args = E.fillArgs({ ...step.args, ...(ctx.cfg.flowArgs || {}) }, vars())
   ctx.state = { ...ctx.state, flow: { args, toolUseId: null, taskId: null } }
   await save($)
   await $.prompt.submit({ text: E.flowPrompt(step, args, (ctx.state.retries[step.id] || 0) + 1) })
@@ -421,7 +424,10 @@ async function stepDone($: any, e: any) {
   const questions = step.handoff ? await readList($, 'questions.json') : []
   const decisions = step.handoff ? await readList($, 'decisions.json') : []
   const cardVerdict = step.handoff ? E.checkCard(card, decisions) : { ok: true }
-  const verdict = cardVerdict.ok ? E.doneCheck(step, vars(), await look($, step, result)) : cardVerdict
+  // Every key in the step's "results" list must come back (a slug that names a file must be a slug).
+  const missing = E.resultProblems(ctx.pipeline, step, result)
+  const firstVerdict = !cardVerdict.ok ? cardVerdict : missing ? { ok: false, why: missing } : null
+  const verdict = firstVerdict ?? E.doneCheck(step, vars(), await look($, step, result))
   const next = await settle($, step, verdict, result)
   if (next === 'next' && step.handoff) {
     pending = { card: await handOff($, step, card, questions) }
@@ -614,7 +620,7 @@ export const register: Register = on => {
         await journal($, { ev: 'deviation', step: step.id, tool: 'Workflow', agentId: null, why })
         return { deny: why }
       }
-      const want = ctx.state.flow?.args ?? E.fillDeep(step.args, vars())
+      const want = ctx.state.flow?.args ?? E.fillArgs(step.args, vars())
       const ran: any = await next({ ...(e as any), name: step.workflow, args: want, script: undefined, scriptPath: undefined })
       const res = ran.result || {}
       ctx.state = { ...ctx.state, flow: { args: want, toolUseId: (e as any).tool_use_id, taskId: res.taskId ?? null } }
