@@ -1,5 +1,6 @@
 // Puts project/ into a known state for a test.
-// node tests/setup.mjs <fresh|at-plan|at-hello|at-review|stall|done> [cfg-json]
+// node tests/setup.mjs <fresh|card|at-plan|at-hello|at-review|stall|done> [cfg-json]
+//   card  = at-review with one open taste question (F213 live look)
 //   stall = at-hello with a helper that freezes 150s and a 25s watchdog (live watchdog test)
 //   done  = every step finished (the engine stands aside; never-stall test)
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
