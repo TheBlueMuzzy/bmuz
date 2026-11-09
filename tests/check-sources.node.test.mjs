@@ -10,15 +10,43 @@ import { fileURLToPath } from 'node:url'
 import * as E from '../plugin/hooks/engine.js'
 import { checkReport, checkSources, linkAnswers } from '../plugin/scripts/check-sources.mjs'
 
-const GOOD = `# Research: seeds
+// The discover report format (discover-research.md section 5): every section, in order.
+const GOOD = `# Discover: screen shake
 
-Made by the BMUZ research flow. Every finding cites its sources [n].
+Made by the BMUZ research flow.
 
-## Summary
-- Trading games shine when both players gain. [1][2]
+## Question
+- Brief as said: punchy screen shake
+- Goal underneath: hits that feel heavy
 
-## Reference games — what works, what is missing
-- Players praise quick turns. [1]
+## Research questions
+1. What makes shake feel punchy?
+
+## Findings by question
+### 1. What makes shake feel punchy?
+**Short and strong**
+- Short, strong shakes read as impact. [1][2] (several sources)
+- A shake longer than a beat reads as an earthquake. [1] (interpretation only)
+
+## Contradictions
+- none found
+
+## Assumption scoreboard
+1 supported · 0 contradicted · 1 no evidence
+- Supported: "more shake is more punch" — up to a point [2]
+- No evidence: "players turn it off"
+
+## Surprises
+- Film editors cut on the hit frame. [2]
+
+## Open questions → probes
+- How much is too much on a phone? → sketch
+
+## On ice
+- trauma-based shake (from the creative)
+
+## So what (draft for Define)
+- Short and strong: impact comes from timing more than size, which matters for a phone screen [1]
 
 ## Sources
 1. Page one — https://example.com/one
@@ -47,16 +75,34 @@ test('source check: a good report passes, links answered', async () => {
 
 test('source check: each broken rule is named', async () => {
   const bad = GOOD
-    .replace('- Players praise quick turns. [1]', '- Players praise quick turns.\n- Long games drag. [7]')
+    .replace('- Short, strong shakes read as impact. [1][2] (several sources)', '- Short, strong shakes read as impact. (several sources)\n- Long games drag. [7] (one source)\n- Shake hides the hit. [1]')
     .replace('2. Page two — http://example.org/two', '2. Page two — example.org/two')
   const problems = checkReport(bad).problems
-  assert.ok(problems.some(p => /"- Players praise quick turns\." \(under "Reference games.*"\) cites no source/.test(p)), problems.join('\n'))
-  assert.ok(problems.some(p => /\[7\] is cited .* but there is no source 7/.test(p)), problems.join('\n'))
-  assert.ok(problems.some(p => /source 2 \("Page two — example\.org\/two"\) has no http\(s\) link/.test(p)), problems.join('\n'))
-  assert.equal(problems.length, 3)
-  // an unsourced summary line is caught too, and so is a report with no Sources list
-  assert.ok(checkReport(GOOD.replace('gain. [1][2]', 'gain.')).problems.some(p => /under "Summary"\) cites no source/.test(p)))
-  assert.ok(checkReport('## Summary\n- a thing [1]\n').problems.some(p => /no "## Sources" list/.test(p)))
+  const has = re => assert.ok(problems.some(p => re.test(p)), `${re}\n${problems.join('\n')}`)
+  has(/"- Short, strong shakes read as impact\. \(several sources\)" \(under "Findings by question"\) cites no source/)
+  has(/"- Shake hides the hit\. \[1\]" \(under "Findings by question"\) has no strength mark/)
+  has(/\[7\] is cited .* but there is no source 7/)
+  has(/source 2 \("Page two — example\.org\/two"\) has no http\(s\) link/)
+  assert.equal(problems.length, 4)
+})
+
+test('source check: surprises, contradictions, "so what" and the scoreboard\'s supported / contradicted lines cite; "none" and "no evidence" need nothing', () => {
+  const one = (from, to) => checkReport(GOOD.replace(from, to)).problems
+  assert.match(one('hit frame. [2]', 'hit frame.')[0], /under "Surprises"\) cites no source/)
+  assert.match(one('- none found', '- A says long, B says short')[0], /under "Contradictions"\) cites no source/)
+  assert.match(one('a phone screen [1]', 'a phone screen')[0], /under "So what \(draft for Define\)"\) cites no source/)
+  assert.match(one('up to a point [2]', 'up to a point')[0], /under "Assumption scoreboard"\) cites no source/)
+  assert.deepEqual(one('- Supported: "more shake is more punch" — up to a point [2]', '- Contradicted: "x" — y [2]'), [])
+})
+
+test('source check: every section is there, in order; findings are not empty', () => {
+  const noSurprises = GOOD.replace(/## Surprises\n[^\n]*\n\n/, '')
+  assert.match(checkReport(noSurprises).problems.join('\n'), /no "## Surprises" section/)
+  const swapped = GOOD.replace('## On ice', '## TEMP').replace('## Open questions → probes', '## On ice').replace('## TEMP', '## Open questions → probes')
+  assert.match(checkReport(swapped).problems.join('\n'), /sections are out of order/)
+  const empty = GOOD.replace(/### 1\.[\s\S]*?\(interpretation only\)\n/, '- none found\n')
+  assert.match(checkReport(empty).problems.join('\n'), /"Findings by question" has no findings/)
+  assert.match(checkReport('## Summary\n- a thing [1]\n').problems.join('\n'), /no "## Question", "## Research questions".*"## Sources" sections/)
 })
 
 test('source check: a dead link is named — a 404, or no answer after 3 tries', async () => {
@@ -83,7 +129,7 @@ test('source check from the command line: exit 0 on a good report (offline), 1 w
     assert.match(execFileSync('node', [script, 'good.md', '--offline'], { cwd: dir, encoding: 'utf8' }), /✔ good\.md: every claim cites a source/)
     let out = ''
     try { execFileSync('node', [script, 'bad.md', '--offline'], { cwd: dir, encoding: 'utf8' }) } catch (err) { out = err.stdout; assert.equal(err.status, 1) }
-    assert.match(out, /✘ bad\.md: 1 source problem\n {2}- "- Players praise quick turns\." .* cites no source/)
+    assert.match(out, /✘ bad\.md: 1 source problem\n {2}- "- Short and strong: impact .*" .* cites no source/)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

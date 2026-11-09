@@ -1,10 +1,14 @@
-// Checks a research report's sources (the research flow's done-check, pipeline "discover").
+// Checks a discover research report (the research flow's done-check, pipeline "discover").
 // node check-sources.mjs <report.md> [--offline]     (BMUZ_SOURCES_OFFLINE=1 also skips the links)
 // Prints each problem in plain words; exits 0 when every rule holds, 1 otherwise.
 //
-// The rules:
-// - every line with words in a "## " section (other than Sources) is a claim and cites a source, like [2]
-// - every [n] cited is in the Sources list
+// The rules (the report format: framework .planning/research/bmuz-vision/discover-research.md, section 5):
+// - the sections are all there, in order (SECTIONS below)
+// - every finding (a "- " line under "Findings by question") cites a source, like [2], and carries its
+//   strength mark: (several sources) · (one source) · (interpretation only)   (H14 triangulation)
+// - every contradiction, surprise and "so what" line cites a source; so does every supported or
+//   contradicted assumption on the scoreboard ("no evidence" needs none); a "- none …" line is fine
+// - every [n] cited anywhere is in the Sources list
 // - every source is an http(s) link
 // - every link answers (not offline)
 //
@@ -17,19 +21,43 @@ import { fileURLToPath } from 'node:url'
 
 const LINK_RE = /https?:\/\/[^\s<>()\]]+/i
 
+// The report's "## " sections, in order. cite: which "- " lines must cite a source.
+export const SECTIONS = [
+  { name: 'Question', re: /^question$/i, cite: 'none' },
+  { name: 'Research questions', re: /^research questions$/i, cite: 'none' },
+  { name: 'Findings by question', re: /^findings by question$/i, cite: 'finding' },
+  { name: 'Contradictions', re: /^contradictions$/i, cite: 'every' },
+  { name: 'Assumption scoreboard', re: /^assumption scoreboard$/i, cite: 'scoreboard' },
+  { name: 'Surprises', re: /^surprises$/i, cite: 'every' },
+  { name: 'Open questions → probes', re: /^open questions/i, cite: 'none' },
+  { name: 'On ice', re: /^on ice$/i, cite: 'none' },
+  { name: 'So what (draft for Define)', re: /^so what/i, cite: 'every' },
+  { name: 'Sources', re: /^sources$/i, cite: 'sources' },
+]
+export const STRENGTH_RE = /\((several sources|one source|interpretation only)\)/i
+
 // The report's structure, no network. Returns { problems, links: [{ n, url }] }.
 export function checkReport(text) {
   const problems = []
   const lines = String(text).split(/\r?\n/)
   let section = null
+  let rule = null
+  const order = [] // the known sections, in the order they appear
+  let findings = 0
   const cited = new Map() // n -> first line citing it
   const sources = new Map() // n -> url | null
   for (const raw of lines) {
     const line = raw.trim()
     const h = line.match(/^##\s+(.+?)\s*$/)
-    if (h) { section = h[1]; continue }
+    if (h) {
+      section = h[1]
+      const known = SECTIONS.find(x => x.re.test(section))
+      rule = known ? known.cite : 'none'
+      if (known) order.push(known.name)
+      continue
+    }
     if (!line || section === null || /^#/.test(line)) continue
-    if (/^sources$/i.test(section)) {
+    if (rule === 'sources') {
       const m = line.match(/^(?:(\d+)[.)]|\[(\d+)\])\s+(.*)$/)
       if (!m) { problems.push(`the Sources line "${clip(line)}" doesn't start with its number, like "1. Title — https://…"`); continue }
       const n = Number(m[1] || m[2])
@@ -40,12 +68,23 @@ export function checkReport(text) {
       continue
     }
     const nums = [...line.matchAll(/\[(\d+)\]/g)].map(x => Number(x[1]))
-    if (!nums.length) problems.push(`"${clip(line)}" (under "${section}") cites no source; every claim needs one, like [1]`)
     for (const n of nums) if (!cited.has(n)) cited.set(n, line)
+    // Only list lines are claims; a line saying there is nothing ("- none found") needs no source.
+    if (!/^[-*]\s/.test(line) || /^[-*]\s+(\*\*)?none\b/i.test(line)) continue
+    const mustCite = rule === 'every' || rule === 'finding' ||
+      (rule === 'scoreboard' && /^[-*]\s+(\*\*)?(supported|contradicted)\b/i.test(line))
+    if (mustCite && !nums.length) problems.push(`"${clip(line)}" (under "${section}") cites no source; every claim needs one, like [1]`)
+    if (rule === 'finding') {
+      findings++
+      if (!STRENGTH_RE.test(line)) problems.push(`"${clip(line)}" (under "${section}") has no strength mark: (several sources), (one source) or (interpretation only)`)
+    }
   }
-  if (![...lines].some(l => /^##\s+sources\s*$/i.test(l.trim()))) problems.push('the report has no "## Sources" list')
+  const missing = SECTIONS.filter(x => !order.includes(x.name)).map(x => `"## ${x.name}"`)
+  if (missing.length) problems.push(`the report has no ${missing.join(', ')} section${missing.length > 1 ? 's' : ''}`)
+  const want = SECTIONS.map(x => x.name).filter(x => order.includes(x))
+  if (JSON.stringify([...new Set(order)]) !== JSON.stringify(want)) problems.push(`the sections are out of order: ${[...new Set(order)].join(' · ')}; the order is ${SECTIONS.map(x => x.name).join(' · ')}`)
+  if (order.includes('Findings by question') && findings === 0) problems.push('"Findings by question" has no findings')
   for (const [n, line] of cited) if (!sources.has(n)) problems.push(`[${n}] is cited ("${clip(line)}") but there is no source ${n} in the Sources list`)
-  if (cited.size === 0 && sources.size === 0) problems.push('the report has no findings and no sources')
   const links = [...sources.entries()].filter(([, u]) => u).map(([n, url]) => ({ n, url }))
   return { problems, links }
 }
