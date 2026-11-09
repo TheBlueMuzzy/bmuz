@@ -25,4 +25,6 @@ From ARCHITECTURE.md "How we get sure" (framework repo, `.planning/research/bmuz
 | 15 | An overnight run never stops to wait | fix 1 | check 15 ×2 | `full`, `nightly` | — |
 | 16 | Motor B: `bmuz next` gives the right step from a shell | — | — | `motorb` | — |
 
+The engine-written hand-off card (F213, docs/handoff-card.md): `tests/handoff-card.node.test.mjs`, the "F213:" plugin tests, and headless `card` (the review step ends with the engine's card; "1 blue" is recorded as a decision).
+
 Memory and safety beyond the 16 (doctor, undo, retry after BLOCKED, pipeline file check): `tests/memory-safety.node.test.mjs`, `tests/pipeline-format.node.test.mjs`, and the undo/doctor plugin tests.

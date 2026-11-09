@@ -99,6 +99,18 @@ const scenarios = {
     check('3: killed at review; the next session saw the crash and resumed review, not hello', killedAtReview && evs('crash.detected').length === 1 && evs('step.start', 'hello').length === 1 && evs('pipeline.done').length === 1, `killed at review: ${killedAtReview}; journal: ${events().map(j => j.ev + (j.step ? ':' + j.step : '')).join(' ')}`)
   },
 
+  // F213: the review step hands back a card the engine writes, listing the open question by number;
+  // "1 blue" in the next message is recorded as a decision.
+  async card() {
+    setup('at-review')
+    writeFileSync(join(project, '.bmuz', 'questions.json'), JSON.stringify([{ n: 1, key: 'heading-colour', q: 'What colour should the heading be?', kind: 'taste', options: ['blue', 'black'], askedIn: 1, status: 'open', addedAt: '2026-11-08' }]))
+    const out = claude('bmuz go')
+    const card = file('.bmuz/last-card.md') || ''
+    check('F213: the run ended with the engine\'s card, the open question numbered in it', /^## .* — ready for you to check\n/.test(card) && /\n1\. What colour should the heading be\?\n {3}What's your view\?/.test(card) && out.includes(card.trim()) && evs('pipeline.done').length === 1, out.slice(-600))
+    claude('1 blue')
+    check('F213: "1 blue" was recorded as a decision', /heading be\? — \*\*blue\*\*/.test(file('.bmuz/decisions.md') || ''), file('.bmuz/decisions.md'))
+  },
+
   // Check 16: motor B — "bmuz next" from a shell reads the same pipeline and state.
   async motorb() {
     setup('at-review')
