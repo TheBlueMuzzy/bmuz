@@ -27,6 +27,7 @@ Any other setting is refused (a typo like `stpes` would otherwise be ignored sil
 | `needs` | no | earlier step ids that must be finished first |
 | `description` | no | one line, for people |
 | `timeoutMs` | no | this step's own watchdog limit |
+| `always` | no | `true` = the step still runs when the creative wraps up early (below) |
 
 A step runs when everything it `needs` is finished. A step can only need steps **above** it.
 
@@ -37,6 +38,8 @@ A step runs when everything it `needs` is finished. A step can only need steps *
 - `craft` (needed): a `.md` note in the plugin telling Claude what to do, like `craft/review.md`.
 - `handoff`: `true` = the step hands its work back to the creative. Its `step_done` result must carry a hand-off card's words (`card`, docs/handoff-card.md); a missing or empty part fails the step like a done-check. The engine writes the card and shows it at the end of the turn, then starts the next step. Talk steps only.
 - `results`: the keys the step's result must carry, like `["brief", "goal", "slug", "assumptions"]`. A missing key (or empty text; an empty list is fine) fails the step like a done-check. Each key is a `{hole}` for later steps. A key used in a later `writes` path must come back as a slug (lower case letters, digits, dashes, at most 60), or the step fails.
+- `recap`: result keys from earlier talk steps (ones this step needs) to show in the step's prompt, like `["brief", "verbs"]`. The step then builds on what was collected even in a new session or a compacted chat. Empty ones are left out.
+- `wrapTo`: a later step to jump to when the creative wraps up (see "Wrapping up early").
 - `done`, `writes`: see below.
 
 **gate** — the engine stops and asks the creative with buttons; nothing else runs until they answer.
@@ -55,6 +58,14 @@ A step runs when everything it `needs` is finished. A step can only need steps *
 - `args`: the workflow's inputs, `{holes}` allowed.
 - `agentTools`: the only tools the workflow's helpers may use.
 - `craft`, `done`, `writes`.
+
+## Wrapping up early (`wrapTo`, `always`)
+A way out of the middle of a pipeline, like Discover's "keep going or wrap up?" after each step.
+- A talk step with `"wrapTo": "<later step id>"` gets the engine's own wrap-up words in its prompt: when its questions are done, ask "Keep going (next: …), or wrap up now?" with "Keep going" first (the safe choice). An auto run always keeps going.
+- If the creative wraps up (there, or in their own words any time during the step), the step finishes with what it has and its `step_done` result carries `"wrap": true` (an instruction to the engine, not kept as a result).
+- The engine then **skips** every unfinished step after it and before `wrapTo`, except steps with `"always": true`, which still run (Discover's first research and its save step). A skipped step counts as finished, so the steps after it can run, but it hands back nothing: a `{hole}` from it fills in as nothing (empty text; a whole-hole flow arg gets `null`).
+- The wrap is journaled (`"ev": "wrap"`, with the skipped steps), so the doctor rebuilds it. The undo list marks skipped steps; going back to before one runs it for real.
+- The check refuses a `wrapTo` that isn't a later step, and an `always` that isn't true or false.
 
 ## Done-checks (`done`)
 How the engine knows a step really finished. A failed check retries the step twice, then marks it BLOCKED and rolls back its `writes`.

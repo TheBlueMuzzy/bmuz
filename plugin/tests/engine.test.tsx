@@ -658,3 +658,48 @@ test('F217: the flow gets list results as lists, and its slug-named file is chec
   expect(prompts.some(p => p.includes('"assumptions":[{"text":"more is more","important":true}]') && p.includes('"out":"r/discover-punchy-shake.md"'))).toBe(true)
   expect(JSON.parse(w.files['/proj/.bmuz/checkpoint-research.json'])).toEqual({ 'r/discover-punchy-shake.md': null })
 })
+
+// F217: wrapping up early. A talk step with "wrapTo" that hands back "wrap": true skips the steps up to it;
+// an "always" step still runs.
+test('F217: "wrap": true skips to the wrapTo step, journaled; an "always" step still runs; "wrap" is not kept as a result', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = framed(on)
+  w.files.PIPELINE = JSON.stringify({
+    id: 'hello', version: 1, steps: [
+      { id: 'frame', kind: 'talk', tools: ['Read'], craft: 'craft/name.md', results: ['brief', 'slug'], wrapTo: 'review' },
+      { id: 'feel', kind: 'talk', needs: ['frame'], tools: ['Read'], craft: 'craft/name.md', results: ['experiences'], wrapTo: 'review' },
+      { id: 'research', kind: 'flow', needs: ['feel'], always: true, workflow: 'bmuz:research-flow', args: { brief: '{brief}', experiences: '{experiences}' } },
+      { id: 'review', kind: 'talk', needs: ['research'], tools: ['Read'], craft: 'craft/review.md', recap: ['brief'], done: { type: 'result-has', key: 'verdict' } },
+    ],
+  })
+  await start($, true)
+  const done: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { brief: 'a lighthouse', slug: 'lighthouse', wrap: true } } as any)
+  expect(String(done.result)).toMatch(/Recorded/)
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(st.finished).toEqual(['frame', 'feel'])
+  expect(st.skipped).toEqual(['feel'])
+  expect(st.results).toEqual({ brief: 'a lighthouse', slug: 'lighthouse', experiences: null })
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"wrap","step":"frame","to":"review","skipped":\["feel"\]/)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as any)
+  // the always-step runs next, its skipped hole arriving as null
+  expect(prompts.some(p => /Call the Workflow tool now with name "bmuz:research-flow" and args \{"brief":"a lighthouse","experiences":null\}/.test(p))).toBe(true)
+})
+
+test('F217: a wrapTo step\'s prompt asks "keep going or wrap up" in a live window, and shows its recap', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = framed(on)
+  w.files.PIPELINE = JSON.stringify({
+    id: 'hello', version: 1, steps: [
+      { id: 'frame', kind: 'talk', tools: ['Read'], craft: 'craft/name.md', results: ['brief'], description: 'the spark' },
+      { id: 'feel', kind: 'talk', needs: ['frame'], tools: ['Read'], craft: 'craft/name.md', results: ['experiences'], wrapTo: 'review', recap: ['brief'], description: 'experience and fantasy' },
+      { id: 'dig', kind: 'talk', needs: ['feel'], tools: ['Read'], craft: 'craft/name.md', description: 'theme dig' },
+      { id: 'review', kind: 'talk', needs: ['dig'], tools: ['Read'], craft: 'craft/review.md', description: 'the brick board' },
+    ],
+  })
+  await start($, true)
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { brief: 'a lighthouse' } } as any)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as any)
+  const feel = prompts.find(p => /BMUZ step "feel"/.test(p))!
+  expect(feel).toMatch(/Collected so far by earlier steps \(build on it; don't ask it again\): \{"brief":"a lighthouse"\}/)
+  expect(feel).toMatch(/"Keep going \(next: theme dig\), or wrap up now \(what's collected is saved, then the brick board\)\?"/)
+})

@@ -251,7 +251,28 @@ async function startTalk($: any, step: any, why: string) {
   const craft = await craftOf($, step)
   // A hand-off step is told what is already decided, so it doesn't ask it again.
   const decided = step.handoff ? await readList($, 'decisions.json') : []
-  await $.prompt.submit({ text: E.talkPrompt(step, craft, why, ctx.auto, decided) })
+  const recap = Object.fromEntries((step.recap || []).map((k: string) => [k, ctx.state.results[k]]))
+  await $.prompt.submit({ text: E.talkPrompt(step, craft, why, ctx.auto, decided, { recap, wrap: wrapWords(step) }) })
+}
+
+// The wrap-up question's words: what comes next if they keep going, and where wrapping up goes.
+function wrapWords(step: any) {
+  if (!step.wrapTo) return null
+  const steps = ctx.pipeline.steps
+  const next = steps[steps.indexOf(step) + 1]
+  const to = E.stepById(ctx.pipeline, step.wrapTo)
+  const say = (s: any) => (s ? s.description || s.id : 'the end')
+  return { next: say(next), to: say(to) }
+}
+
+// The creative wrapped up after `step`: the steps up to its wrapTo are skipped (an "always" step still
+// runs), journaled, and the run goes on from there.
+async function wrapUp($: any, step: any) {
+  const skipped = E.wrapSkips(ctx.pipeline, ctx.state, step)
+  const empties = E.wrapEmpties(ctx.pipeline, ctx.state, skipped)
+  ctx.state = E.applyWrap(ctx.state, skipped, empties)
+  await journal($, { ev: 'wrap', step: step.id, to: step.wrapTo, skipped, empties })
+  await save($)
 }
 
 // The creative's answers by number ("1 yes"): recorded in the decisions list and marked answered.
@@ -417,7 +438,8 @@ async function handOff($: any, step: any, card: any, questions: any[]) {
 
 async function stepDone($: any, e: any) {
   const step = E.stepById(ctx.pipeline, ctx.state.current)
-  const { asks, card, ...result } = e.result && typeof e.result === 'object' ? e.result : ({} as any)
+  // ("wrap": the creative chose to wrap up; it is an instruction to the engine, not a result)
+  const { asks, card, wrap, ...result } = e.result && typeof e.result === 'object' ? e.result : ({} as any)
   await addQuestions($, step.id, asks)
   // A hand-off step without a good card is not done, the same as a failed done-check (retries, then BLOCKED).
   // The lists are read before anything is settled, so a damaged one refuses the call with nothing half done.
@@ -429,6 +451,7 @@ async function stepDone($: any, e: any) {
   const firstVerdict = !cardVerdict.ok ? cardVerdict : missing ? { ok: false, why: missing } : null
   const verdict = firstVerdict ?? E.doneCheck(step, vars(), await look($, step, result))
   const next = await settle($, step, verdict, result)
+  if (next === 'next' && step.wrapTo && wrap === true) await wrapUp($, step)
   if (next === 'next' && step.handoff) {
     pending = { card: await handOff($, step, card, questions) }
     return { result: 'Recorded. End your turn now; the BMUZ engine shows the hand-off card itself.' }

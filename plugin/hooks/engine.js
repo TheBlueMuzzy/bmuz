@@ -11,8 +11,9 @@ export const FORMAT_VERSION = 1
 export const NAME_RE = /^[a-z][a-z0-9-]*$/
 const TOP_KEYS = ['id', 'version', 'description', 'watchdogMs', 'steps']
 const STEP_KEYS = {
-  common: ['id', 'kind', 'needs', 'description', 'timeoutMs'],
-  talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results'],
+  // always: the step still runs when the creative wraps up early (a talk step's "wrapTo")
+  common: ['id', 'kind', 'needs', 'description', 'timeoutMs', 'always'],
+  talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results', 'wrapTo', 'recap'],
   gate: ['question', 'options', 'approve', 'backTo'],
   script: ['run', 'writes', 'done'],
   flow: ['workflow', 'args', 'agentTools', 'writes', 'craft', 'done'],
@@ -103,8 +104,12 @@ export function checkPipeline(p) {
         if (d.type === 'result-has' && s.kind !== 'talk') problems.push(`${at}: only talk steps hand back a result, so "result-has" can't check a ${s.kind} step`)
       }
     }
+    if (s.always !== undefined && typeof s.always !== 'boolean') problems.push(`${at}: "always" must be true or false`)
     if (s.kind === 'talk') {
       if (s.handoff !== undefined && typeof s.handoff !== 'boolean') problems.push(`${at}: "handoff" must be true or false`)
+      // (wrapTo must name a LATER step: checked once every step is known, below)
+      if (s.wrapTo !== undefined && (typeof s.wrapTo !== 'string' || !NAME_RE.test(s.wrapTo))) problems.push(`${at}: "wrapTo" must be a later step's id`)
+      if (s.recap !== undefined && !(isList(s.recap) && s.recap.every(k => /^\w+$/.test(k)))) problems.push(`${at}: "recap" must be a list of result keys from earlier steps`)
       if (!isList(s.tools)) problems.push(`${at} (talk) needs "tools": the list of tools Claude may use in it`)
       if (!s.craft) problems.push(`${at} (talk) needs a "craft" note telling Claude what to do`)
     }
@@ -138,12 +143,21 @@ export function checkPipeline(p) {
     for (const n of Array.isArray(s.needs) ? s.needs : []) walk(n)
     const filled = { question: s.question, run: s.run, args: s.args, path: s.done && s.done.path, text: s.done && s.done.text, check: s.done && s.done.run }
     for (const h of new Set(holesIn(filled))) if (!known.has(h)) problems.push(`${at}: {${h}} isn't known here (known: ${[...known].map(k => `{${k}}`).join(', ')}); a result comes from a talk step this step needs`)
+    // A recap shows earlier results in the step's prompt: each key must be one a needed talk step hands back.
+    for (const k of isList(s.recap) ? s.recap : []) if (!known.has(k) || BUILT_IN_HOLES.includes(k)) problems.push(`${at}: "recap" key "${k}" isn't a result of a talk step this step needs`)
     // A file the engine may delete can be named by a result only when that result is checked as a slug
     // (resultProblems): a "writes" hole must be a key in a needed talk step's "results".
     for (const f of isList(s.writes) ? s.writes : []) {
       for (const h of new Set(holesIn(f))) if (!listed.has(h)) problems.push(`${at}: "writes" path "${f}" can use only {holes} a needed talk step lists in "results" (their values are checked as slugs); {${h}} isn't one`)
     }
     if (typeof s.id === 'string' && !byId.has(s.id)) byId.set(s.id, s)
+  })
+  // Wrapping up jumps forward, never back: "wrapTo" names a step below this one.
+  const ids = p.steps.map(s => s && s.id)
+  p.steps.forEach((s, i) => {
+    if (!s || typeof s.wrapTo !== 'string' || !NAME_RE.test(s.wrapTo)) return
+    const j = ids.indexOf(s.wrapTo)
+    if (j <= i) problems.push(`step "${s.id}": "wrapTo" "${s.wrapTo}" is not a later step`)
   })
   return problems
 }
@@ -154,7 +168,7 @@ export function pluginFiles(p) {
 }
 
 export function freshState(pipelineId) {
-  return { pipeline: pipelineId, current: null, status: 'idle', results: {}, resultsBy: {}, retries: {}, finished: [], blocked: null, startedAt: null }
+  return { pipeline: pipelineId, current: null, status: 'idle', results: {}, resultsBy: {}, retries: {}, finished: [], skipped: [], blocked: null, startedAt: null }
 }
 
 // The results the next steps can use: each finished step's result, in the order they finished.
@@ -168,7 +182,52 @@ function dropSteps(state, drop) {
   const finished = state.finished.filter(id => !drop.has(id))
   const resultsBy = Object.fromEntries(Object.entries(state.resultsBy || {}).filter(([id]) => !drop.has(id)))
   const retries = Object.fromEntries(Object.entries(state.retries || {}).filter(([id]) => !drop.has(id)))
-  return { ...state, finished, resultsBy, retries, results: state.resultsBy ? mergeResults(finished, resultsBy) : state.results }
+  const out = { ...state, finished, resultsBy, retries, results: state.resultsBy ? mergeResults(finished, resultsBy) : state.results }
+  // A skipped step taken off the finished list runs for real next time.
+  if (state.skipped) out.skipped = state.skipped.filter(id => !drop.has(id))
+  return out
+}
+
+// ---- Wrapping up early (a talk step's "wrapTo") ----
+// The creative may wrap up after a step: everything collected so far is kept, and the run jumps to the
+// "wrapTo" step (Discover's brick board). The steps in between are SKIPPED: they count as finished, so
+// later steps that need them can run, but they hand back nothing. A step marked "always" still runs.
+
+// The steps a wrap from `step` skips: every unfinished step after it and before its wrapTo, except "always" ones.
+export function wrapSkips(p, state, step) {
+  const from = p.steps.indexOf(step)
+  const to = p.steps.findIndex(s => s.id === step.wrapTo)
+  if (from < 0 || to <= from) return []
+  return p.steps.slice(from + 1, to).filter(s => !state.finished.includes(s.id) && !s.always).map(s => s.id)
+}
+
+// The result keys a skipped step would have handed back, as empty (null) where no earlier step gave them:
+// a later {hole} naming one fills in as nothing (text "" / a flow arg null), never as the "{hole}" itself.
+export function wrapEmpties(p, state, skipped) {
+  const out = {}
+  for (const id of skipped) {
+    const s = stepById(p, id)
+    const keys = (s && s.kind === 'talk' ? s.results || [] : []).concat(s && s.kind === 'talk' && s.done && s.done.key ? [s.done.key] : [])
+    out[id] = Object.fromEntries(keys.filter(k => state.results[k] === undefined).map(k => [k, null]))
+  }
+  return out
+}
+
+// Marks steps skipped (used by the motor and by the journal rebuild, so both end the same).
+export function applyWrap(state, skipped, empties = {}) {
+  const resultsBy = { ...(state.resultsBy || {}) }
+  let results = { ...state.results }
+  for (const id of skipped) {
+    resultsBy[id] = empties[id] || {}
+    results = { ...resultsBy[id], ...results }
+  }
+  return {
+    ...state,
+    finished: [...state.finished, ...skipped.filter(id => !state.finished.includes(id))],
+    skipped: [...new Set([...(state.skipped || []), ...skipped])],
+    resultsBy,
+    results,
+  }
 }
 
 export function stepById(p, id) {
@@ -204,10 +263,16 @@ export function askLines(stepId, asks, day) {
 
 // The words that start a talk step. An auto run gets the never-ask rule up front.
 // decided = the project's decisions list (a hand-off step is told them, so it doesn't ask them again).
-export function talkPrompt(step, craft, why, auto, decided = []) {
+// more.recap = earlier results to show (the step's "recap" keys); more.wrap = { next, to }: the words for the
+// wrap-up question when the step has "wrapTo".
+export function talkPrompt(step, craft, why, auto, decided = [], more = {}) {
   const lines = [`BMUZ step "${step.id}" — this message comes from the BMUZ engine, not the creative; do the step without commenting on the engine.`]
   if (why) lines.push(`The last try did not pass: ${why}.`)
   if (auto) lines.push(`Auto run: the creative is away. Never ask and never wait for an answer, with AskUserQuestion or in plain text. Where you would ask, pick the sensible default, list it in the result's "asks" as {"question": "...", "picked": "..."}, and carry on.`)
+  // The recap carries what earlier steps collected, so the step works the same after a new session or a
+  // compacted chat (the conversation alone would forget it).
+  const recap = Object.fromEntries(Object.entries(more.recap || {}).filter(([, v]) => v !== undefined && v !== null))
+  if (Object.keys(recap).length) lines.push(`Collected so far by earlier steps (build on it; don't ask it again): ${JSON.stringify(recap)}`)
   lines.push(craft)
   const result = {}
   for (const k of step.results || []) result[k] = '...'
@@ -217,6 +282,12 @@ export function talkPrompt(step, craft, why, auto, decided = []) {
     result.card = { title: '...', done: '...', see: '...', try: '...', proof: ['...'], todos: 'none', questions: [], next: '...' }
     lines.push(`This step hands back to the creative: put the hand-off card's words in the result's "card" (every part filled; "none" where there is nothing). Don't write the card in the chat: the engine shows it. Questions go in "questions" as {"key": "short-slug", "q": "...?", "kind": "taste" | "want" | "choice", "options": ["..."]}: taste = how it looks, feels or plays (no "pick": the creative's view comes first); want / choice may add "pick" (one of the options). Engineering calls are yours: decide them and say why in "done", never ask.`)
     if (decided.length) lines.push(`Already decided (use these, never ask them again): ${decided.map(d => `${d.key} = ${d.answer}`).join('; ')}.`)
+  }
+  if (step.wrapTo && more.wrap) {
+    // The same words at every step, from the engine, so wrapping up is always offered the same way.
+    lines.push(auto
+      ? `Wrap-up: in an auto run keep going (leave "wrap" out of the result).`
+      : `Wrap-up: the creative may wrap up at any point. When this step's own questions are done, ask one more with AskUserQuestion: "Keep going (next: ${more.wrap.next}), or wrap up now (what's collected is saved, then ${more.wrap.to})?" with the options "Keep going" first and "Wrap up". If they wrap up, here or earlier in their own words, finish the step with what you have and add "wrap": true to the result.`)
   }
   lines.push(`When it is done, call ${ENGINE_TOOL} with result ${JSON.stringify(result)} and end your turn.`)
   return lines.join('\n')
@@ -478,7 +549,9 @@ export function writesOf(step, vars) {
 export function fillArgs(v, vars) {
   if (typeof v === 'string') {
     const whole = v.match(/^\{(\w+)\}$/)
-    if (whole && vars[whole[1]] !== null && typeof vars[whole[1]] === 'object') return JSON.parse(JSON.stringify(vars[whole[1]]))
+    // (null = the step that gives it was skipped by a wrap-up: the workflow gets null, not the text "{hole}")
+    if (whole && vars[whole[1]] === null) return null
+    if (whole && typeof vars[whole[1]] === 'object') return JSON.parse(JSON.stringify(vars[whole[1]]))
     return fill(v, vars)
   }
   if (Array.isArray(v)) return v.map(x => fillArgs(x, vars))
@@ -488,7 +561,8 @@ export function fillArgs(v, vars) {
 
 // Fills {name}-style holes from the step results and extra values.
 export function fill(text, vars) {
-  return String(text).replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined ? String(vars[k]) : m))
+  // (a null result, from a step skipped by a wrap-up, fills in as nothing)
+  return String(text).replace(/\{(\w+)\}/g, (m, k) => (vars[k] === undefined ? m : vars[k] === null ? '' : String(vars[k])))
 }
 
 export function fillDeep(v, vars) {
@@ -644,7 +718,7 @@ export function undoList(p, state) {
     const files = [...new Set(later.flatMap(x => writesOf(x, state.results || {})))]
     const untracked = later.filter(x => (x.kind === 'script' || x.kind === 'flow') && !(x.writes || []).length).map(x => x.id)
     const what = s.description ? `${s.id} (${s.description})` : s.id
-    let line = `go back to before "${what}"`
+    let line = `go back to before "${what}"${(state.skipped || []).includes(id) ? ' (skipped when you wrapped up)' : ''}`
     line += files.length ? `: puts back ${files.join(', ')}` : ': no files to put back'
     line += `; runs ${later.length === 1 ? 'that step' : `${later.length} steps`} again`
     if (untracked.length) line += `; anything ${untracked.join(', ')} changed outside its files stays as it is`
@@ -733,7 +807,8 @@ export function rebuildFromJournal(pipelineId, lines) {
     if (j.ev === 'baseline' && j.state) s = { ...freshState(pipelineId), ...j.state }
     if (j.ev === 'step.start') s = { ...s, current: j.step, status: j.kind === 'gate' ? 'waiting' : 'working', startedAt: j.t }
     if (j.ev === 'step.done') s = finish(s, { id: j.step }, j.result || null)
-    if (j.ev === 'retry') s = { ...s, retries: { ...s.retries, [j.step]: (s.retries[j.step] || 0) + 1 } }
+    if (j.ev === 'wrap') s = applyWrap(s, j.skipped || [], j.empties || {})
+    if (j.ev === 'retry') s ={ ...s, retries: { ...s.retries, [j.step]: (s.retries[j.step] || 0) + 1 } }
     if (j.ev === 'gate.back') s = { ...dropSteps(s, new Set(j.dropped || [])), current: null, status: 'idle', startedAt: null }
     if (j.ev === 'undo') s = { ...dropSteps(s, new Set(j.redo || [])), current: null, status: 'idle', startedAt: null, blocked: null }
     if (j.ev === 'blocked') s = { ...s, status: 'blocked', blocked: { step: j.step, why: j.why }, retries: { ...s.retries, [j.step]: MAX_RETRIES + 1 } }
