@@ -4,7 +4,7 @@ Purpose: find out where the game is right now, in at most two taps, and read wha
 Ask with AskUserQuestion, one question per call, their own words always open (the box's "Other"). No intro line before it: the question is the opening.
 
 Question 1 — "Where's your game right now?" (header "Your game"). These four options, in this order, word for word:
-1. "Nothing yet, or just a spark" — description: "a theme, a mechanism, a feeling or a what-if"
+1. "Nothing yet, or just a spark" — description: "a theme, a mechanism, a feeling or a what-if — or nothing yet"
 2. "A concept" — description: "I can describe it in a few sentences"
 3. "Something written" — description: "notes, a pitch, a rulebook or a GDD"
 4. "A prototype I've played" — description: "paper or digital"
