@@ -36,7 +36,10 @@ const chosenLines = Object.entries(choices)
   .map(([k, v]) => [k, list(v).map(itemLine).filter(Boolean)])
   .filter(([, v]) => v.length)
   .map(([k, v]) => `- ${k}: ${v.join('; ')}`)
-if (!chosenLines.length) throw new Error('fit-flow needs "choices": what the creative chose in the talk steps so far')
+// Nothing chosen yet (an auto run chooses nothing: taste is the creative's): no helper runs, and the report says so,
+// rather than the step failing three times and blocking the run.
+const nothing = !chosenLines.length
+if (nothing) log('nothing chosen yet: no checks to run')
 
 const LENSES = [
   {
@@ -87,7 +90,7 @@ const prompt = lens => [
 ].join('\n')
 
 phase('Check')
-const found = await parallel(LENSES.map(lens => () => agent(prompt(lens), { label: `check: ${lens.id}`, phase: 'Check', schema: FIT })))
+const found = nothing ? [] : await parallel(LENSES.map(lens => () => agent(prompt(lens), { label: `check: ${lens.id}`, phase: 'Check', schema: FIT })))
 
 // Merged in code (no merge helper: organising only, so nothing can be chosen on the way): repeats folded,
 // each finding keeps the checks that saw it.
@@ -98,7 +101,7 @@ const add = (kind, key, item, lens) => {
   if (!seen.get(k).by.includes(lens)) seen.get(k).by.push(lens)
 }
 const failed = []
-LENSES.forEach((lens, i) => {
+if (!nothing) LENSES.forEach((lens, i) => {
   const r = found[i]
   if (!r) { failed.push(lens.id); return }
   for (const t of list(r.tensions)) if (text(t.a) && text(t.b)) add('tension', `${text(t.a)}|${text(t.b)}`, { a: text(t.a), b: text(t.b), why: text(t.why) }, lens.name)
@@ -107,7 +110,7 @@ LENSES.forEach((lens, i) => {
   for (const x of list(r.gaps)) if (text(x && x.text)) add('gap', text(x.text), { text: text(x.text) }, lens.name)
 })
 if (failed.length) log(`no answer from: ${failed.join(', ')}`)
-if (failed.length === LENSES.length) throw new Error('no fit check came back')
+if (!nothing && failed.length === LENSES.length) throw new Error('no fit check came back')
 const of = kind => [...seen.values()].filter(x => x.kind === kind)
 const by = x => ` (seen by: ${x.by.join(', ')})`
 const id = b => (/^[A-Z]{2}\d{1,4}$/.test(b || '') ? ` [${b}]` : '')
@@ -131,7 +134,7 @@ const md = [
   ...(of('gap').length ? of('gap').map(x => `- ${x.text}${by(x)}`) : [none]),
   '',
   '## What was checked',
-  ...LENSES.map((l, i) => `- ${l.name}: ${found[i] ? text(found[i].checked) || 'not said' : 'no answer from this helper'}`),
+  ...(nothing ? ['- nothing: no choices yet, so there was nothing to check against each other (an auto run chooses nothing)'] : LENSES.map((l, i) => `- ${l.name}: ${found[i] ? text(found[i].checked) || 'not said' : 'no answer from this helper'}`)),
   '',
 ].join('\n')
 

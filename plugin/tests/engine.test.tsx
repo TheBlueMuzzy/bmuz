@@ -722,3 +722,44 @@ test('F217: a wrapTo step\'s prompt asks "keep going or wrap up" in a live windo
   expect(feel).toMatch(/Collected so far by earlier steps \(build on it; don't ask it again\): \{"brief":"a lighthouse"\}/)
   expect(feel).toMatch(/"Keep going \(next: theme dig\), or wrap up now \(what's collected is saved, then the brick board\)\?"/)
 })
+
+// F218: Define. Its talk steps choose (taste), so a headless run needs a stand-in for the creative: bmuz.json
+// "testAnswers", refused unless the session runs with BMUZ_TEST=1.
+test('F218: "testAnswers" in bmuz.json without BMUZ_TEST=1 refuses every tool, in plain words', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  w.files['/proj/bmuz.json'] = '{"pipeline":"hello","watchdogTickMs":3600000,"testAnswers":{"name":"Moon Goat"}}'
+  await start($, true)
+  const ask: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+  expect(refused(ask)).toBe(true)
+  expect(why(ask)).toMatch(/"testAnswers", a setting for BMUZ's own tests only .* only when BMUZ_TEST=1/)
+})
+
+test('F218: with BMUZ_TEST=1 the talk step\'s hidden instructions carry the test answers as the creative\'s words', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(String.fromCharCode(10))); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, base({ current: null, status: 'idle', finished: [] }), argv => ({ exitCode: 0, stdout: argv.join(' ').includes('BMUZ_TEST') ? '1' : '{}' }))
+  w.files['/proj/bmuz.json'] = '{"pipeline":"hello","watchdogTickMs":3600000,"testAnswers":{"name":{"What is it called?":"Moon Goat"}}}'
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as any)
+  const talk = prompts.find(p => /^BMUZ step "name"/.test(p))!
+  expect(talk).toMatch(/Test run: these are the creative's own answers to this step's questions, as if they had typed them in the chat: \{"What is it called\?":"Moon Goat"\}/)
+})
+
+test('F218: a script that refuses says why; its words are the failed try\'s reason and the BLOCK\'s', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const said = '✘ Not ready for Design: the pillars (step "pillars") is still open.'
+  const w = world(on, base({ current: null, status: 'idle', finished: ['name', 'approve'] }), argv => (argv.includes('x.mjs') ? { exitCode: 1, stdout: said } : { exitCode: 0, stdout: '{}' }))
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as any)
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(st.status).toBe('blocked')
+  expect(st.blocked.why).toBe(`script exited 1: ${said}`)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"retry","step":"plan","attempt":2,"why":"script exited 1: ✘ Not ready for Design/)
+})

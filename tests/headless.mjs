@@ -3,7 +3,7 @@
 // node tests/headless.mjs [scenario ...]   (no names = all; ~10 min; uses haiku)
 // Runs one at a time in project/. Prints PASS/FAIL per check; exits 1 on any FAIL.
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -30,6 +30,59 @@ const results = []
 const check = (name, ok, detail = '') => {
   results.push({ name, ok })
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${!ok && detail ? `\n      ${detail}` : ''}`)
+}
+
+// The define scenario's stand-in for the creative (bmuz.json "testAnswers"): their answers per talk step, in plain
+// words, the way a creative would type them. Claude still has to map them onto the shelves and the result keys.
+const DEFINE_ANSWERS = {
+  direction: {
+    'Which moments ARE this game?': 'Waiting out a storm inside the tower with a cup of tea while the lamp keeps turning: that one, from the shelf.',
+    'Which feeling matters most?': 'Quiet care: being the calm one who keeps everyone safe. Submission, I think.',
+    'You are a…': 'Keep the shelf\'s line: a lighthouse keeper on a small rocky island, looking after the light and the boats.',
+    'Which dream?': 'I want to be the keeper of a light that others depend on.',
+    'How will we know a player feels it?': 'They stay after the boat is safe, just watching the light turn.',
+    'What is it NOT?': 'Not a stressful time-management game. No overlapping timers.',
+    'Who is it for?': 'Someone unwinding after work, ten minutes before bed.',
+  },
+  story: {
+    'Write my own, or be guided?': 'Guide me.',
+    'What do you do, moment to moment?': 'Tend the lamp: trim, wind and polish.',
+    'What gets in your way?': 'Fog and storms.',
+    'What does it feel like when it goes well?': 'A boat makes it home and the night goes quiet.',
+    'How does one sitting end?': 'Dawn comes and you put the lamp out.',
+    'The pitch': 'A cosy lighthouse game where care, not speed, brings the boats home.',
+    'Hook and anchor': 'Hook: the light\'s pattern is yours to set. Anchor: a daily tending routine, like a cosy job sim.',
+    'Does it feel right?': 'Yes, keep it.',
+  },
+  bricks: {
+    'Core verbs': 'Tend (trim, wind and polish together) and guide boats with the light. Two is enough.',
+    'Fun on its own?': 'Tending is fun because the lamp visibly brightens; guiding is fun because the boat answers you.',
+    'A mechanism for tend?': 'My own idea: a slow routine you can do in any order, nothing timed.',
+    'A mechanism for guide?': 'Take the shelf\'s one about timing the light\'s flash if it is there; no backup needed.',
+    'What does the player act on?': 'The lamp, the lens, the fog horn, the boats.',
+    'Theme and tone': 'Lighthouse keeping; cosy and a little lonely.',
+  },
+  pillars: {
+    'Your pillars': '1. Every moment feels like quiet care (a feeling): when we argue about timers, it says no rush. 2. Everything the keeper does, a real keeper once did (a theme rule): when we argue about magic tools, it says keep it real. 3. The storm is weather, never an enemy (a situation): when we argue about losing, it says nobody loses.',
+  },
+  tensions: {
+    'Each tension': 'Keep both, unless it is about timers: then park the timer.',
+    'On-ice ideas that fit now': 'Bring in a radio to talk to ships if it is on the shelf; keep everything else on ice.',
+    'Anything there because it is cool?': 'No.',
+  },
+  scope: {
+    'The smallest version': 'One night: tend the lamp and guide one boat through fog.',
+    'Musts': 'Tending the lamp through one night; guiding one boat in fog.',
+    'Later': 'Seasons; more boats; the cottage.',
+    'Never': 'Combat, because it breaks quiet care; a fail screen, because nobody loses.',
+    'Where and how long': 'Phone browser, alone, about ten minutes, one player.',
+    'Your size read': 'Fine at that size.',
+  },
+  risks: {
+    'What could stop it being great?': 'Tending turns into a chore.',
+    'The cheapest test': 'A sketch of one night of tending, one hour.',
+    'What would make you rethink it?': 'Testers skip the routine to get to the boats.',
+  },
 }
 
 const scenarios = {
@@ -157,6 +210,63 @@ const scenarios = {
     const outside = files.filter(f => !/^(\.bmuz\/|\.planning\/research\/|\.planning\/DISCOVER\.md$|bmuz\.json$)/.test(f))
     check('F217: nothing was written outside .planning/research and .planning/DISCOVER.md (and the engine\'s .bmuz)', outside.length === 0, outside.join(', '))
     console.log(`      DISCOVER.md shelves: ${filled.concat(['Verb × noun grid', 'Decisions', 'Hooks & anchors', 'Twists', 'On ice', 'Open questions', 'Hopes & fears']).map(n => `${n} ${shelf(n)}`).join(' · ')}`)
+  },
+
+  // F218: the define pipeline end to end in its own scratch project, from the lighthouse DISCOVER.md the discover
+  // scenario leaves behind. Define's choices are taste, which an auto run never makes, so bmuz.json "testAnswers"
+  // stands in for the creative (allowed only with BMUZ_TEST=1, set here). The run goes digest → … → the concept card →
+  // the lock gate (an auto run stops there); "bmuz approve Lock it: on to Design" in a second session runs stage.
+  async define() {
+    const dir = process.env.BMUZ_DEFINE_PROJECT || join(here, '..', '..', '.scratch', 'bmuz-define-headless')
+    const seed = join(here, '..', '..', '.scratch', 'bmuz-discover-headless', '.planning')
+    if (!existsSync(join(seed, 'DISCOVER.md'))) {
+      check('F218: the lighthouse DISCOVER.md is there to start from', false, `run the discover scenario first (it leaves ${seed})`)
+      return
+    }
+    rmSync(join(dir, '.bmuz'), { recursive: true, force: true })
+    rmSync(join(dir, '.planning'), { recursive: true, force: true })
+    mkdirSync(dir, { recursive: true })
+    cpSync(seed, join(dir, '.planning'), { recursive: true })
+    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
+    const before = read('.planning/DISCOVER.md')
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'define', testAnswers: DEFINE_ANSWERS }, null, 2))
+    const all = () => (read('.bmuz/journal.jsonl') || '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l) } catch (e) { return {} } })
+    const run = prompt => {
+      const took = Date.now()
+      const r = spawnSync('claude', ['-p', prompt, ...base, '--allowedTools', `${TOOLS} ToolSearch`], { cwd: dir, env: { ...env, BMUZ_TEST: '1' }, encoding: 'utf8', input: '', timeout: 3_000_000 })
+      const out = (r.stdout || '') + (r.stderr || '')
+      console.log(`      (${Math.round((Date.now() - took) / 1000)} s; last lines: ${out.trim().split('\n').slice(-4).join(' / ').slice(0, 400)})`)
+      return out
+    }
+    const out = run('bmuz go')
+    const trail = () => all().map(j => j.ev + (j.step ? ':' + j.step : '') + (j.why ? ` (${String(j.why).slice(0, 160)})` : '')).join(' ')
+    const UP_TO_LOCK = ['digest', 'direction', 'story', 'bricks', 'pillars', 'fit-check', 'tensions', 'scope', 'risks', 'write', 'concept-lint', 'concept-review', 'review', 'lock']
+    const starts = () => [...new Set(all().filter(j => j.ev === 'step.start').map(j => j.step))]
+    check('F218: the engine ran every define step in order and stopped at the lock gate (an auto run never answers it)', JSON.stringify(starts()) === JSON.stringify(UP_TO_LOCK) && all().some(j => j.ev === 'gate.pending' && j.step === 'lock'), trail())
+    const done = id => (all().find(j => j.ev === 'step.done' && j.step === id) || {}).result || {}
+    const n = v => (Array.isArray(v) ? v.length : 0)
+    const r = Object.fromEntries(['direction', 'story', 'bricks', 'pillars', 'scope', 'risks'].map(id => [id, done(id)]))
+    check('F218: the talk steps chose from the test answers: 1–2 feelings, a 3–5 line story, ≤3 core verbs with mechanisms, 3 pillars that settle arguments, musts and won\'ts, a risk with a test', n(r.direction.primaries) >= 1 && n(r.direction.primaries) <= 2 && n(r.story.story) >= 3 && n(r.story.story) <= 5 && n(r.bricks.coreVerbs) >= 1 && n(r.bricks.coreVerbs) <= 3 && n(r.bricks.mechanisms) >= 1 && n(r.pillars.pillars) === 3 && r.pillars.pillars.every(p => p && p.settles) && n(r.scope.musts) >= 1 && n(r.scope.wont) >= 1 && n(r.risks.risks) >= 1 && r.risks.risks.every(x => x && x.test), JSON.stringify(r).slice(0, 900))
+    check('F218: the digest grouped the shelves with brick ids', /^Define run: 1 \(the first Define run\)$/m.test(read('.planning/research/define-digest.md') || '') && /\n- \[EX1\] /.test(read('.planning/research/define-digest.md') || ''))
+    check('F218: the fit check wrote its report (tensions, choosing nothing)', /## Tensions\n/.test(read('.planning/research/define-fit.md') || ''), (read('.planning/research/define-fit.md') || '').slice(0, 400))
+    check('F218: the concept review wrote its findings', /## Findings\n/.test(read('.planning/research/define-check.md') || ''), (read('.planning/research/define-check.md') || '').slice(0, 400))
+    const card = read('.bmuz/last-card.md') || ''
+    check('F218: it ended with the engine\'s concept card, naming GDD Part 1 and the lock', /^## Concept.* — ready for you to check\n/.test(card) && /GDD\.md/.test(card) && /\*\*Next:\*\* .*Lock it/.test(card) && out.includes(card.trim().split('\n')[0]), card.slice(0, 600))
+    run('bmuz approve Lock it: on to Design')
+    check('F218: after "Lock it" the stage step ran and the pipeline finished', all().some(j => j.ev === 'step.done' && j.step === 'stage') && all().some(j => j.ev === 'pipeline.done'), trail())
+    const gdd = read('.planning/GDD.md') || ''
+    const lint = spawnSync('node', [join(plugin, 'scripts', 'concept-lint.mjs'), '.planning/GDD.md'], { cwd: dir, encoding: 'utf8' })
+    check('F218: GDD Part 1 passes the concept lint, nothing core left open, and the GDD is in Design', lint.status === 0 && !/still open: .*(Story|Primary feelings|Pillars|First release)/.test(lint.stdout) && /^Current phase: Design · concept locked \d{4}-\d\d-\d\d \(Define run 1\)$/m.test(gdd) && /\n## Part 2 — The game\n/.test(gdd) && /\n## Changes\n[\s\S]*Concept locked; on to Design/.test(gdd), `${lint.stdout}\n${gdd.slice(0, 600)}`)
+    const after = (read('.planning/DISCOVER.md') || '').split('\n')
+    const kept = before.split('\n').every((l, i) => after[i] === l || after[i].startsWith(`${l.trimEnd()} · `))
+    const marked = after.filter(l => /→ (chosen|brought in) \(Define run 1\b/.test(l)).length
+    check('F218: DISCOVER.md was never trimmed (every line kept, marks only added at line ends) and chosen bricks are marked', kept && marked > 0 && after.length === before.split('\n').length, `kept: ${kept}, marked: ${marked}, lines ${before.split('\n').length} → ${after.length}`)
+    const files = []
+    const walk = d => { for (const e of readdirSync(join(dir, d), { withFileTypes: true })) e.isDirectory() ? walk(join(d, e.name)) : files.push(join(d, e.name).split('\\').join('/')) }
+    walk('.')
+    const outside = files.filter(f => !/^(\.bmuz\/|\.planning\/|bmuz\.json$)/.test(f))
+    check('F218: nothing was written outside .planning/ and the engine\'s .bmuz/', outside.length === 0, outside.join(', '))
+    console.log(`      GDD Part 1: ${(gdd.split('## Part 1 — The concept')[1] || '').split('## Part 2')[0].split('\n').filter(l => /^\*\*/.test(l)).length} fields · DISCOVER.md marks: ${marked} · lint: ${lint.stdout.trim().split('\n')[0]}`)
   },
 
   // Check 16: motor B — "bmuz next" from a shell reads the same pipeline and state.
