@@ -3,6 +3,7 @@
   "version": 1,
   "description": "Discover a game idea (framework .planning/research/bmuz-vision/discover-creative-research.md section 6): experience first — spark, experience and fantasy, theme dig, simulation breakdown, mechanism shelf, prior art and twists — collecting bricks into .planning/DISCOVER.md, then the brick board. Collects, never chooses: choosing is /define's. Wrap up after any step.",
   "watchdogMs": 1200000,
+  "next": {"pipeline": "define"},
   "steps": [
     {
       "id": "spark",

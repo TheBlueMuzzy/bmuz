@@ -14,6 +14,7 @@ Check before shipping: `npm run check:pipelines` (also part of `npm run check:fa
 | `version` | yes | the format version: `1` |
 | `description` | no | one line, for people |
 | `watchdogMs` | no | how long a working step may run before the watchdog stops it (default 20 min); a project's `bmuz.json` can override it |
+| `next` | no | the stage that follows this one (see "Stages") |
 | `steps` | yes | the list of steps, in order |
 
 Any other setting is refused (a typo like `stpes` would otherwise be ignored silently).
@@ -68,6 +69,18 @@ A way out of the middle of a pipeline, like Discover's "keep going or wrap up?" 
 - The engine then **skips** every unfinished step after it and before `wrapTo`, except steps with `"always": true`, which still run (Discover's first research and its save step). A skipped step counts as finished, so the steps after it can run, but it hands back nothing: a `{hole}` from it fills in as nothing (empty text; a whole-hole flow arg gets `null`).
 - The wrap is journaled (`"ev": "wrap"`, with the skipped steps), so the doctor rebuilds it. The undo list marks skipped steps; going back to before one runs it for real.
 - The check refuses a `wrapTo` that isn't a later step, and an `always` that isn't true or false.
+
+## Stages (`next`; F225)
+One project runs the stages in order — Discover gathers the material, Define makes the blocks, Design assembles them, Develop makes the production model, Release lets the public play it — each a pipeline named like its stage (`discover`, `define`, …). `bmuz.json` names the current one.
+- `"next": { "pipeline": "define" }`: when this pipeline finishes, the engine offers the next stage. A live window asks "Discover is done. On to Define?" ("Not yet: stay in Discover" first, the safe choice); an auto run notes the question in `.bmuz/questions.md` instead. "bmuz go" on a finished stage is the creative's yes.
+- Moving on keeps the finished stage's record: `.bmuz/state.json`, the journal, the last card and the checkpoints move to `.bmuz/stages/<n>-<pipeline>/`, `.bmuz/stages.json` lists every stage run, `bmuz.json` points at the new stage, and the new journal starts with a `stage.enter` line carrying the new stage's first state (the doctor rebuilds from it; undo lists only the current stage's steps). The questions and decisions lists belong to the project and stay. The plan is written to `.bmuz/switch.json` first and removed last, so a crash half way is finished at the next start.
+- `"pipeline"` may be one `{hole}` from a talk step's result (the start's `{stage}`); `"later"` or an empty hole means no next. `"at"`: the step to start at (a step id, a `{hole}`, or `"first"`). `"carry"`: a project `.json` file whose `"given"` object goes into the new stage (the start's intake). `"ask": false`: move on at once (the creative already chose).
+- **Starting at a step:** every step above it counts as finished and skipped ("answered by your material"), except `always` steps, which still run; a skipped talk step's keys are filled from `given`, else `null`, so a `{hole}` never stays `{hole}`. The undo list marks them; going back before one runs it for real.
+- **Already chosen:** a talk step whose result keys `given` answers gets them in its prompt from the engine, to show first with "Keep" as the first option (one tap) — Define's revision pattern.
+- **Stage intros:** a stage pipeline's first talk step opens with the stage's short intro paragraph (engine.js `STAGES`, Muzzy's wording) above the step's line, once per stage run (`introShown`, journaled as `intro`).
+- A stage whose pipeline isn't on the engine yet (Design, Develop, Release until F226) is said plainly, with what to use for now; nothing moves.
+- `bmuz.json` changed by hand: a FINISHED run of the old pipeline moves on the same way; an unfinished one is refused until the creative says `bmuz stage <stage>`.
+- Commands: `bmuz stage <stage> [step]` (or `/bmuz-stage`) moves to any stage, keeping the current record; `bmuz new` in a folder without `bmuz.json` makes it a BMUZ project on the `start` pipeline (the only way the engine writes `bmuz.json`; a stray `bmuz go` elsewhere only says how).
 
 ## Done-checks (`done`)
 How the engine knows a step really finished. A failed check retries the step twice, then marks it BLOCKED and rolls back its `writes`.

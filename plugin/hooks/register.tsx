@@ -11,7 +11,8 @@ const band = atom({ plugin: 'bmuz', key: 'band' } as const, null)
 // Rebuilt from project files at every session start (a reload loses module values).
 let ctx: any = null
 // { card }: a hand-off card to show at the end of this turn; the next step starts after it is shown.
-let pending: null | "advance" | "resume" | "retry" | { undo: string } | { card: string } = null
+// "go": the creative's "bmuz go" (a resume that also moves a finished stage on to the next).
+let pending: null | "advance" | "resume" | "go" | "retry" | { undo: string } | { card: string } = null
 let watchdogBusy = false
 let sessionInteractive = false
 let sessionAuto = false // "bmuz auto" typed: this session runs unattended
@@ -70,19 +71,86 @@ function vars() {
   return { ...ctx.state.results, project: ctx.dir, plugin: ctx.root }
 }
 
+// Reads and checks one pipeline file of the plugin. Returns { pipeline, problems } (problems in plain words).
+async function loadPipeline($: any, root: string, name: string) {
+  if (typeof name !== 'string' || !E.NAME_RE.test(name)) throw new Error(`bmuz.json's "pipeline" must be a pipeline name like hello, not ${JSON.stringify(name)}`)
+  const pipeline = JSON.parse(String(await $.fs.read(`${root}/pipelines/${name}.json`)))
+  const problems = E.checkPipeline(pipeline)
+  if (!problems.length && pipeline.id !== name) problems.push(`the file pipelines/${name}.json says its id is "${pipeline.id}"`)
+  for (const f of problems.length ? [] : E.pluginFiles(pipeline)) if (!(await $.fs.exists(`${root}/${f}`))) problems.push(`the craft note ${f} is missing`)
+  return { pipeline, problems }
+}
+
+async function readJson($: any, path: string) {
+  const text = await readText($, path)
+  if (text === null) return null
+  try { return JSON.parse(text) } catch (err) { return null }
+}
+
+// ---- Stages (F225): one project runs the stages in order ----
+// Moving on archives the finished stage's record (.bmuz/state.json, journal, last card, checkpoints) into
+// .bmuz/stages/<n>-<pipeline>/, lists it in .bmuz/stages.json, points bmuz.json at the next stage and starts its
+// journal with the new stage's first state. The questions and decisions lists stay: they belong to the project.
+// The plan is written to .bmuz/switch.json first and the file removed last, so a crash half way is finished
+// at the next start instead of leaving bmuz.json and the state disagreeing.
+async function planSwitch($: any, dir: string, root: string, from: string, to: string, at: string | null, given: any) {
+  const stages = (await readJson($, `${dir}/.bmuz/stages.json`)) || []
+  const n = (Array.isArray(stages) ? stages.length : 0) + 1
+  // Checkpoints are named by step id, and two stages can share one ("bricks"): all of them move with the record.
+  const ids = new Set<string>()
+  for (const name of [from, to]) {
+    try { for (const s of (await loadPipeline($, root, name)).pipeline.steps || []) ids.add(String(s.id)) } catch (err) { /* a pipeline that won't load has no checkpoints to move */ }
+  }
+  return { from, to, at: at || null, given: given || {}, n, archive: `stages/${n}-${from}`, checkpoints: [...ids].filter(id => E.NAME_RE.test(id)).map(id => `checkpoint-${id}.json`) }
+}
+
+async function finishSwitch($: any, dir: string, root: string, sw: any) {
+  const bmuz = `${dir}/.bmuz`
+  await $.fs.write(`${bmuz}/switch.json`, JSON.stringify(sw))
+  const { pipeline, problems } = await loadPipeline($, root, sw.to)
+  if (problems.length) throw new Error(`pipeline ${sw.to} has problems: ${problems.join('; ')}`)
+  const entered = E.enterAt(pipeline, E.freshState(sw.to), sw.at, sw.given)
+  if (entered.error) throw new Error(entered.error)
+  // 1. The old record, copied once (a second pass after a crash must not copy the NEW state over it).
+  const arch = `${bmuz}/${sw.archive}`
+  const files = ['state.json', 'journal.jsonl', 'last-card.md', ...sw.checkpoints]
+  if (!(await $.fs.exists(`${arch}/state.json`))) {
+    for (const f of files) {
+      const text = await readText($, `${bmuz}/${f}`)
+      if (text !== null) await $.fs.write(`${arch}/${f}`, text)
+    }
+  }
+  for (const f of files.slice(2)) if (await $.fs.exists(`${bmuz}/${f}`)) await $.process.run(['node', `${root}/scripts/rm.mjs`, `${bmuz}/${f}`])
+  // 2. The stage list, 3. bmuz.json, 4. the new stage's state and the first line of its journal.
+  const stages = (await readJson($, `${bmuz}/stages.json`)) || []
+  const now = await $.clock.now()
+  if (!stages.some((s: any) => s.n === sw.n)) {
+    const old = await readJson($, `${arch}/state.json`)
+    stages.push({ n: sw.n, pipeline: sw.from, status: old?.status ?? null, finished: old?.finished?.length ?? 0, record: `.bmuz/${sw.archive}`, movedOn: now, to: sw.to, at: sw.at })
+    await $.fs.write(`${bmuz}/stages.json`, JSON.stringify(stages, null, 2))
+  }
+  const cfg = (await readJson($, `${dir}/bmuz.json`)) || {}
+  await $.fs.write(`${dir}/bmuz.json`, JSON.stringify({ ...cfg, pipeline: sw.to }, null, 2))
+  await $.fs.write(`${bmuz}/state.json`, JSON.stringify(entered.state, null, 2))
+  await journalQueue
+  await $.fs.write(`${bmuz}/journal.jsonl`, JSON.stringify({ t: now, session: ctx?.sessionId ?? null, ev: 'stage.enter', from: sw.from, to: sw.to, at: sw.at, skipped: entered.skipped, record: `.bmuz/${sw.archive}`, state: entered.state }) + '\n')
+  await $.process.run(['node', `${root}/scripts/rm.mjs`, `${bmuz}/switch.json`])
+}
+
 async function loadCtx($: any) {
   const dir = String(await $.session.cwd()).replace(/\\/g, '/')
-  const cfgText = await readText($, `${dir}/bmuz.json`)
-  if (cfgText === null) return null
+  if ((await readText($, `${dir}/bmuz.json`)) === null) return null
   const root = String($.plugin.root).replace(/\\/g, '/')
   const c: any = { dir, root, sessionId: await $.session.id(), broken: null }
+  // A stage switch cut short by a crash is finished first (it may still have bmuz.json to point on).
+  const sw = await readJson($, `${dir}/.bmuz/switch.json`)
+  if (sw && sw.from && sw.to) await finishSwitch($, dir, root, sw)
+  const cfgText = String(await readText($, `${dir}/bmuz.json`))
   try {
     c.cfg = JSON.parse(cfgText)
-    if (typeof c.cfg.pipeline !== 'string' || !E.NAME_RE.test(c.cfg.pipeline)) throw new Error(`bmuz.json's "pipeline" must be a pipeline name like hello, not ${JSON.stringify(c.cfg.pipeline)}`)
-    c.pipeline = JSON.parse(String(await $.fs.read(`${root}/pipelines/${c.cfg.pipeline}.json`)))
-    const problems = E.checkPipeline(c.pipeline)
-    if (!problems.length && c.pipeline.id !== c.cfg.pipeline) problems.push(`the file pipelines/${c.cfg.pipeline}.json says its id is "${c.pipeline.id}"`)
-    for (const f of problems.length ? [] : E.pluginFiles(c.pipeline)) if (!(await $.fs.exists(`${root}/${f}`))) problems.push(`the craft note ${f} is missing`)
+    const loaded = await loadPipeline($, root, c.cfg.pipeline)
+    c.pipeline = loaded.pipeline
+    const problems = loaded.problems
     if (problems.length) c.broken = `pipeline ${c.cfg.pipeline} has problems: ${problems.join('; ')}`
     // Test only: let flow helpers use extra tools (the stall test's helper runs Bash sleep).
     for (const s of c.pipeline.steps) if (s.kind === 'flow' && c.cfg.testAgentTools) s.agentTools = [...(s.agentTools || []), ...c.cfg.testAgentTools]
@@ -94,6 +162,21 @@ async function loadCtx($: any) {
     c.pipeline = { id: '?', steps: [] }
     c.cfg = {}
   }
+  // The state belongs to the pipeline that made it: switching bmuz.json to another pipeline must not count its
+  // own steps as finished just because the ids match. Read from the state file itself, before the doctor (whose
+  // rebuild would stamp it with bmuz.json's pipeline). A FINISHED run moves on: its record is archived and the
+  // new stage starts (F225: a project that ran discover can go on to define). An unfinished one is kept and the
+  // creative is told how to move on.
+  const raw = await readJson($, `${dir}/.bmuz/state.json`)
+  if (!c.broken && raw && typeof raw.pipeline === 'string' && raw.pipeline !== c.pipeline.id) {
+    if (raw.status === 'done') {
+      await finishSwitch($, dir, root, await planSwitch($, dir, root, raw.pipeline, c.pipeline.id, null, {}))
+      c.movedOn = raw.pipeline
+    } else {
+      c.mismatch = { from: raw.pipeline, to: c.pipeline.id }
+      c.broken = `this project's .bmuz folder holds a "${raw.pipeline}" run that isn't finished, but bmuz.json says "${c.pipeline.id}". Say "bmuz stage ${c.pipeline.id}" to move on (the ${raw.pipeline} run is kept in .bmuz/stages/), or set bmuz.json back to "${raw.pipeline}"`
+    }
+  }
   // Doctor at every start: the journal is the record, so a missing, damaged or lagging state file
   // (a crash between writing the journal and the state) is rebuilt from it.
   try { c.lock = JSON.parse((await readText($, `${dir}/.bmuz/lock.json`)) ?? 'null') } catch (err) { c.lock = null }
@@ -101,11 +184,6 @@ async function loadCtx($: any) {
   c.state = report.state
   if (report.fixed) c.rebuilt = report.lines
   c.baseline = report.baseline
-  // The state belongs to the pipeline that made it: switching bmuz.json to another pipeline must not
-  // count its own steps as finished just because the ids match.
-  if (!c.broken && c.state.pipeline && c.state.pipeline !== c.pipeline.id) {
-    c.broken = `this project's .bmuz folder belongs to pipeline "${c.state.pipeline}", but bmuz.json says "${c.pipeline.id}". Set bmuz.json back, or move the .bmuz folder away to start "${c.pipeline.id}" fresh`
-  }
   return c
 }
 
@@ -171,6 +249,7 @@ async function registerAll($: any) {
   await $.command.register({ name: 'bmuz-doctor', description: 'BMUZ: check the state against the journal and say what went wrong' })
   await $.command.register({ name: 'bmuz-undo', description: 'BMUZ: the undo list, or go back to before a step', argumentHint: '[step]' })
   await $.command.register({ name: 'bmuz-retry', description: 'BMUZ: give a BLOCKED step 2 more tries' })
+  await $.command.register({ name: 'bmuz-stage', description: 'BMUZ: move to another stage (the current one\'s record is kept)', argumentHint: '<stage> [step]' })
 }
 
 // The doctor, from /bmuz-doctor or "bmuz doctor": a broken start is tried again first.
@@ -259,14 +338,99 @@ async function settle($: any, step: any, verdict: any, result: any) {
   return 'stop'
 }
 
+// Moves the project on to stage `to` (at step `at`, with `given` from the intake) inside this session: the
+// finished stage's record is archived and the engine carries on in the new pipeline. Returns null when done,
+// else the plain-words reason it didn't move.
+async function switchStage($: any, to: string, at: string | null, given: any) {
+  if (!E.NAME_RE.test(String(to))) return E.notOnEngineLine(String(to))
+  if (!ctx.mismatch && ctx.state.status === 'working') return `step "${ctx.state.current}" is still running; move on once it has finished or is BLOCKED`
+  if (!(await $.fs.exists(`${ctx.root}/pipelines/${to}.json`))) return E.notOnEngineLine(to)
+  const from = ctx.mismatch ? ctx.mismatch.from : ctx.pipeline.id
+  try {
+    const { pipeline, problems } = await loadPipeline($, ctx.root, to)
+    if (problems.length) return `pipeline ${to} has problems: ${problems.join('; ')}`
+    if (at && !E.stepById(pipeline, at)) return `"${at}" isn't a step of ${to} (its steps: ${pipeline.steps.map((s: any) => s.id).join(', ')})`
+    await finishSwitch($, ctx.dir, ctx.root, await planSwitch($, ctx.dir, ctx.root, from, to, at, given))
+  } catch (err) {
+    return `the move to ${to} failed (${String(err).slice(0, 160)}); run /bmuz-doctor`
+  }
+  // The new stage, loaded the same way as at a session start.
+  flowAskedHere = ''
+  hiddenNotes = null
+  // (a session found to be unattended stays unattended in the new stage)
+  const wasAuto = ctx.auto
+  const ok = await startEngine($)
+  if (ctx) ctx.auto = ctx.auto || wasAuto
+  if (!ok) return ctx ? ctx.broken : 'bmuz.json went missing'
+  await save($)
+  return null
+}
+
+// The current pipeline in words: a stage's name ("Discover"), else "the <id> pipeline" (the start).
+function stageWords() {
+  const s = E.stageOf(ctx.pipeline.id)
+  return s ? s.name : ctx.pipeline.id === 'start' ? 'The start' : `the ${ctx.pipeline.id} pipeline`
+}
+
+// The carried material of a "next" (its "carry" file's "given"), or {} when there is none.
+async function carried($: any, nx: any) {
+  if (!nx || !nx.carry || !E.isSafePath(nx.carry)) return {}
+  const j = await readJson($, `${ctx.dir}/${nx.carry}`)
+  return j && j.given && typeof j.given === 'object' && !Array.isArray(j.given) ? j.given : {}
+}
+
+// A pipeline finished: offer its next stage (F225). go = the creative already said to move on ("bmuz go" on a
+// finished stage). Returns true when the project moved on (the caller carries on in the new stage), false when
+// it stays (not now, an auto run, a stage not on the engine yet: each said plainly).
+async function offerNext($: any, go: boolean) {
+  const nx = E.nextOf(ctx.pipeline, ctx.state.results)
+  if (!nx) return false
+  const stage = E.stageOf(nx.pipeline)
+  const from = E.stageOf(ctx.pipeline.id)?.name ?? ctx.pipeline.id
+  const to = stage?.name ?? nx.pipeline
+  if (!(await $.fs.exists(`${ctx.root}/pipelines/${nx.pipeline}.json`)) || !stage) {
+    await journal($, { ev: 'stage.not-on-engine', to: nx.pipeline })
+    await $.prompt.submit({ text: `BMUZ engine: ${stageWords()} is done. ${E.notOnEngineLine(nx.pipeline)}. Tell the creative that in one or two plain lines, then end your turn.` })
+    return false
+  }
+  if (nx.ask && !go) {
+    const question = `${from} is done. On to ${to}?`
+    const yes = `On to ${to}`
+    let answer: string | null = null
+    if (!ctx.auto) {
+      try { answer = await $.ui.ask(question, [`Not yet: stay in ${from}`, yes]) } catch (err) { answer = null }
+    }
+    await journal($, { ev: 'stage.offer', to: nx.pipeline, answer })
+    if (answer !== yes) {
+      if (ctx.auto) await addQuestions($, ctx.pipeline.id, [{ question: `${question} (say "bmuz go" to move on)` }])
+      return false
+    }
+  }
+  const why = await switchStage($, nx.pipeline, nx.at, await carried($, nx))
+  if (why) {
+    await journal($, { ev: 'stage.refused', to: nx.pipeline, why })
+    await $.prompt.submit({ text: `BMUZ engine: couldn't move on to ${to}: ${why}. Tell the creative in one plain line, then end your turn.` })
+    return false
+  }
+  return true
+}
+
 async function startTalk($: any, step: any, why: string) {
   const craft = await craftOf($, step)
   // A hand-off step is told what is already decided, so it doesn't ask it again.
   const decided = step.handoff ? await readList($, 'decisions.json') : []
   const recap = Object.fromEntries((step.recap || []).map((k: string) => [k, ctx.state.results[k]]))
   const answers = ctx.cfg.testAnswers ? ctx.cfg.testAnswers[step.id] : undefined
-  hiddenNotes = E.talkPrompt(step, craft, why, ctx.auto, decided, { recap, wrap: wrapWords(step), answers })
-  await $.prompt.submit({ text: E.talkHeadline(step) })
+  // A stage's first talk step opens with the stage's short intro, once per run (F225).
+  const intro = E.introFor(ctx.pipeline, ctx.state)
+  if (intro) {
+    ctx.state = { ...ctx.state, introShown: true }
+    await journal($, { ev: 'intro', step: step.id, stage: ctx.pipeline.id })
+    await save($)
+  }
+  const given = E.givenFor(step, ctx.state.given)
+  hiddenNotes = E.talkPrompt(step, craft, why, ctx.auto, decided, { recap, wrap: wrapWords(step), answers, intro: !!intro, given })
+  await $.prompt.submit({ text: E.talkHeadline(step, intro) })
   // The prompt hook takes the notes as it attaches them. Still here = they never went out: say so in the journal
   // rather than let Claude guess the step from its headline.
   if (hiddenNotes !== null) {
@@ -376,10 +540,16 @@ async function applyGate($: any, step: any, answer: string) {
 // so a talk step's hidden instructions would never be attached: Muzzy's live look 2026-11-09, a window that picked
 // up a run mid-way got the one-line headline only, and Claude guessed the step. From a timer, a talk step is only
 // kicked: a short engine line, and the step itself starts at that turn's end (turn.complete), where the hook runs.
-async function advance($: any, resume: boolean, opts: { timer?: boolean } = {}) {
-  for (let guard = 0; guard < 20; guard++) {
+// opts.go: the creative said "bmuz go": on a finished stage that is their OK to move on to the next one.
+async function advance($: any, resume: boolean, opts: { timer?: boolean, go?: boolean } = {}) {
+  for (let guard = 0; guard < 40; guard++) {
     const s = ctx.state
-    if (s.status === 'blocked' || s.status === 'done') return
+    if (s.status === 'blocked') return
+    if (s.status === 'done') {
+      // A finished stage moves on only with the creative's word ("bmuz go"); the offer itself came at its end.
+      if (opts.go && (await offerNext($, true))) { opts = { ...opts, go: false }; resume = false; continue }
+      return
+    }
     let step = s.current ? E.stepById(ctx.pipeline, s.current) : null
     const isRestart = !!step
     if (!step) {
@@ -388,6 +558,8 @@ async function advance($: any, resume: boolean, opts: { timer?: boolean } = {}) 
         ctx.state = { ...s, status: 'done', current: null, startedAt: null }
         await journal($, { ev: 'pipeline.done' })
         await save($)
+        // F225: a stage's end offers the next stage; the start moves straight into the one the creative chose.
+        if (await offerNext($, false)) continue
         return
       }
     } else if (s.status === 'working' && !resume && step.kind !== 'script') {
@@ -607,6 +779,13 @@ async function watchdog($: any) {
   }
 }
 
+// The step_done tool, the commands and the timers: once per session start (or at "bmuz new" mid-session).
+async function armSession($: any) {
+  await registerAll($)
+  $.clock.every(ctx.cfg.watchdogTickMs ?? 15000, () => { watchdog($) })
+  $.clock.every(1000, () => { showBand($).catch(() => {}) })
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const r = await next(e)
@@ -617,10 +796,9 @@ export const register: Register = on => {
     const ok = await startEngine($)
     if (!ctx) return r
     // Commands and timers exist even when the start failed, so /bmuz-doctor is there to get it going.
-    await registerAll($)
-    $.clock.every(ctx.cfg.watchdogTickMs ?? 15000, () => { watchdog($) })
-    $.clock.every(1000, () => { showBand($).catch(() => {}) })
+    await armSession($)
     if (!ok) return r
+    if (ctx.movedOn) await journal($, { ev: 'stage.moved-on', from: ctx.movedOn, why: 'bmuz.json named another stage and the last one was finished: its record is kept in .bmuz/stages/' })
     // What kind of session this is, for the record (and the doctor): an unattended run must be known as one.
     await journal($, { ev: 'session', interactive: ctx.interactive, canAsk: ctx.canAsk, auto: ctx.auto, fields: Object.fromEntries(Object.entries(e as any).filter(([, v]) => typeof v !== 'object')) })
     // A window closed at a gate used to look like a clean stop (live check L2); only a clean end counts as one now.
@@ -699,8 +877,23 @@ export const register: Register = on => {
       // (Muzzy 2026-11-08: "if I type bmuz go into the normal cli, is the expected result the same?").
       const typed = String((e as any).text)
       const origin = (e as any).origin?.kind
-      if (origin !== 'plugin' && origin !== 'peer' && origin !== 'task-notification' && /^\s*bmuz (go|approve|auto|undo|retry|doctor)\b/i.test(typed)) {
-        return next({ ...(e as any), text: `${typed}\n(BMUZ engine: off in this folder: there is no bmuz.json here, so nothing runs. Tell the creative that in one plain line: BMUZ steps run inside a BMUZ project folder.)` })
+      const typedHere = origin !== 'plugin' && origin !== 'peer' && origin !== 'task-notification'
+      // F225: "bmuz new" makes this folder a BMUZ project and opens with "Where's your game right now?". Only this
+      // typed command does it: a stray "bmuz go" in some other folder never writes a file.
+      if (typedHere && /^\s*bmuz new\s*$/i.test(typed)) {
+        const dir = String(await $.session.cwd()).replace(/\\/g, '/')
+        await $.fs.write(`${dir}/bmuz.json`, JSON.stringify({ pipeline: 'start' }, null, 2))
+        const ok = await startEngine($)
+        if (!ctx) return next(e)
+        await armSession($)
+        if (!ok) return next({ ...(e as any), text: `${typed}\n(BMUZ engine: wrote bmuz.json but couldn't start: ${ctx.broken}. Tell the creative in one plain line.)` })
+        await journal($, { ev: 'session', interactive: ctx.interactive, canAsk: ctx.canAsk, auto: ctx.auto, via: 'bmuz new' })
+        await save($)
+        pending = 'resume'
+        return next({ ...(e as any), text: `${typed}\n(BMUZ engine: this folder is now a BMUZ project (bmuz.json written). Reply with one short line; the engine asks the first question itself.)` })
+      }
+      if (typedHere && /^\s*bmuz (go|approve|auto|undo|retry|doctor|stage)\b/i.test(typed)) {
+        return next({ ...(e as any), text: `${typed}\n(BMUZ engine: off in this folder: there is no bmuz.json here, so nothing runs. Tell the creative that in plain words: BMUZ steps run inside a BMUZ project folder, and "bmuz new" starts a game here — it asks where the game is right now and puts them in at the right stage.)` })
       }
       return next(e)
     }
@@ -725,6 +918,19 @@ export const register: Register = on => {
     }
     if (kind === 'plugin' || kind === 'peer') return next(e)
     const say = (words: string) => next({ ...(e as any), text: `${text}\n(${words}\nShow the creative these lines as they are, then end your turn.)` })
+    if (/^\s*bmuz new\s*$/i.test(text)) return say(`BMUZ engine: this folder is already a BMUZ project (bmuz.json says "${ctx.cfg?.pipeline ?? '?'}"). "bmuz go" carries on; "bmuz stage <stage>" moves to another stage.`)
+    // "bmuz stage <stage> [step]": move to any stage (the current one's record is kept in .bmuz/stages/). Works while a
+    // half-finished run of another pipeline holds the folder (bmuz.json changed by hand), which refuses all else.
+    const st = text.match(/^\s*bmuz stage\s*([a-z0-9-]*)\s*([a-z0-9-]*)\s*$/i)
+    if (st) {
+      if (ctx.broken && !ctx.mismatch) return say(`BMUZ engine: ${ctx.broken}`)
+      const to = st[1].toLowerCase()
+      if (!to) return say(`BMUZ engine: say "bmuz stage <stage>", one of ${E.STAGES.map(s => s.id).join(', ')} (now: ${ctx.mismatch ? ctx.mismatch.from : ctx.pipeline.id}).`)
+      const why = await switchStage($, to, st[2].toLowerCase() || null, await carried($, ctx.pipeline.next ?? null))
+      if (why) return say(`BMUZ engine: didn't move: ${why}.`)
+      pending = 'advance'
+      return next({ ...(e as any), text: `${text}\n(BMUZ engine: moved on to ${E.stageOf(to)?.name ?? to}; the last stage's record is kept in .bmuz/stages/. Reply with one short line; the engine starts the stage itself.)` })
+    }
     const cmd = text.match(/^\s*bmuz (undo|retry|doctor)\b\s*(.*)$/i)
     if (cmd) {
       const what = cmd[1].toLowerCase()
@@ -755,7 +961,7 @@ export const register: Register = on => {
       return next({ ...(e as any), text: `${text}\n(BMUZ engine: gate answered. Reply with one short line; the engine runs the next step itself.)` })
     }
     if (go) {
-      pending = 'resume'
+      pending = 'go'
       return next({ ...(e as any), text: `${text}\n(BMUZ engine: starting. Reply with one short line; the engine runs the step itself.)` })
     }
     // Answers to the card's numbered questions ("1 yes", "2: the first one"); any other message passes untouched.
@@ -780,9 +986,10 @@ export const register: Register = on => {
       pending = 'advance'
       await $.prompt.submit({ text: E.cardPrompt(`${ctx.dir}/.bmuz/last-card.md`) })
     } else if (pending) {
-      const resume = pending === 'resume'
+      const resume = pending === 'resume' || pending === 'go'
+      const go = pending === 'go'
       pending = null
-      await advance($, resume)
+      await advance($, resume, { go })
     } else if (ctx.state.status === 'working') {
       const step = E.stepById(ctx.pipeline, ctx.state.current)
       if (step && step.kind === 'talk') {
@@ -807,8 +1014,19 @@ export const register: Register = on => {
   on('command.run', { command: 'bmuz-go' }, async $ => {
     if (!ctx) return { text: 'No bmuz.json here: BMUZ is off in this folder.' }
     if (ctx.broken) return { text: `BMUZ engine: ${ctx.broken}` }
-    $.clock.after(50, () => { advance($, true, { timer: true }) })
+    $.clock.after(50, () => { advance($, true, { timer: true, go: true }) })
     return { text: 'BMUZ engine: starting.' }
+  })
+
+  on('command.run', { command: 'bmuz-stage' }, async ($, e) => {
+    if (!ctx) return { text: 'No bmuz.json here: say "bmuz new" to start a game in this folder.' }
+    if (ctx.broken && !ctx.mismatch) return { text: `BMUZ engine: ${ctx.broken}` }
+    const [to = '', at = ''] = String((e as any).args || '').trim().toLowerCase().split(/\s+/)
+    if (!to) return { text: `Say /bmuz-stage <stage>, one of ${E.STAGES.map(s => s.id).join(', ')}.` }
+    const why = await switchStage($, to, at || null, await carried($, ctx.pipeline.next ?? null))
+    if (why) return { text: `BMUZ engine: didn't move: ${why}.` }
+    $.clock.after(50, () => { advance($, false, { timer: true }) })
+    return { text: `BMUZ engine: moved on to ${E.stageOf(to)?.name ?? to}; the last stage's record is kept in .bmuz/stages/.` }
   })
 
   on('command.run', { command: 'bmuz-approve' }, async ($, e) => {

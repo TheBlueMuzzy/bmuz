@@ -3,11 +3,13 @@
   "version": 1,
   "description": "Define a game (framework .planning/research/bmuz-vision/define-research.md section 5, with section 6's 'Muzzy's answers' built in): build on DISCOVER.md's shelves, choose the direction, the 3-5 line story, the bricks, the pillars, the scope and the risks, check them against each other, write the concept (GDD Part 1) and lock it. Choosing is the creative's: an auto run chooses nothing. Wrap up after any talk step.",
   "watchdogMs": 1200000,
+  "next": {"pipeline": "design"},
   "steps": [
     {
       "id": "digest",
       "kind": "script",
       "needs": [],
+      "always": true,
       "description": "Digest: DISCOVER.md's shelves grouped (no AI), and on a second run what's locked and what's new",
       "run": ["node", "{plugin}/scripts/define-digest.mjs"],
       "writes": [".planning/research/define-digest.md"],

@@ -32,6 +32,9 @@ function world(on: any, files: Record<string, string>, onRun?: (argv: string[]) 
   const key = (p: string) => {
     const unix = p.split(String.fromCharCode(92)).join('/').replace(/^[A-Za-z]:/, '')
     if (/pipelines.hello[.]json$/.test(unix)) return 'PIPELINE'
+    // (F225: other pipelines, for stage switches, are PIPELINE:<name>)
+    const other = unix.match(/plugin\/pipelines\/([\w-]+)[.]json$/) || unix.match(/\/pipelines\/([\w-]+)[.]json$/)
+    if (other && !unix.startsWith('/proj/')) return `PIPELINE:${other[1]}`
     // craft notes live in the plugin too: <root>/craft/x.md is craft/x.md
     const craft = unix.match(/(craft\/[\w-]+[.]md)$/)
     return craft ? craft[1] : unix
@@ -45,6 +48,8 @@ function world(on: any, files: Record<string, string>, onRun?: (argv: string[]) 
   on('ui.toast', () => ({ value: undefined }))
   on('process.run', (_: any, e: any) => {
     runs.push([...e.argv])
+    // the engine's own delete (rollback, a stage switch moving checkpoints away) really deletes on the fake disk
+    if (/rm[.]mjs$/.test(String(e.argv[1] ?? ''))) delete files[key(String(e.argv[2]))]
     const said = onRun ? onRun([...e.argv]) : { exitCode: 0, stdout: '{}' }
     return { value: { ...said, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
@@ -287,13 +292,35 @@ test('review 5: after a broken start, typing "bmuz doctor" retries the start and
   expect(why(ask)).toMatch(/auto run/)
 })
 
-test('review 10: state left by another pipeline is refused, not counted as finished', async ($, on) => {
+test('review 10 (F225): an unfinished run left by another pipeline is refused, not counted as finished; "bmuz stage" moves on', async ($, on) => {
   mock.clock(on, { now: 1000 })
-  const w = world(on, base({ pipeline: 'other', current: null, status: 'done', finished: ['name', 'approve', 'plan', 'review'] }))
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  const w = world(on, base({ pipeline: 'other', current: 'review', status: 'working', finished: ['name', 'approve', 'plan'] }))
   await start($, true)
   const r: any = await $.tool.call({ tool: 'Write', file_path: '/proj/x.txt', content: 'x' } as any)
   expect(refused(r)).toBe(true)
-  expect(why(r)).toMatch(/belongs to pipeline "other", but bmuz.json says "hello"/)
+  expect(why(r)).toMatch(/holds a "other" run that isn't finished, but bmuz.json says "hello". Say "bmuz stage hello" to move on/)
+  const said: any = await $.prompt.submit({ text: 'bmuz stage hello' } as any)
+  expect(String(said.text)).toMatch(/moved on to hello/)
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect([st.pipeline, st.finished, st.status]).toEqual(['hello', [], 'idle'])
+  expect(JSON.parse(w.files['/proj/.bmuz/stages/1-other/state.json']).finished).toEqual(['name', 'approve', 'plan'])
+  const ask: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+  expect(refused(ask)).toBe(false) // the engine runs again
+})
+
+test('review 10 (F225): bmuz.json changed by hand after a FINISHED run moves on: the old record is archived, the new stage starts fresh', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ pipeline: 'other', current: null, status: 'done', finished: ['name', 'approve', 'plan', 'review'] }))
+  w.files['/proj/.bmuz/journal.jsonl'] = '{"t":1,"ev":"pipeline.done"}\n'
+  await start($, true)
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect([st.pipeline, st.finished, st.status]).toEqual(['hello', [], 'idle'])
+  expect(JSON.parse(w.files['/proj/.bmuz/stages/1-other/state.json']).status).toBe('done')
+  expect(w.files['/proj/.bmuz/stages/1-other/journal.jsonl']).toMatch(/pipeline.done/)
+  expect(JSON.parse(w.files['/proj/.bmuz/stages.json'])[0]).toMatchObject({ n: 1, pipeline: 'other', status: 'done', to: 'hello' })
+  expect(w.files['/proj/.bmuz/journal.jsonl'].split('\n')[0]).toMatch(/"ev":"stage.enter","from":"other","to":"hello"/)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"stage.moved-on","from":"other"/)
 })
 
 test('review 7: a flow result from an earlier try (or before this try launched) is not taken as this try\'s', async ($, on) => {
@@ -779,4 +806,157 @@ test('F218: a script that refuses says why; its words are the failed try\'s reas
   expect(st.status).toBe('blocked')
   expect(st.blocked.why).toBe(`script exited 1: ${said}`)
   expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"retry","step":"plan","attempt":2,"why":"script exited 1: ✘ Not ready for Design/)
+})
+
+// ---- F225: one project runs the stages in order ----
+const DISCOVER = {
+  id: 'discover', version: 1, next: { pipeline: 'define' }, steps: [
+    { id: 'spark', kind: 'talk', tools: ['Read'], craft: 'craft/name.md', results: ['brief', 'slug', 'youAre'] },
+    { id: 'experience', kind: 'talk', needs: ['spark'], tools: ['Read'], craft: 'craft/name.md', results: ['experiences'], recap: ['brief', 'youAre'] },
+    { id: 'bricks', kind: 'talk', needs: ['experience'], tools: ['Read'], craft: 'craft/review.md', results: ['found'], writes: ['notes.md'] },
+  ],
+}
+const DEFINE = {
+  id: 'define', version: 1, next: { pipeline: 'design' }, steps: [
+    { id: 'digest', kind: 'script', always: true, run: ['node', 'digest.mjs'] },
+    { id: 'direction', kind: 'talk', needs: ['digest'], tools: ['Read'], craft: 'craft/name.md', results: ['primaries', 'youAre'] },
+    { id: 'bricks', kind: 'talk', needs: ['direction'], tools: ['Read'], craft: 'craft/review.md', results: ['coreVerbs'] },
+  ],
+}
+const START = {
+  id: 'start', version: 1, next: { pipeline: '{stage}', at: '{at}', carry: '.planning/research/intake.json', ask: false }, steps: [
+    { id: 'propose', kind: 'talk', tools: ['Read'], craft: 'craft/name.md', results: ['stage', 'at'] },
+  ],
+}
+
+// A project in stage `pipeline`, with the stage pipelines in the plugin and the prompts captured.
+function staged(on: any, pipeline: string, st: Record<string, unknown>) {
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(String.fromCharCode(10))); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, base({}))
+  w.files['PIPELINE:discover'] = JSON.stringify(DISCOVER)
+  w.files['PIPELINE:define'] = JSON.stringify(DEFINE)
+  w.files['PIPELINE:start'] = JSON.stringify(START)
+  w.files['/proj/bmuz.json'] = JSON.stringify({ pipeline, watchdogTickMs: 3600000 })
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ pipeline, current: null, status: 'idle', results: {}, retries: {}, finished: [], blocked: null, startedAt: null, ...st })
+  return { w, prompts }
+}
+const turn = ($: any, id: string) => $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: id } as any)
+const DEFINE_INTRO = /^We're in Define: turning that material into the game's building blocks/
+
+test('F225: a stage\'s end offers the next stage; "On to Define" archives Discover\'s record and Define starts with its intro, once', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('tool.call', { tool: 'AskUserQuestion' }, (_: any, e: any) => ({ result: { questions: e.questions, answers: { [e.questions[0].question]: 'On to Define' } } }))
+  const { w, prompts } = staged(on, 'discover', { current: 'bricks', status: 'working', finished: ['spark', 'experience'], results: { brief: 'a lighthouse', slug: 'lighthouse' }, resultsBy: { spark: { brief: 'a lighthouse', slug: 'lighthouse' } } })
+  w.files['/proj/.bmuz/checkpoint-bricks.json'] = '{"notes.md":null}'
+  await start($, true)
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { found: 'a storm' } } as any)
+  await turn($, 't1')
+  // the record moved, Discover's "bricks" checkpoint with it (Define has a "bricks" step too)
+  expect(JSON.parse(w.files['/proj/bmuz.json']).pipeline).toBe('define')
+  expect(JSON.parse(w.files['/proj/bmuz.json']).watchdogTickMs).toBe(3600000) // the rest of bmuz.json kept
+  expect(JSON.parse(w.files['/proj/.bmuz/stages/1-discover/state.json'])).toMatchObject({ pipeline: 'discover', status: 'done' })
+  expect(w.files['/proj/.bmuz/stages/1-discover/checkpoint-bricks.json']).toBe('{"notes.md":null}')
+  expect(w.files['/proj/.bmuz/checkpoint-bricks.json']).toBeUndefined()
+  expect(w.files['/proj/.bmuz/switch.json']).toBeUndefined()
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/^\{[^\n]*"ev":"stage.enter","from":"discover","to":"define"/)
+  // Define ran its script, then its first talk step opened with the stage intro above the step's line
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect([st.pipeline, st.current, st.finished]).toEqual(['define', 'direction', ['digest']])
+  const direction = prompts.find(p => /BMUZ step "direction"/.test(p))!
+  expect(direction).toMatch(DEFINE_INTRO)
+  expect(direction.split('\n\n')[1]).toMatch(/^BMUZ step "direction" \(from the BMUZ engine; its instructions for this step are attached\)/)
+  expect(direction).toMatch(/already showed the creative this stage's short intro/)
+  // the next talk step: no intro (once per stage per run)
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { primaries: ['calm'], youAre: ['a keeper'] } } as any)
+  await turn($, 't2')
+  const bricks = prompts.find(p => /BMUZ step "bricks"/.test(p) && /coreVerbs/.test(p))!
+  expect(bricks).not.toMatch(/We're in Define/)
+  // undo and the doctor see only Define's own steps, and agree with the state
+  const undo: any = await $.command.run({ command: 'bmuz-undo', args: '' } as any)
+  expect(String(undo.text)).toMatch(/- direction:/)
+  expect(String(undo.text)).not.toMatch(/spark|experience/)
+  const doc: any = await $.command.run({ command: 'bmuz-doctor', args: '' } as any)
+  expect(String(doc.text)).toMatch(/All good/)
+})
+
+test('F225: in an auto run the offer is noted, not asked; "bmuz go" on the finished stage moves on', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = staged(on, 'discover', { current: 'bricks', status: 'working', finished: ['spark', 'experience'] })
+  await start($, false)
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { found: 'a storm' } } as any)
+  await turn($, 't1')
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'discover', status: 'done' })
+  expect(w.files['/proj/.bmuz/questions.md']).toMatch(/Discover is done. On to Define\? \(say "bmuz go" to move on\)/)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't2')
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'define', current: 'direction' })
+  expect(prompts.some(p => DEFINE_INTRO.test(p))).toBe(true)
+})
+
+test('F225: a next stage not on the engine yet is said plainly, and nothing moves', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = staged(on, 'define', { current: 'bricks', status: 'working', finished: ['digest', 'direction'] })
+  await start($, false)
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { coreVerbs: ['tend'] } } as any)
+  await turn($, 't1')
+  expect(prompts.some(p => /Define is done. Design isn't on the BMUZ engine yet .* For now use today's \/define skill for the design work/.test(p))).toBe(true)
+  expect(JSON.parse(w.files['/proj/bmuz.json']).pipeline).toBe('define')
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('done')
+  expect(w.files['/proj/.bmuz/stages.json']).toBeUndefined()
+})
+
+test('F225: the start moves straight into the chosen stage at the chosen step; earlier steps are filled from the intake, never "{hole}"', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = staged(on, 'start', { current: 'propose', status: 'working' })
+  w.files['/proj/.planning/research/intake.json'] = JSON.stringify({ given: { brief: 'a lighthouse', slug: 'lighthouse', youAre: [{ text: 'You are a keeper', his: true }], experiences: [{ text: 'tea in a storm', his: true }] } })
+  await start($, true)
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { stage: 'discover', at: 'experience' } } as any)
+  await turn($, 't1')
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect([st.pipeline, st.current, st.finished, st.skipped]).toEqual(['discover', 'experience', ['spark'], ['spark']])
+  expect(st.results).toEqual({ brief: 'a lighthouse', slug: 'lighthouse', youAre: [{ text: 'You are a keeper', his: true }] })
+  expect(st.entered).toEqual({ at: 'experience', skipped: ['spark'] })
+  const exp = prompts.find(p => /BMUZ step "experience"/.test(p))!
+  expect(exp).toMatch(/^We're in Discover: gathering the raw material/)
+  expect(exp).toMatch(/Collected so far by earlier steps \(build on it; don't ask it again\): \{"brief":"a lighthouse","youAre":\[\{"text":"You are a keeper","his":true\}\]\}/)
+  expect(exp).toMatch(/Already chosen in the creative's own material .*\{"experiences":\[\{"text":"tea in a storm","his":true\}\]\}.*"Keep" as the first option/)
+  expect(JSON.parse(w.files['/proj/.bmuz/stages/1-start/state.json']).results).toEqual({ stage: 'discover', at: 'experience' })
+  const undo: any = await $.command.run({ command: 'bmuz-undo', args: '' } as any)
+  expect(String(undo.text)).toMatch(/- spark: go back to before "spark" \(answered by your material when this stage started\)/)
+})
+
+test('F225: a stage switch cut short by a crash is finished at the next start', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = staged(on, 'discover', { status: 'done', finished: ['spark', 'experience', 'bricks'] })
+  w.files['/proj/.bmuz/switch.json'] = JSON.stringify({ from: 'discover', to: 'define', at: null, given: {}, n: 1, archive: 'stages/1-discover', checkpoints: ['checkpoint-bricks.json'] })
+  await start($, true)
+  expect(JSON.parse(w.files['/proj/bmuz.json']).pipeline).toBe('define')
+  expect(JSON.parse(w.files['/proj/.bmuz/stages/1-discover/state.json']).status).toBe('done')
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'define', finished: [], status: 'idle' })
+  expect(w.files['/proj/.bmuz/switch.json']).toBeUndefined()
+  const r: any = await $.tool.call({ tool: 'Read', file_path: '/proj/x' } as any)
+  expect(refused(r)).toBe(false)
+})
+
+test('F225: "bmuz new" in a folder without bmuz.json makes it a BMUZ project on the start pipeline; "bmuz go" there only says how', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(String.fromCharCode(10))); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, { 'craft/name.md': 'Ask where the game is.' })
+  w.files['PIPELINE:start'] = JSON.stringify(START)
+  delete w.files['/proj/bmuz.json']
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  expect(prompts[0]).toMatch(/"bmuz new" starts a game here/)
+  expect(w.files['/proj/bmuz.json']).toBeUndefined()
+  await $.prompt.submit({ text: 'bmuz new' } as any)
+  expect(JSON.parse(w.files['/proj/bmuz.json'])).toEqual({ pipeline: 'start' })
+  expect(prompts[1]).toMatch(/now a BMUZ project/)
+  await turn($, 't1')
+  expect(prompts.some(p => /^BMUZ step "propose"/.test(p) && /Ask where the game is\./.test(p))).toBe(true)
+  const done: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { stage: 'later', at: 'first' } } as any)
+  expect(String(done.result)).toMatch(/Recorded/)
 })

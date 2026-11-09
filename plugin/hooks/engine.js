@@ -9,7 +9,72 @@ export const ENGINE_TOOL = 'mcp__bmuz__step_done'
 export const FORMAT_VERSION = 1
 // Pipeline ids, step ids and pipeline names in bmuz.json: lower case, digits, dashes.
 export const NAME_RE = /^[a-z][a-z0-9-]*$/
-const TOP_KEYS = ['id', 'version', 'description', 'watchdogMs', 'steps']
+const TOP_KEYS = ['id', 'version', 'description', 'watchdogMs', 'next', 'steps']
+// "next": the stage that follows this pipeline (docs/pipeline-format.md, "Stages").
+const NEXT_KEYS = ['pipeline', 'at', 'carry', 'ask']
+
+// ---- Stages (F225; VISION V48): one project runs them in order, each a pipeline named like its stage ----
+// Discover gathers the MATERIAL, Define MAKES the blocks, Design ASSEMBLES them, Develop makes the production
+// model, Release lets the public experience it. The intros are Muzzy's wording (entry-research.md, 2026-11-09).
+// forNow: what to use while a stage isn't on the engine yet (its pipeline file doesn't exist: F226).
+export const STAGES = [
+  { id: 'discover', name: 'Discover', intro: "We're in Discover: gathering the raw material for the game — how it should feel, its theme, things you might do in it, games like it. Nothing is shaped or chosen yet. A few questions at a time, research in between, and you can wrap up whenever you have enough." },
+  { id: 'define', name: 'Define', intro: "We're in Define: turning that material into the game's building blocks — the feelings that matter, a 3–5 line story, the pillars, the core verbs, and what goes in the first release. It ends with one page, the concept." },
+  { id: 'design', name: 'Design', intro: "We're in Design: assembling the blocks in whatever way feels right — cutting some, tweaking others — into rules and systems, tested with sketches and paper playtests. It ends with the blueprint: the full design and the build plan.", forNow: "today's /define skill for the design work (rules, systems, the rest of the GDD), then /develop" },
+  { id: 'develop', name: 'Develop', intro: "We're in Develop: building the production model from the blueprint, in short sprints you play and approve one piece at a time.", forNow: 'today\'s /develop skill' },
+  { id: 'release', name: 'Release', intro: "We're in Release: letting the public start experiencing it — final checks, polish, and a live link.", forNow: "today's /deliver skill" },
+]
+export const stageOf = id => STAGES.find(s => s.id === id) || null
+// A "next" that names one of these means "no stage now" (the start's "Not now": the creative starts later).
+export const NO_STAGE = ['later', 'none', '']
+
+// The engine's words when a stage isn't on the engine yet (its pipeline file is missing).
+export function notOnEngineLine(id) {
+  const s = stageOf(id)
+  if (!s) return `"${id}" isn't a stage (the stages are ${STAGES.map(x => x.id).join(', ')})`
+  return `${s.name} isn't on the BMUZ engine yet (it comes with F226 — Five stages, one meaning each). For now use ${s.forNow || 'the matching /command'}`
+}
+
+// The filled "next" of a finished pipeline: { pipeline, at, carry, ask } or null (no next, or "not now").
+// A {hole} fills from the run's results; a hole a wrap-up left empty means no next.
+export function nextOf(p, results = {}) {
+  const n = p && p.next
+  if (!n || typeof n !== 'object') return null
+  const one = v => (typeof v === 'string' ? fill(v, results).trim() : '')
+  const pipeline = one(n.pipeline)
+  if (NO_STAGE.includes(pipeline) || /\{\w+\}/.test(pipeline)) return null
+  // ("first" = the stage's first step, the usual way in)
+  const at = one(n.at)
+  return { pipeline, at: at && at !== 'first' && !/\{\w+\}/.test(at) ? at : null, carry: n.carry || null, ask: n.ask !== false }
+}
+
+// Starts a pipeline at a named step (F225): every step above it counts as finished and SKIPPED ("done by
+// material"), except "always" steps, which still run. A skipped talk step's keys are filled from `given`
+// (what the intake found), else null, so a later {hole} fills as nothing and never as "{hole}".
+// `given` is kept in the state: a later talk step whose keys it answers shows them as already chosen.
+// Returns { state, skipped } or { error } in plain words.
+export function enterAt(p, state, at, given = {}) {
+  const g = given && typeof given === 'object' && !Array.isArray(given) ? given : {}
+  if (!at) return { state: { ...state, given: g, entered: null }, skipped: [] }
+  const i = p.steps.findIndex(s => s.id === at)
+  if (i < 0) return { error: `"${at}" isn't a step of ${p.id} (its steps: ${p.steps.map(s => s.id).join(', ')})` }
+  const skipped = p.steps.slice(0, i).filter(s => !s.always).map(s => s.id)
+  const empties = {}
+  for (const id of skipped) {
+    const s = stepById(p, id)
+    const keys = s.kind === 'talk' ? [...(s.results || []), ...(s.done && s.done.key ? [s.done.key] : [])] : []
+    empties[id] = Object.fromEntries(keys.map(k => [k, g[k] !== undefined && g[k] !== '' ? g[k] : null]))
+  }
+  return { state: { ...applyWrap(state, skipped, empties), given: g, entered: { at, skipped } }, skipped }
+}
+
+// The part of `given` a talk step's own keys answer (empty lists and texts left out).
+export function givenFor(step, given) {
+  if (!given || step.kind !== 'talk') return {}
+  const keys = [...(step.results || []), ...(step.done && step.done.key ? [step.done.key] : [])]
+  const has = v => v !== undefined && v !== null && !(typeof v === 'string' && !v.trim()) && !(Array.isArray(v) && !v.length)
+  return Object.fromEntries(keys.filter(k => has(given[k])).map(k => [k, given[k]]))
+}
 const STEP_KEYS = {
   // always: the step still runs when the creative wraps up early (a talk step's "wrapTo")
   // retries: how many times a failed step runs again before it BLOCKS (0..MAX_RETRIES, default MAX_RETRIES);
@@ -65,6 +130,7 @@ export function checkPipeline(p) {
   if (p.description !== undefined && typeof p.description !== 'string') problems.push('the pipeline\'s "description" must be text')
   if (p.watchdogMs !== undefined && !isPositive(p.watchdogMs)) problems.push('"watchdogMs" must be a number of milliseconds above 0')
   if (!Array.isArray(p.steps) || p.steps.length === 0) return [...problems, 'the pipeline has no steps list']
+  if (p.next !== undefined) problems.push(...nextProblems(p))
 
   const byId = new Map()
   p.steps.forEach((s, i) => {
@@ -163,6 +229,23 @@ export function checkPipeline(p) {
     if (j <= i) problems.push(`step "${s.id}": "wrapTo" "${s.wrapTo}" is not a later step`)
   })
   return problems
+}
+
+// What is wrong with a pipeline's "next" (empty = fine). A {hole} must be a result some talk step hands back.
+function nextProblems(p) {
+  const n = p.next
+  if (!n || typeof n !== 'object' || Array.isArray(n)) return ['"next" must be an object like {"pipeline": "define"}']
+  const out = []
+  for (const k of Object.keys(n)) if (!NEXT_KEYS.includes(k)) out.push(`"next" has an unknown setting "${k}" (allowed: ${NEXT_KEYS.join(', ')})`)
+  const hole = v => typeof v === 'string' && /^\{\w+\}$/.test(v)
+  if (!(typeof n.pipeline === 'string' && (hole(n.pipeline) || NAME_RE.test(n.pipeline)))) out.push('"next" needs "pipeline": a stage like "define", or one {hole} a talk step hands back')
+  else if (!hole(n.pipeline) && !stageOf(n.pipeline)) out.push(`"next" pipeline "${n.pipeline}" isn't a stage (${STAGES.map(s => s.id).join(', ')})`)
+  if (n.at !== undefined && !(typeof n.at === 'string' && (hole(n.at) || NAME_RE.test(n.at)))) out.push('"next" "at" must be a step id of the next pipeline, or one {hole}')
+  if (n.carry !== undefined && !(isSafePath(n.carry) && n.carry.endsWith('.json'))) out.push('"next" "carry" must be a .json file inside the project, like .planning/research/intake.json')
+  if (n.ask !== undefined && typeof n.ask !== 'boolean') out.push('"next" "ask" must be true or false')
+  const known = new Set((Array.isArray(p.steps) ? p.steps : []).filter(s => s && s.kind === 'talk').flatMap(s => [...(isList(s.results) ? s.results : []), ...(s.done && s.done.key ? [s.done.key] : [])]))
+  for (const h of new Set(holesIn([n.pipeline, n.at]))) if (!known.has(h)) out.push(`"next": {${h}} isn't a result any talk step hands back`)
+  return out
 }
 
 // Plugin files a pipeline names (craft notes); the caller checks they exist.
@@ -276,6 +359,9 @@ export function talkPrompt(step, craft, why, auto, decided = [], more = {}) {
   // compacted chat (the conversation alone would forget it).
   const recap = Object.fromEntries(Object.entries(more.recap || {}).filter(([, v]) => v !== undefined && v !== null))
   if (Object.keys(recap).length) lines.push(`Collected so far by earlier steps (build on it; don't ask it again): ${JSON.stringify(recap)}`)
+  if (more.intro) lines.push(`The engine already showed the creative this stage's short intro with this step's message; don't repeat or rephrase it. Start the step.`)
+  // F225: what the creative's own material already answers (the start's intake), shown first, one tap to keep.
+  if (more.given && Object.keys(more.given).length) lines.push(`Already chosen in the creative's own material (the start's intake read it; "his": true marks their exact words): ${JSON.stringify(more.given)}. For these keys, show what their material says first and ask once, with "Keep" as the first option and "Change" second: Keep hands those items back exactly as given (one tap). Ask the usual questions only for the keys their material leaves open. These are the creative's own choices, so in an auto run (or when a test run's answers don't touch them) keep them.`)
   // A test run's stand-in for the creative (bmuz.json "testAnswers", only with BMUZ_TEST=1: testAnswersProblem).
   if (more.answers !== undefined && more.answers !== null) lines.push(`Test run: these are the creative's own answers to this step's questions, as if they had typed them in the chat: ${JSON.stringify(more.answers)}. Treat them exactly as the creative's words ({"text": "...", "his": true}; a brick they named keeps its id). They replace the auto run's rule for the keys they answer; don't ask anything.`)
   lines.push(craft)
@@ -314,8 +400,16 @@ export function testAnswersProblem(cfg, testEnv) {
 
 // The one line the creative sees when a talk step starts; talkPrompt's words travel with it as hidden context
 // (register.tsx prompt.submit). It still says where it's from, so Claude never reads it as the creative's.
-export function talkHeadline(step) {
-  return `BMUZ step "${step.id}"${step.description ? ` — ${step.description}` : ''} (from the BMUZ engine; its instructions for this step are attached)`
+// intro: the stage's short paragraph (F225), shown above the headline at a stage's first talk step.
+export function talkHeadline(step, intro = null) {
+  const line = `BMUZ step "${step.id}"${step.description ? ` — ${step.description}` : ''} (from the BMUZ engine; its instructions for this step are attached)`
+  return intro ? `${intro}\n\n${line}` : line
+}
+
+// The stage intro a pipeline's first talk step shows, once per run (null: not a stage, or already shown).
+export function introFor(p, state) {
+  const s = stageOf(p && p.id)
+  return s && !state.introShown ? s.intro : null
 }
 // The engine's short line when a timer picks up a run at a talk step (register.tsx advance, opts.timer): the step
 // itself starts at that turn's end, where its instructions can be attached.
@@ -324,7 +418,9 @@ export function kickLine(step) {
 }
 
 export function isTalkHeadline(text) {
-  return /^BMUZ step "[a-z0-9-]+".* \(from the BMUZ engine; its instructions for this step are attached\)$/.test(String(text))
+  // (the last line: a stage's first step has its intro paragraph above the headline)
+  const last = String(text).split('\n').pop()
+  return /^BMUZ step "[a-z0-9-]+".* \(from the BMUZ engine; its instructions for this step are attached\)$/.test(last)
 }
 
 // The engine's own message that shows a hand-off card (sent at turn.complete, like every engine message).
@@ -757,7 +853,8 @@ export function undoList(p, state) {
     const files = [...new Set(later.flatMap(x => writesOf(x, state.results || {})))]
     const untracked = later.filter(x => (x.kind === 'script' || x.kind === 'flow') && !(x.writes || []).length).map(x => x.id)
     const what = s.description ? `${s.id} (${s.description})` : s.id
-    let line = `go back to before "${what}"${(state.skipped || []).includes(id) ? ' (skipped when you wrapped up)' : ''}`
+    const byMaterial = state.entered && (state.entered.skipped || []).includes(id)
+    let line = `go back to before "${what}"${byMaterial ? ' (answered by your material when this stage started)' : (state.skipped || []).includes(id) ? ' (skipped when you wrapped up)' : ''}`
     line += files.length ? `: puts back ${files.join(', ')}` : ': no files to put back'
     line += `; runs ${later.length === 1 ? 'that step' : `${later.length} steps`} again`
     if (untracked.length) line += `; anything ${untracked.join(', ')} changed outside its files stays as it is`
@@ -843,7 +940,9 @@ export function rebuildFromJournal(pipelineId, lines) {
     try { j = JSON.parse(raw) } catch (err) { continue }
     // A starting point: a state the journal didn't see being made (kept from a state file when the
     // journal was empty). Everything before it is replaced by it.
-    if (j.ev === 'baseline' && j.state) s = { ...freshState(pipelineId), ...j.state }
+    // A stage switch (F225) starts the new stage's journal with its whole first state.
+    if ((j.ev === 'baseline' || j.ev === 'stage.enter') && j.state) s = { ...freshState(pipelineId), ...j.state }
+    if (j.ev === 'intro') s = { ...s, introShown: true }
     if (j.ev === 'step.start') s = { ...s, current: j.step, status: j.kind === 'gate' ? 'waiting' : 'working', startedAt: j.t }
     if (j.ev === 'step.done') s = finish(s, { id: j.step }, j.result || null)
     if (j.ev === 'wrap') s = applyWrap(s, j.skipped || [], j.empties || {})

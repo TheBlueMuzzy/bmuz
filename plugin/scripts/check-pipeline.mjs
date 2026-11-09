@@ -23,6 +23,12 @@ export function checkFile(file) {
   const name = basename(file, '.json')
   if (p && p.id !== undefined && p.id !== name) problems.push(`its id "${p.id}" must match its file name "${name}"`)
   for (const f of E.pluginFiles(p)) if (!existsSync(join(root, f))) problems.push(`the craft note ${f} is missing`)
+  // A fixed "next" with a fixed "at": that step must exist in the next stage's pipeline (when it's on the engine).
+  const nx = p && p.next
+  if (nx && typeof nx.pipeline === 'string' && E.NAME_RE.test(nx.pipeline) && typeof nx.at === 'string' && E.NAME_RE.test(nx.at)) {
+    const file = join(root, 'pipelines', `${nx.pipeline}.json`)
+    if (existsSync(file) && !JSON.parse(readFileSync(file, 'utf8')).steps.some(s => s.id === nx.at)) problems.push(`"next" "at" "${nx.at}" isn't a step of ${nx.pipeline}`)
+  }
   for (const s of Array.isArray(p && p.steps) ? p.steps : []) {
     if (s && s.kind === 'flow' && typeof s.workflow === 'string' && s.workflow.startsWith(`${plugin}:`)) {
       const wf = s.workflow.slice(plugin.length + 1)
