@@ -144,3 +144,29 @@ test('research flow: a path outside the project falls back to the slug default; 
   const none = () => ({ notes: [{ q: 1, says: 'a claim', means: '', urls: [] }], assumptions: [], open: [], onIce: [], saturation: '', sources: [] })
   await assert.rejects(runFlow(ARGS, none), /no sourced findings/)
 })
+
+test('research flow: fears (H25) are important and come first, Disconfirm starts from them; tags (H9) and probe timeboxes (H26) reach the report', async () => {
+  const args = {
+    ...ARGS,
+    assumptions: [
+      { text: 'more shake is more punch', important: true, tag: 'desirable' },
+      { text: 'shake makes players sick', important: false, tag: 'desirable', fear: true },
+      { text: 'phones can run it smoothly', important: true, tag: 'feasible' },
+    ],
+  }
+  const withTimebox = (prompt, opts) => {
+    const r = answer(prompt, opts)
+    if (opts.label === 'merge') return { ...r, open: [{ question: 'How much is too much on a small screen?', probe: 'sketch', timebox: '1 hour' }] }
+    return r
+  }
+  const { written, prompts } = await runFlow(args, withTimebox)
+  const disconfirm = prompts.find(p => p.opts.label === 'lens: disconfirm').prompt
+  assert.match(disconfirm, /starting from their fears/)
+  assert.match(disconfirm, /1\. shake makes players sick \(desirable, a fear\)\n2\. more shake is more punch \(desirable\)\n3\. phones can run it smoothly \(feasible\)/)
+  assert.match(written, /"shake makes players sick" \(important, desirable, a fear\)/)
+  // the merge's verdict for n=1 is now the fear (it comes first)
+  assert.match(written, /- Contradicted: "shake makes players sick" \(desirable, a fear\) — big shakes read as noise/)
+  assert.match(written, /- No evidence: "phones can run it smoothly" \(feasible\)/)
+  assert.match(written, /- How much is too much on a small screen\? → sketch \(timebox: 1 hour\)/)
+  assert.deepEqual(checkReport(written).problems, [])
+})

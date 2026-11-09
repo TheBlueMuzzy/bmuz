@@ -25,8 +25,18 @@ const goal = text(a.goal) || brief
 const KINDS = ['tech', 'aesthetic', 'design']
 let kind = text(a.kind).toLowerCase()
 if (!KINDS.includes(kind)) { log(`topic type "${kind}" isn't tech / aesthetic / design; looking as for design`); kind = 'design' }
-const assumptions = list(a.assumptions).map(x => (typeof x === 'string' ? { text: text(x), important: true } : { text: text(x && x.text), important: !!(x && x.important) })).filter(x => x.text)
-const important = assumptions.filter(x => x.important)
+// Each assumption: { text, important, tag: desirable | feasible | viable (H9), fear: true when it came from
+// "what do you fear could go wrong" (H25) }. A fear is always important; fears come first, so the
+// Disconfirm lens starts from them.
+const TAGS = ['desirable', 'feasible', 'viable']
+const assumptions = list(a.assumptions).map(x => {
+  if (typeof x === 'string') return { text: text(x), important: true, tag: '', fear: false }
+  const fear = !!(x && x.fear)
+  return { text: text(x && x.text), important: fear || !!(x && x.important), tag: TAGS.includes(x && x.tag) ? x.tag : '', fear }
+}).filter(x => x.text)
+const important = [...assumptions.filter(x => x.important && x.fear), ...assumptions.filter(x => x.important && !x.fear)]
+const label = x => [x.tag, x.fear ? 'a fear' : ''].filter(Boolean).join(', ')
+const withLabel = x => `${x.text}${label(x) ? ` (${label(x)})` : ''}`
 const onIceIn = list(a.onIce).map(text).filter(Boolean)
 const constraints = list(a.constraints).map(text).filter(Boolean)
 const questions = list(a.questions).map(text).filter(Boolean).slice(0, 5)
@@ -71,7 +81,7 @@ const LENSES = [
   },
   {
     id: 'disconfirm', name: 'Disconfirm', why: 'H9, H14, H8',
-    ask: 'evidence AGAINST the creative\'s important assumptions (the beliefs that would hurt most if wrong)',
+    ask: 'evidence AGAINST the creative\'s important assumptions (the beliefs that would hurt most if wrong), starting from their fears (marked "a fear"): look for whether each fear comes true',
     where: { tech: 'evidence the favoured option won\'t fit the constraints', aesthetic: 'evidence the favoured reference doesn\'t produce the target feeling', design: 'evidence the favoured mechanic doesn\'t create the wanted behaviour' },
   },
 ]
@@ -100,7 +110,7 @@ const NOTES = {
     },
     open: {
       type: 'array',
-      items: { type: 'object', properties: { question: { type: 'string' }, probe: { type: 'string', enum: PROBES }, why: { type: 'string' } }, required: ['question', 'probe', 'why'] },
+      items: { type: 'object', properties: { question: { type: 'string' }, probe: { type: 'string', enum: PROBES }, timebox: { type: 'string' }, why: { type: 'string' } }, required: ['question', 'probe', 'timebox', 'why'] },
     },
     onIce: { type: 'array', items: { type: 'string' } },
     saturation: { type: 'string' },
@@ -117,7 +127,7 @@ const frame = [
   `This is ${KIND_WORDS[kind]}.`,
   constraints.length ? `It must fit / off the table: ${constraints.join('; ')}.` : '',
   `Research questions (the numbers are "q" in your notes):\n${numbered(questions)}`,
-  important.length ? `The creative's important assumptions: things they believe, to be TESTED, not taken as true (the numbers are "n"):\n${numbered(important.map(x => x.text))}` : 'The creative named no important assumptions.',
+  important.length ? `The creative's important assumptions: things they believe, to be TESTED, not taken as true (the numbers are "n"):\n${numbered(important.map(withLabel))}` : 'The creative named no important assumptions.',
 ].filter(Boolean).join('\n')
 
 const helperPrompt = lens => [
@@ -133,7 +143,7 @@ const helperPrompt = lens => [
   '- "q" = the research question it bears on; 0 = none of them (something nobody asked, worth knowing).',
   `- "assumptions": evidence that supports or contradicts an important assumption, by its number.${lens.id === 'disconfirm' ? ' This is your main job: look hard for evidence AGAINST each one.' : ''}`,
   `- Stop when your last few sources added nothing new, and say so in "saturation" (how many sources, and whether you stopped at "nothing new" or at the cap). Never more than ${MAX_SOURCES} sources.`,
-  `- "open": what reading can't answer, with the probe that could: ${PROBES.join(' / ')}. Real players are never imagined by you: what players would feel is a playtest or a question for the creative.`,
+  `- "open": what reading can't answer, as the one question a probe would answer, with the probe (${PROBES.join(' / ')}) and a "timebox" (like "1 hour", "half a day"). A spike (timeboxed, throwaway, knowledge not product) for a tech unknown; a sketch for feel, because feel only shows up when played (H26). Real players are never imagined by you: what players would feel is a playtest or a question for the creative.`,
   '- "onIce": ready-made solutions or ideas you came across: kept for later, not pursued.',
   '- List every page you cited in "sources" with its title.',
 ].join('\n')
@@ -164,7 +174,7 @@ LENSES.forEach((lens, i) => {
   raw[lens.id] = {
     notes: notes.filter(n => n.says && n.urls.length),
     assumptions: ev.filter(x => x.says && x.urls.length && x.n >= 1 && x.n <= important.length),
-    open: list(r.open).map(o => ({ question: text(o.question), probe: PROBES.includes(o.probe) ? o.probe : 'ask the creative', why: text(o.why) })).filter(o => o.question),
+    open: list(r.open).map(o => ({ question: text(o.question), probe: PROBES.includes(o.probe) ? o.probe : 'ask the creative', timebox: text(o.timebox), why: text(o.why) })).filter(o => o.question),
     onIce: list(r.onIce).map(text).filter(Boolean),
     saturation: text(r.saturation) || (found[i] ? 'not said' : 'no answer from this helper'),
   }
@@ -199,7 +209,7 @@ const MERGED = {
       items: { type: 'object', properties: { n: { type: 'integer' }, verdict: { type: 'string', enum: ['supported', 'contradicted', 'no evidence'] }, evidence: { type: 'string' }, urls: URLS }, required: ['n', 'verdict', 'evidence', 'urls'] },
     },
     surprises: { type: 'array', items: { type: 'object', properties: { text: { type: 'string' }, urls: URLS }, required: ['text', 'urls'] } },
-    open: { type: 'array', items: { type: 'object', properties: { question: { type: 'string' }, probe: { type: 'string', enum: PROBES } }, required: ['question', 'probe'] } },
+    open: { type: 'array', items: { type: 'object', properties: { question: { type: 'string' }, probe: { type: 'string', enum: PROBES }, timebox: { type: 'string' } }, required: ['question', 'probe', 'timebox'] } },
     onIce: { type: 'array', items: { type: 'string' } },
     hmw: { type: 'array', items: { type: 'string' } },
   },
@@ -264,7 +274,7 @@ const scoreboard = important.map((x, i) => {
   const m = merged && list(merged.scoreboard).find(s => Number(s.n) === i + 1)
   let v = m ? { verdict: m.verdict, evidence: text(m.evidence), urls: clean(m.urls) } : fromHelpers(i + 1)
   if (!v || v.verdict === 'no evidence' || !v.urls.length) v = { verdict: 'no evidence', evidence: '', urls: [] }
-  return { assumption: x.text, ...v }
+  return { assumption: x.text, label: label(x), ...v }
 })
 const surprises = sourcedOnly((merged ? list(merged.surprises) : Object.values(raw).flatMap(r => r.notes).filter(n => n.q === 0).map(n => ({ text: n.says, urls: n.urls }))).map(s => ({ text: text(s.text), urls: clean(s.urls) }))).slice(0, 2)
 const probes = new Map()
@@ -273,7 +283,7 @@ const probes = new Map()
 const openIn = merged && list(merged.open).length ? list(merged.open) : Object.values(raw).flatMap(r => r.open)
 for (const o of openIn) {
   const q = text(o.question)
-  if (q && !probes.has(q.toLowerCase())) probes.set(q.toLowerCase(), { question: q, probe: PROBES.includes(o.probe) ? o.probe : 'ask the creative' })
+  if (q && !probes.has(q.toLowerCase())) probes.set(q.toLowerCase(), { question: q, probe: PROBES.includes(o.probe) ? o.probe : 'ask the creative', timebox: text(o.timebox) })
 }
 const onIce = [
   ...onIceIn.map(x => `${x} (from the creative)`),
@@ -304,7 +314,7 @@ const md = [
   `- Goal underneath: ${goal}`,
   `- Topic type: ${kind === 'aesthetic' ? 'aesthetic (look, feel, sound, juice; not MDA\'s "Aesthetics", which means what players feel)' : kind}`,
   `- Must fit / off the table: ${constraints.length ? constraints.join('; ') : 'none named'}`,
-  `- Assumptions: ${assumptions.length ? assumptions.map(x => `"${x.text}" (${x.important ? 'important' : 'not important'})`).join('; ') : 'none named'}`,
+  `- Assumptions: ${assumptions.length ? assumptions.map(x => `"${x.text}" (${[x.important ? 'important' : 'not important', label(x)].filter(Boolean).join(', ')})`).join('; ') : 'none named'}`,
   '',
   '## Research questions',
   numbered(questions),
@@ -324,10 +334,12 @@ const count = v => scoreboard.filter(s => s.verdict === v).length
 md.push('', '## Assumption scoreboard')
 if (scoreboard.length) {
   md.push(`${count('supported')} supported · ${count('contradicted')} contradicted · ${count('no evidence')} no evidence`)
-  for (const s of scoreboard) md.push(s.verdict === 'no evidence' ? `- No evidence: "${s.assumption}"` : `- ${s.verdict === 'supported' ? 'Supported' : 'Contradicted'}: "${s.assumption}" — ${bare(s.evidence)} ${cite(s.urls)}`)
+  const tagged = s => `"${s.assumption}"${s.label ? ` (${s.label})` : ''}`
+  for (const s of scoreboard) md.push(s.verdict === 'no evidence' ? `- No evidence: ${tagged(s)}` : `- ${s.verdict === 'supported' ? 'Supported' : 'Contradicted'}: ${tagged(s)} — ${bare(s.evidence)} ${cite(s.urls)}`)
 } else md.push('- none: the creative named no important assumptions')
 md.push('', '## Surprises', ...(surprises.length ? surprises.map(s => `- ${bare(s.text)} ${cite(s.urls)}`) : [none]))
-md.push('', '## Open questions → probes', ...(probes.size ? [...probes.values()].map(o => `- ${o.question} → ${o.probe}`) : [none]))
+// Each probe answers one question in a timebox (H26): a spike for tech, a sketch for feel.
+md.push('', '## Open questions → probes', ...(probes.size ? [...probes.values()].map(o => `- ${o.question} → ${o.probe}${o.timebox ? ` (timebox: ${o.timebox})` : ''}`) : [none]))
 md.push('', '## On ice', ...(onIce.length ? onIce.map(x => `- ${x}`) : ['- none']))
 md.push('', '## So what (draft for Define)', ...(soWhats.length ? soWhats.map(t => `- ${bare(t.theme)}: ${bare(t.soWhat.text)} ${cite(t.soWhat.urls)}`) : ['- none drafted']))
 if (hmw.length) md.push('', ...hmw.map(h => `Draft for Define: ${h}`))
