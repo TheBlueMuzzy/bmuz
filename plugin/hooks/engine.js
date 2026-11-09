@@ -211,6 +211,79 @@ export function flowPrompt(step, args, tryNo = 1) {
   ].join('\n')
 }
 
+// ---- The hand-off card (docs/handoff-card.md) ----
+// A hand-off step returns the card's words as data; the engine writes the card itself, so it has the
+// same shape every time (V29). The labels are today's card (~/.claude/config/bmuz/templates/handoff.md).
+export const CARD_PARTS = [
+  ['done', 'Done'],
+  ['see', "You'll see"],
+  ['try', 'Try it'],
+  ['proof', 'Proof'],
+  ['todos', 'Your to-dos'],
+  // (Questions come here, from the open-questions list)
+  ['next', 'Next'],
+]
+
+const hasWords = v => (typeof v === 'string' && v.trim() !== '') || (isList(v) && v.length > 0)
+
+// Checks a card. Returns { ok: true } or { ok: false, why } naming every missing or empty part.
+export function checkCard(card) {
+  if (!card || typeof card !== 'object' || Array.isArray(card)) return { ok: false, why: 'the result has no "card": give it as {"title", "done", "see", "try", "proof", "todos", "questions", "next"}' }
+  const missing = []
+  if (typeof card.title !== 'string' || !card.title.trim()) missing.push('title')
+  for (const [key] of CARD_PARTS) if (!hasWords(card[key])) missing.push(key)
+  const problems = []
+  if (missing.length) problems.push(`the card's ${missing.map(k => `"${k}"`).join(', ')} ${missing.length > 1 ? 'are' : 'is'} missing or empty (write "none" where there is nothing)`)
+  if (card.questions !== undefined && !Array.isArray(card.questions)) problems.push('the card\'s "questions" must be a list (or left out when there are none)')
+  else for (const [i, q] of (card.questions || []).entries()) problems.push(...questionProblems(q, i + 1))
+  return problems.length ? { ok: false, why: problems.join('; ') } : { ok: true }
+}
+
+// What is wrong with one of a card's questions (empty = fine). i = its place in the card, for the message.
+function questionProblems(q, i) {
+  const at = `question ${i}`
+  if (!q || typeof q !== 'object' || Array.isArray(q)) return [`${at} must be {"key", "q", "kind", "options"}`]
+  const out = []
+  // A Questions section holds only questions (V30): each one ends in "?".
+  if (typeof q.q !== 'string' || !q.q.trim()) out.push(`${at} has no "q" (the question's words)`)
+  else if (!q.q.trim().endsWith('?')) out.push(`${at} ("${q.q.trim()}") must be a question ending in "?"`)
+  if (q.options !== undefined && !isList(q.options)) out.push(`${at}: "options" must be a list of answers`)
+  return out
+}
+
+// One card part: a string stays on the label's line; a list goes under it, one "- " line each.
+function cardLine(label, v) {
+  if (Array.isArray(v)) return [`**${label}:**`, ...v.map(x => `- ${String(x).trim()}`)].join('\n')
+  return `**${label}:** ${String(v).trim()}`
+}
+
+// The card as markdown, with today's labels in today's order. openQuestions = the questions to list
+// (from the open-questions list, each with its number n), numbered so the creative can answer by number.
+export function renderCard(card, openQuestions = []) {
+  const lines = [`## ${card.title.trim().replace(/\s*—\s*ready for you to check\s*$/i, '')} — ready for you to check`]
+  for (const [key, label] of CARD_PARTS) {
+    if (key === 'next') lines.push(questionsBlock(openQuestions))
+    lines.push(cardLine(label, card[key]))
+  }
+  return lines.join('\n')
+}
+
+function questionsBlock(qs) {
+  if (!qs.length) return '**Questions:** none'
+  const out = ['**Questions:**']
+  for (const q of qs) {
+    out.push(`${q.n}. ${q.q.trim()}`)
+    const opts = Array.isArray(q.options) ? q.options.slice() : []
+    // The pick goes first, marked (choice and want questions only; checkCard keeps it off taste ones).
+    if (q.pick && opts.includes(q.pick)) {
+      opts.splice(opts.indexOf(q.pick), 1)
+      opts.unshift(q.pick)
+    }
+    for (const o of opts) out.push(`   - ${o}${o === q.pick ? ' (my pick)' : ''}`)
+  }
+  return out.join('\n')
+}
+
 // Fills {name}-style holes from the step results and extra values.
 export function fill(text, vars) {
   return String(text).replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined ? String(vars[k]) : m))
