@@ -1,0 +1,2 @@
+Craft note (discover, step "research"): the research flow runs by itself: three helpers look at the topic from three sides (reference games: what works and what's missing; the players: who and why; what's fun: the core feeling and loops), one merges them into .planning/research/discover.md, and every claim keeps its source. The engine then checks the sources itself (every claim cites [n], every link answers).
+The flow reports what it found; it never decides what the game should be. Taste calls wait for the creative in the next steps.
