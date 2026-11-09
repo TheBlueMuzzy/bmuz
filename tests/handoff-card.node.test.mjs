@@ -59,3 +59,46 @@ test('"handoff" is a talk-step setting: true or false, and the talk prompt asks 
   assert.match(words, /Already decided \(use these, never ask them again\): colour = blue/)
   assert.doesNotMatch(E.talkPrompt(talk, 'x', '', false), /card/)
 })
+
+const Q = (key, extra = {}) => ({ key, q: `What about ${key}?`, kind: 'choice', options: ['a', 'b'], ...extra })
+
+test('new questions number on from the highest; every card lists all open ones with their numbers', () => {
+  let list = E.addCardQuestions([], [Q('colour'), Q('size')], '2026-11-09')
+  assert.deepEqual(list.map(x => [x.n, x.key, x.status, x.askedIn]), [[1, 'colour', 'open', 0], [2, 'size', 'open', 0]])
+  let card = E.questionsForCard(list)
+  assert.deepEqual(card.shown.map(x => x.n), [1, 2])
+  // 1 answered; a later card adds "speed" as 3 (numbers are never reused) and still lists 2
+  list = card.list.map(x => (x.n === 1 ? { ...x, status: 'answered' } : x))
+  list = E.addCardQuestions(list, [Q('speed'), Q('size')], '2026-11-10') // "size" again: not added twice
+  assert.deepEqual(list.map(x => x.n), [1, 2, 3])
+  card = E.questionsForCard(list)
+  assert.deepEqual(card.shown.map(x => x.n), [2, 3])
+})
+
+test('a question shown in 2 cards and still unanswered is parked and left out; asked again, it opens again', () => {
+  let list = E.addCardQuestions([], [Q('colour')], '2026-11-09')
+  for (let i = 0; i < 2; i++) list = E.questionsForCard(list).list
+  const third = E.questionsForCard(list)
+  assert.deepEqual(third.shown, [])
+  assert.equal(third.list[0].status, 'parked')
+  const md = E.questionsMd(null, [], third.list)
+  assert.match(md, /## Parked — decide when the feature that needs it is planned\n.*\n- 1\. What about colour\? \(options: a \/ b\) — asked in 2 cards, first on 2026-11-09\n$/)
+  const back = E.questionsForCard(E.addCardQuestions(third.list, [Q('colour')], '2026-11-12'))
+  assert.deepEqual(back.shown.map(x => [x.n, x.askedIn]), [[1, 1]])
+})
+
+test('questions.md: an auto run\'s lines go above the parked section, which is rewritten in place', () => {
+  const parked = [{ n: 4, key: 'k', q: 'Which?', kind: 'want', options: [], askedIn: 2, status: 'parked', addedAt: '2026-11-09' }]
+  let md = E.questionsMd(null, ['- [ ] a'])
+  assert.equal(md, E.QUESTIONS_MD_HEAD + '- [ ] a\n') // as before F213
+  md = E.questionsMd(md, [], parked)
+  md = E.questionsMd(md, ['- [ ] b'])
+  assert.equal(md, E.QUESTIONS_MD_HEAD + '- [ ] a\n- [ ] b\n\n' + md.slice(md.indexOf(E.PARKED_HEADING)))
+  assert.match(md, /- 4\. Which\? — asked in 2 cards/)
+  assert.doesNotMatch(E.questionsMd(md, [], []), /Parked/) // answered: the section goes
+})
+
+test('a card question needs a key, and a key once per card', () => {
+  assert.match(E.checkCard({ ...CARD, questions: [{ q: 'Which?', kind: 'choice' }] }).why, /question 1 needs a "key"/)
+  assert.match(E.checkCard({ ...CARD, questions: [Q('a'), Q('a')] }).why, /question 2 has the same key "a"/)
+})

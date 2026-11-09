@@ -339,18 +339,38 @@ async function addQuestions($: any, stepId: string, asks: any) {
   const lines = E.askLines(stepId, asks, day)
   if (!lines.length) return
   const path = `${ctx.dir}/.bmuz/questions.md`
-  const old = (await readText($, path)) ?? '# Questions for the creative\nAn auto run took the default where it would have asked. Change anything you disagree with.\n\n'
-  await $.fs.write(path, old + lines.join('\n') + '\n')
+  // (the parked questions stay at the end of the file, below these lines)
+  await $.fs.write(path, E.questionsMd(await readText($, path), lines))
   await journal($, { ev: 'ask', step: stepId, count: lines.length })
 }
 
-// A hand-off step passed: the engine writes its card (kept in .bmuz/last-card.md too, in case the
-// session ends before it is shown). Returns the card's text.
-async function handOff($: any, step: any, card: any) {
-  const shown = (card.questions || []).map((q: any, i: number) => ({ ...q, n: i + 1 }))
+// The project's questions and decisions lists. A damaged file throws: the hook then refuses to be safe,
+// rather than starting an empty list over the creative's answers.
+async function readList($: any, name: string) {
+  const text = await readText($, `${ctx.dir}/.bmuz/${name}`)
+  if (text === null) return []
+  const list = JSON.parse(text)
+  if (!Array.isArray(list)) throw new Error(`.bmuz/${name} is not a list`)
+  return list
+}
+
+async function saveQuestions($: any, list: any[]) {
+  await $.fs.write(`${ctx.dir}/.bmuz/questions.json`, JSON.stringify(list, null, 2))
+  const path = `${ctx.dir}/.bmuz/questions.md`
+  const old = await readText($, path)
+  // (no file is made just to say there is nothing parked)
+  if (old !== null || list.some((q: any) => q.status === 'parked')) await $.fs.write(path, E.questionsMd(old, [], list))
+}
+
+// A hand-off step passed: the engine writes its card, listing every open question (kept in
+// .bmuz/last-card.md too, in case the session ends before it is shown). Returns the card's text.
+async function handOff($: any, step: any, card: any, questions: any[]) {
+  const day = new Date(await $.clock.now()).toISOString().slice(0, 10)
+  const { list, shown } = E.questionsForCard(E.addCardQuestions(questions, card.questions, day))
+  await saveQuestions($, list)
   const text = E.renderCard(card, shown)
   await $.fs.write(`${ctx.dir}/.bmuz/last-card.md`, text + '\n')
-  await journal($, { ev: 'card', step: step.id, questions: shown.map((q: any) => q.n) })
+  await journal($, { ev: 'card', step: step.id, questions: shown.map((q: any) => q.n), parked: list.filter((q: any) => q.status === 'parked').map((q: any) => q.n) })
   return text
 }
 
@@ -359,11 +379,13 @@ async function stepDone($: any, e: any) {
   const { asks, card, ...result } = e.result && typeof e.result === 'object' ? e.result : ({} as any)
   await addQuestions($, step.id, asks)
   // A hand-off step without a good card is not done, the same as a failed done-check (retries, then BLOCKED).
+  // The lists are read before anything is settled, so a damaged one refuses the call with nothing half done.
+  const questions = step.handoff ? await readList($, 'questions.json') : []
   const cardVerdict = step.handoff ? E.checkCard(card) : { ok: true }
   const verdict = cardVerdict.ok ? E.doneCheck(step, vars(), await look($, step, result)) : cardVerdict
   const next = await settle($, step, verdict, result)
   if (next === 'next' && step.handoff) {
-    pending = { card: await handOff($, step, card) }
+    pending = { card: await handOff($, step, card, questions) }
     return { result: 'Recorded. End your turn now; the BMUZ engine shows the hand-off card itself.' }
   }
   if (next === 'next') {

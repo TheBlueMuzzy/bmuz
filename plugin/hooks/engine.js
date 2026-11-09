@@ -253,7 +253,13 @@ export function checkCard(card) {
   const problems = []
   if (missing.length) problems.push(`the card's ${missing.map(k => `"${k}"`).join(', ')} ${missing.length > 1 ? 'are' : 'is'} missing or empty (write "none" where there is nothing)`)
   if (card.questions !== undefined && !Array.isArray(card.questions)) problems.push('the card\'s "questions" must be a list (or left out when there are none)')
-  else for (const [i, q] of (card.questions || []).entries()) problems.push(...questionProblems(q, i + 1))
+  else {
+    const keys = (card.questions || []).map(q => q && q.key)
+    for (const [i, q] of (card.questions || []).entries()) {
+      problems.push(...questionProblems(q, i + 1))
+      if (q && q.key && keys.indexOf(q.key) !== i) problems.push(`question ${i + 1} has the same key "${q.key}" as an earlier one`)
+    }
+  }
   return problems.length ? { ok: false, why: problems.join('; ') } : { ok: true }
 }
 
@@ -262,6 +268,8 @@ function questionProblems(q, i) {
   const at = `question ${i}`
   if (!q || typeof q !== 'object' || Array.isArray(q)) return [`${at} must be {"key", "q", "kind", "options"}`]
   const out = []
+  // The key is how the lists know a question again: an open one isn't added twice, a decided one isn't asked again.
+  if (typeof q.key !== 'string' || !NAME_RE.test(q.key)) out.push(`${at} needs a "key": a short slug in lower case letters, digits and dashes, like "orientation"`)
   // A Questions section holds only questions (V30): each one ends in "?".
   if (typeof q.q !== 'string' || !q.q.trim()) out.push(`${at} has no "q" (the question's words)`)
   else if (!q.q.trim().endsWith('?')) out.push(`${at} ("${q.q.trim()}") must be a question ending in "?"`)
@@ -300,6 +308,68 @@ function questionsBlock(qs) {
     for (const o of opts) out.push(`   - ${o}${o === q.pick ? ' (my pick)' : ''}`)
   }
   return out.join('\n')
+}
+
+// ---- The open-questions list (.bmuz/questions.json): one list per project, carried in every card (V28b) ----
+// Each entry: { n, key, q, kind, options, pick?, askedIn, status: 'open' | 'answered' | 'parked', addedAt }.
+// A question shown in this many cards and still unanswered is parked: out of the cards, into questions.md.
+export const PARK_AFTER = 2
+
+// Adds a card's questions to the list, numbered on from the highest number used. A question already
+// in the list (same key) isn't added twice; a parked one asked again opens again.
+export function addCardQuestions(list, qs, day) {
+  const out = list.map(x => ({ ...x }))
+  let top = out.reduce((m, x) => Math.max(m, x.n || 0), 0)
+  for (const q of Array.isArray(qs) ? qs : []) {
+    const had = out.find(x => x.key === q.key)
+    if (had) {
+      if (had.status === 'parked') Object.assign(had, { status: 'open', askedIn: 0 })
+      continue
+    }
+    top += 1
+    const entry = { n: top, key: q.key, q: q.q.trim(), kind: q.kind, options: q.options || [], askedIn: 0, status: 'open', addedAt: day }
+    if (q.pick) entry.pick = q.pick
+    out.push(entry)
+  }
+  return out
+}
+
+// The questions the next card lists: every open one, old ones too, keeping their numbers. One already
+// shown in PARK_AFTER cards is parked instead; each one shown counts one more card.
+// Returns { list (updated), shown }.
+export function questionsForCard(list) {
+  const shown = []
+  const out = list.map(x => {
+    if (x.status !== 'open') return x
+    if ((x.askedIn || 0) >= PARK_AFTER) return { ...x, status: 'parked' }
+    const y = { ...x, askedIn: (x.askedIn || 0) + 1 }
+    shown.push(y)
+    return y
+  })
+  return { list: out, shown }
+}
+
+// .bmuz/questions.md holds an auto run's questions (askLines) and, at the end, the parked questions.
+export const QUESTIONS_MD_HEAD = '# Questions for the creative\nAn auto run took the default where it would have asked. Change anything you disagree with.\n\n'
+export const PARKED_HEADING = '## Parked — decide when the feature that needs it is planned'
+
+function parkedSection(list) {
+  const parked = list.filter(x => x.status === 'parked')
+  if (!parked.length) return ''
+  const lines = parked.map(x => `- ${x.n}. ${x.q}${x.options && x.options.length ? ` (options: ${x.options.join(' / ')})` : ''} — asked in ${x.askedIn} cards, first on ${x.addedAt}`)
+  return [PARKED_HEADING, 'Answer by number any time ("3 blue"); until then no card asks them again.', ...lines].join('\n') + '\n'
+}
+
+// The new questions.md text. oldText = the file as read (null = none yet); addLines = an auto run's new
+// lines (they go above the parked section); list = the questions list when the parked section changes.
+export function questionsMd(oldText, addLines = [], list = null) {
+  const text = oldText ?? QUESTIONS_MD_HEAD
+  const at = text.indexOf(PARKED_HEADING)
+  let top = at < 0 ? text : text.slice(0, at)
+  if (at >= 0 && top !== QUESTIONS_MD_HEAD) top = top.replace(/\n\n$/, '\n') // the blank line put before the section
+  if (addLines.length) top += addLines.join('\n') + '\n'
+  const tail = list ? parkedSection(list) : (at < 0 ? '' : text.slice(at))
+  return tail ? top + (top.endsWith('\n\n') ? '' : '\n') + tail : top
 }
 
 // Fills {name}-style holes from the step results and extra values.
