@@ -129,3 +129,18 @@ test('recorded answers join the decisions; a later card asking the same key is r
   assert.match(again.why, /already answered on 2026-11-09: portrait — use it, don't ask again/)
   assert.match(E.answersNote([{ n: 1, answer: 'yes' }, { n: 2, answer: 'you pick' }]), /answers recorded for 1, 2.*For 2 the creative said "you pick"/)
 })
+
+test('question kinds: taste asks for the view first and never carries a pick; engineering questions are refused', () => {
+  assert.deepEqual(E.checkCard({ ...CARD, questions: [Q('feel', { kind: 'taste' }), Q('want', { kind: 'want', pick: 'b' }), Q('pick', { pick: 'a' })] }), { ok: true })
+  for (const kind of ['engineering', 'technical', undefined]) {
+    assert.match(E.checkCard({ ...CARD, questions: [Q('db', { kind })] }).why, /engineering calls are BMUZ's own — decide it and log why/, String(kind))
+  }
+  assert.match(E.checkCard({ ...CARD, questions: [Q('feel', { kind: 'taste', pick: 'a' })] }).why, /taste question, so it can't carry a "pick": ask for the creative's view first/)
+  assert.match(E.checkCard({ ...CARD, questions: [Q('x', { pick: 'zzz' })] }).why, /"pick" must be one of its options/)
+  assert.match(E.checkCard({ ...CARD, questions: [Q('x', { options: ['only'] })] }).why, /choice, so it needs 2 or more "options"/)
+  const text = E.renderCard(CARD, [
+    { n: 1, key: 'feel', q: 'How bouncy should it feel?', kind: 'taste', options: ['soft', 'snappy'] },
+    { n: 2, key: 'mode', q: 'Which mode first?', kind: 'choice', options: ['solo', 'duo'], pick: 'duo' },
+  ])
+  assert.match(text, /1\. How bouncy should it feel\?\n {3}What's your view\?\n {3}- soft\n {3}- snappy\n2\. Which mode first\?\n {3}- duo \(my pick\)\n {3}- solo\n/)
+})

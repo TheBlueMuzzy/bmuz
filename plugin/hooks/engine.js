@@ -266,6 +266,9 @@ export function checkCard(card, decisions = []) {
   return problems.length ? { ok: false, why: problems.join('; ') } : { ok: true }
 }
 
+// taste = how it looks, feels or plays; want = what the creative wants; choice = pick between options.
+export const QUESTION_KINDS = ['taste', 'want', 'choice']
+
 // What is wrong with one of a card's questions (empty = fine). i = its place in the card, for the message.
 function questionProblems(q, i) {
   const at = `question ${i}`
@@ -277,6 +280,12 @@ function questionProblems(q, i) {
   if (typeof q.q !== 'string' || !q.q.trim()) out.push(`${at} has no "q" (the question's words)`)
   else if (!q.q.trim().endsWith('?')) out.push(`${at} ("${q.q.trim()}") must be a question ending in "?"`)
   if (q.options !== undefined && !isList(q.options)) out.push(`${at}: "options" must be a list of answers`)
+  // Only the creative's own calls are asked (V32b): engineering calls are BMUZ's own.
+  if (!QUESTION_KINDS.includes(q.kind)) out.push(`${at} has kind "${q.kind}": engineering calls are BMUZ's own — decide it and log why (a question's kind is one of ${QUESTION_KINDS.join(', ')})`)
+  // A taste question asks for the creative's view first; BMUZ's pick comes only on "you pick".
+  else if (q.kind === 'taste' && q.pick !== undefined) out.push(`${at} is a taste question, so it can't carry a "pick": ask for the creative's view first`)
+  else if (q.pick !== undefined && !(isList(q.options) && q.options.includes(q.pick))) out.push(`${at}: "pick" must be one of its options, word for word`)
+  if (q.kind === 'choice' && !(isList(q.options) && q.options.length >= 2)) out.push(`${at} is a choice, so it needs 2 or more "options"`)
   return out
 }
 
@@ -302,6 +311,7 @@ function questionsBlock(qs) {
   const out = ['**Questions:**']
   for (const q of qs) {
     out.push(`${q.n}. ${q.q.trim()}`)
+    if (q.kind === 'taste') out.push("   What's your view?")
     const opts = Array.isArray(q.options) ? q.options.slice() : []
     // The pick goes first, marked (choice and want questions only; checkCard keeps it off taste ones).
     if (q.pick && opts.includes(q.pick)) {

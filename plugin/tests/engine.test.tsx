@@ -517,7 +517,7 @@ test('F213: every card lists the open questions with their numbers; one shown in
   const card = { ...CARD, questions: [{ key: 'greeting', q: 'Should it say hello or welcome?', kind: 'want', options: ['hello', 'welcome'], pick: 'welcome' }] }
   await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { verdict: 'matches', card } } as any)
   await endTurn($, 't1')
-  expect(prompts[0]).toMatch(/\*\*Questions:\*\*\n2\. What colour should the page be\?\n {3}- white\n {3}- black\n3\. Should it say hello or welcome\?\n {3}- welcome \(my pick\)\n {3}- hello\n\*\*Next:\*\*/)
+  expect(prompts[0]).toMatch(/\*\*Questions:\*\*\n2\. What colour should the page be\?\n {3}What's your view\?\n {3}- white\n {3}- black\n3\. Should it say hello or welcome\?\n {3}- welcome \(my pick\)\n {3}- hello\n\*\*Next:\*\*/)
   expect(prompts[0]).not.toMatch(/heading font/)
   const list = JSON.parse(w.files['/proj/.bmuz/questions.json'])
   expect(list.map((q: any) => [q.n, q.status, q.askedIn])).toEqual([[1, 'parked', 2], [2, 'open', 2], [3, 'open', 1]])
