@@ -28,6 +28,12 @@ Made by the BMUZ research flow.
 - Short, strong shakes read as impact. [1][2] (several sources)
 - A shake longer than a beat reads as an earthquake. [1] (interpretation only)
 
+## Bricks
+### Verbs
+- shake → show a hit landed [1][2] (several sources)
+### Nouns
+- none on this shelf
+
 ## Contradictions
 - none found
 
@@ -93,6 +99,9 @@ test('source check: surprises, contradictions, "so what" and the scoreboard\'s s
   assert.match(one('a phone screen [1]', 'a phone screen')[0], /under "So what \(draft for Define\)"\) cites no source/)
   assert.match(one('up to a point [2]', 'up to a point')[0], /under "Assumption scoreboard"\) cites no source/)
   assert.deepEqual(one('- Supported: "more shake is more punch" — up to a point [2]', '- Contradicted: "x" — y [2]'), [])
+  // F217: a brick is held to a finding's rule: a source and a strength mark
+  assert.match(one('show a hit landed [1][2] (several sources)', 'show a hit landed (several sources)')[0], /under "Bricks"\) cites no source/)
+  assert.match(one('show a hit landed [1][2] (several sources)', 'show a hit landed [1]')[0], /under "Bricks"\) has no strength mark/)
 })
 
 test('source check: every section is there, in order; findings are not empty', () => {

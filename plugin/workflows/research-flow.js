@@ -1,51 +1,130 @@
 export const meta = {
   name: 'research-flow',
-  description: 'Discover research: four lenses research the framed questions alone, one merge organises (never chooses), every claim sourced',
-  whenToUse: 'Started by the BMUZ engine in a discover pipeline; args { brief, goal, kind, assumptions, onIce, constraints, questions, out }',
+  description: 'Discover research: four lenses research one topic of a game idea alone (theme dig, mechanisms or prior art), one merge organises (never chooses), every claim and brick sourced',
+  whenToUse: 'Started by the BMUZ engine in a discover pipeline; args { topic, brief, youAre, collected, fears, onIce, constraints, questions, out }',
   phases: [
     { title: 'Diverge', detail: 'Mainstream · Extremes & failures · Outside the field · Disconfirm, each alone' },
-    { title: 'Converge-lite', detail: 'themes, strength, contradictions, assumption scoreboard, surprises, probes' },
+    { title: 'Converge-lite', detail: 'themes, bricks for the shelves, strength, contradictions, fears scoreboard, surprises, probes' },
     { title: 'Write', detail: 'the report file, with its Sources list' },
   ],
 }
 
-// The design: framework .planning/research/bmuz-vision/discover-research.md, sections 5 and 6 (H1–H24).
-// Stage B (diverge) + Stage C (converge-lite). A workflow never holds a taste decision: it widens and
-// organises; choosing is Define's.
+// The design: framework .planning/research/bmuz-vision/discover-creative-research.md section 6 (the creative
+// steps, what the helpers look up per step) and discover-research.md (H1–H26: collect never choose, independent
+// helpers, four lenses as the stance, strength marks, contradictions kept, on ice, hopes and fears).
+// Discover collects the bricks of a game; Define chooses which to build with. A workflow never holds a taste
+// decision: it widens and organises.
 
-// ---- Inputs (pinned by the engine from the "frame" and "questions" talk steps) ----
+// ---- Inputs (pinned by the engine from the talk steps before it) ----
 let a = args
 if (typeof a === 'string') { try { a = JSON.parse(a) } catch (e) { a = { brief: a } } }
 a = a || {}
 const text = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim()
 const list = v => (Array.isArray(v) ? v : v ? [v] : [])
+// A talk step's item is text or an object ({text, his} or a noun's / verb's own fields): as one line of text.
+const itemLine = x => (typeof x === 'string' ? text(x) : x && typeof x === 'object' ? text(x.text || Object.entries(x).filter(([k]) => k !== 'his' && k !== 'picked').map(([k, v]) => `${k}: ${list(v).map(text).join(' / ')}`).join(' · ')) : '')
 const brief = text(a.brief)
-if (!brief) throw new Error('research-flow needs a "brief"')
-const goal = text(a.goal) || brief
-const KINDS = ['tech', 'aesthetic', 'design']
-let kind = text(a.kind).toLowerCase()
-if (!KINDS.includes(kind)) { log(`topic type "${kind}" isn't tech / aesthetic / design; looking as for design`); kind = 'design' }
-// Each assumption: { text, important, tag: desirable | feasible | viable (H9), fear: true when it came from
-// "what do you fear could go wrong" (H25) }. A fear is always important; fears come first, so the
-// Disconfirm lens starts from them.
+if (!brief) throw new Error('research-flow needs a "brief": the idea in the creative\'s words')
+const youAre = list(a.youAre).map(itemLine).filter(Boolean)[0] || ''
+
+// The shelf each brick goes on (DISCOVER.md, section 6(d)), with the shape a brick's line takes there.
+const SHELF_FORMS = {
+  'Theme': 'one subject note, reference (in or outside games), tone word, or thing players already know about the subject',
+  'Nouns': '"<thing> · states: <a> / <b> / <c> · acts on / acted on by: … · wants: … · stopped by: …" (wants and stopped-by only for living things)',
+  'Verbs': '"<theme word> → <outcome form>", like "stitch → join two pieces into one": the theme word keeps the fantasy, the outcome form finds the mechanism',
+  'Experience goals': 'a situation a player finds themselves in (not a feature), or a fantasy "I want to …"',
+  'Mechanism shelf': '"<outcome verb> → <mechanism> → example games: <A>, <B> → teaches: <the skill the player learns>"',
+  'Decisions': '"<a choice the player makes> → costs: <its tradeoff>"',
+  'Prior art': '"<game> · shares: <which bricks> · praised for: … · complaints / missed: … · hook / anchor: …"',
+  'Hooks & anchors': '"Hook: …" (the part players have never seen) or "Anchor: …" (the familiar part they recognise); candidates only',
+  'Twists': 'one twist: something taken away, an odd mashup, an extreme, a constraint that sounds fun',
+}
+
+// BoardGameGeek's mechanics list is not a catalogue (Muzzy, 2026-11-09): not all entries are mechanics, some are
+// the same thing twice, the granularity is uneven, and it is wargame-heavy. Private vocabulary only.
+const BGG_RULE = 'Never present BoardGameGeek\'s mechanics list as a resource, catalogue, taxonomy or authority, and never cite it for a mechanism: not all its entries are mechanics, some are duplicates, the granularity is uneven, and it is wargame-heavy. You may use its entries privately as vocabulary to think with. For mechanisms cite designer-written sources: Engelstein & Shalev\'s Building Blocks of Tabletop Game Design, the gameplay design patterns wiki (Björk & Holopainen, Chalmers), Raph Koster\'s game grammar, Anthropy & Clark\'s verbs and objects, Dan Cook\'s skill atoms, designers\' own breakdowns of specific games. BoardGameGeek game pages are fine as prior art (what a game is, what players say about it).'
+
+// ---- The three research topics (section 6(c)): what the helpers look for, and where each lens looks ----
+const TOPICS = {
+  theme: {
+    name: 'Theme dig',
+    task: 'what the subject really is, in and outside games: its systems, history, textures, tone and conflicts, and what players already know about it. Also, for the simulation breakdown that comes next, the subject\'s real things (nouns) with the states they can be in and what acts on them, what its living things want and what stops them, and the real processes that happen there (verbs)',
+    shelves: ['Theme', 'Nouns', 'Verbs', 'Experience goals'],
+    questions: [
+      `What is "${brief}" really like as a subject: its systems, history, textures and conflicts?`,
+      'What things are in this world, what states can they be in, and what acts on them?',
+      'How have games used this subject, and what did they keep and drop?',
+    ],
+    where: {
+      mainstream: 'games on the subject: what they kept and what they dropped; how games usually deliver the experience goals',
+      extremes: 'the deepest simulations and the most abstract games of the same subject, and where games on it fell flat',
+      outside: 'the subject itself, outside games: non-fiction, history, how the real system works, documentaries, hobbyist communities, image references. This is the main lens for a theme dig',
+      disconfirm: 'evidence that the hoped-for feeling does not come from this subject or this kind of play',
+    },
+  },
+  mechanisms: {
+    name: 'Mechanism shelf',
+    task: 'for each outcome verb, 2 to 4 candidate mechanisms designers use to make that outcome playable, 1 to 3 games that use each, and the skill each one teaches the player; plus genres whose verbs already cover part of the idea',
+    shelves: ['Mechanism shelf', 'Decisions'],
+    questions: null, // made from the verbs, below
+    where: {
+      mainstream: 'designer-written catalogues and breakdowns: Building Blocks of Tabletop Game Design, the gameplay design patterns wiki, Koster\'s game grammar, Anthropy & Clark, designers\' breakdowns of specific games, genre verb bundles',
+      extremes: 'where each mechanism is criticised: a pasted-on theme, degenerate strategies, failed uses',
+      outside: 'real-world systems with the same structure (markets for trading, ecology for growth, queues for waiting)',
+      disconfirm: 'evidence that a mechanism does not create the wanted behaviour or feeling',
+    },
+  },
+  'prior-art': {
+    name: 'Prior art',
+    task: 'games that already do this, or part of it: what each shares with the bricks collected, what players praise, what they complain about or say is missing, and the hook (the part players have never seen) and anchor (the familiar part) each uses. Also twists: what taking something away, an odd mashup or an extreme would do',
+    shelves: ['Prior art', 'Hooks & anchors', 'Twists'],
+    questions: [
+      'Which games are closest to this idea, and which of its bricks do they share?',
+      'What do players praise in them, and what do they complain about or say is missing?',
+      'What hooks and anchors do those games use, and what twists has nobody tried?',
+    ],
+    where: {
+      mainstream: 'Steam tag matches (genre plus themes and moods), store pages, BoardGameGeek and MobyGames game pages (as prior art only), reviews',
+      extremes: 'game jam entries (itch.io), postmortems, the oddest and most extreme takes on the idea',
+      outside: 'non-game products, toys and media with the same hook',
+      disconfirm: '"this already exists and players say it isn\'t fun" evidence: complaints, refunds, abandoned projects',
+    },
+  },
+}
+const topicId = text(a.topic).toLowerCase()
+const topic = TOPICS[topicId]
+if (!topic) throw new Error(`research-flow needs a "topic": one of ${Object.keys(TOPICS).join(', ')} (got "${topicId}")`)
+
+// What the talk steps collected so far (the engine pins it): key → list of items.
+const collected = a.collected && typeof a.collected === 'object' ? a.collected : {}
+const collectedLines = Object.entries(collected)
+  .map(([k, v]) => [k, list(v).map(itemLine).filter(Boolean)])
+  .filter(([, v]) => v.length)
+  .map(([k, v]) => `- ${k}: ${v.join('; ')}`)
+
+// Fears are the creative's important assumptions (H25): the Disconfirm lens starts from them.
 const TAGS = ['desirable', 'feasible', 'viable']
-const assumptions = list(a.assumptions).map(x => {
-  if (typeof x === 'string') return { text: text(x), important: true, tag: '', fear: false }
-  const fear = !!(x && x.fear)
-  return { text: text(x && x.text), important: fear || !!(x && x.important), tag: TAGS.includes(x && x.tag) ? x.tag : '', fear }
-}).filter(x => x.text)
+const assumptions = [
+  ...list(a.fears).map(x => ({ text: itemLine(x), important: true, tag: TAGS.includes(x && x.tag) ? x.tag : 'desirable', fear: true })),
+  ...list(a.assumptions).map(x => (typeof x === 'string' ? { text: text(x), important: true, tag: '', fear: false } : { text: text(x && x.text), important: !!(x && (x.important || x.fear)), tag: TAGS.includes(x && x.tag) ? x.tag : '', fear: !!(x && x.fear) })),
+].filter(x => x.text)
 const important = [...assumptions.filter(x => x.important && x.fear), ...assumptions.filter(x => x.important && !x.fear)]
 const label = x => [x.tag, x.fear ? 'a fear' : ''].filter(Boolean).join(', ')
 const withLabel = x => `${x.text}${label(x) ? ` (${label(x)})` : ''}`
-const onIceIn = list(a.onIce).map(text).filter(Boolean)
-const constraints = list(a.constraints).map(text).filter(Boolean)
-const questions = list(a.questions).map(text).filter(Boolean).slice(0, 5)
-if (!questions.length) throw new Error('research-flow needs "questions": the research questions from the questions step')
+const onIceIn = list(a.onIce).map(itemLine).filter(Boolean)
+const constraints = list(a.constraints).map(itemLine).filter(Boolean)
+
+// The research questions: the creative's own (the theme step's), else the topic's. For mechanisms, one per
+// outcome verb ("What mechanisms let a player join two pieces into one?").
+const verbOutcomes = list(collected.verbs).map(v => (v && typeof v === 'object' ? text(v.outcome || v.text) : text(v).split('→').pop().trim())).filter(Boolean)
+let questions = list(a.questions).map(itemLine).filter(Boolean).slice(0, 5)
+if (!questions.length && topicId === 'mechanisms') questions = [...verbOutcomes.slice(0, 4).map(v => `What mechanisms let a player ${v.replace(/\?$/, '')}?`), 'Which genres already bundle several of these verbs?']
+if (!questions.length) questions = topic.questions || [`What is already known about "${brief}"?`]
 
 // The report stays inside the project: relative, forward slashes, no "..", a .md file, not in .bmuz.
 // (The engine checks the same at its end; a bad path here falls back to the default rather than writing elsewhere.)
-const slug = brief.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'topic'
-const DEFAULT_OUT = `.planning/research/discover-${slug}.md`
+const slug = brief.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'idea'
+const DEFAULT_OUT = `.planning/research/discover-${slug}-${topicId}.md`
 const safeOut = p => typeof p === 'string' && /\.md$/.test(p) && !/^[\/\\]|^[A-Za-z]:|\\/.test(p) &&
   p.split('/').every(x => x && x !== '..' && x !== '.') && p.split('/')[0].toLowerCase() !== '.bmuz'
 let out = a.out
@@ -54,41 +133,18 @@ if (!safeOut(out)) {
   out = DEFAULT_OUT
 }
 
-// MDA's "Aesthetics" (what players feel) and the creative's "aesthetic" topics (look, feel, sound,
-// juice) are different words; every prompt keeps them apart (discover-research.md section 4).
-const KIND_WORDS = {
-  tech: 'a tech topic (an engine feature, library or platform)',
-  aesthetic: 'an aesthetic topic: look, feel, sound, juice (the polish a player senses). Not MDA\'s "Aesthetics", which means the feelings a game evokes in players; keep the two words apart',
-  design: 'a design topic (a mechanic, loop or rule)',
-}
-
-// ---- Stage B: four lenses, fixed by heuristic; the topic type only changes where each one looks ----
+// ---- Stage B: four lenses, fixed by heuristic; the topic only changes where each one looks ----
 const LENSES = [
-  {
-    id: 'mainstream', name: 'Mainstream', why: 'H12',
-    ask: 'how this is usually done: what most examples share',
-    where: { tech: 'official docs, common libraries, the usual architecture', aesthetic: 'common treatments in games of that kind', design: 'standard mechanics for that experience' },
-  },
-  {
-    id: 'extremes', name: 'Extremes & failures', why: 'H12',
-    ask: 'the most extreme cases, edge cases, and documented failures or post-mortems (failures are where assumptions break)',
-    where: { tech: 'issue trackers, post-mortems, limits and benchmarks', aesthetic: 'the most extreme examples of the feeling, and where it tips into "too much"', design: 'edge players, degenerate strategies, failed designs' },
-  },
-  {
-    id: 'outside', name: 'Outside the field', why: 'H11, H24',
-    ask: 'the same activity or feeling in an unrelated domain, for a fresh view and for things nobody thought to ask',
-    where: { tech: 'other industries solving the same technical problem', aesthetic: 'film, animation, product design, music with the same feeling', design: 'sports, toys, social rituals with the same dynamic' },
-  },
-  {
-    id: 'disconfirm', name: 'Disconfirm', why: 'H9, H14, H8',
-    ask: 'evidence AGAINST the creative\'s important assumptions (the beliefs that would hurt most if wrong), starting from their fears (marked "a fear"): look for whether each fear comes true',
-    where: { tech: 'evidence the favoured option won\'t fit the constraints', aesthetic: 'evidence the favoured reference doesn\'t produce the target feeling', design: 'evidence the favoured mechanic doesn\'t create the wanted behaviour' },
-  },
+  { id: 'mainstream', name: 'Mainstream', ask: 'how this is usually done: what most examples share' },
+  { id: 'extremes', name: 'Extremes & failures', ask: 'the most extreme cases, edge cases, and documented failures or post-mortems (failures are where assumptions break)' },
+  { id: 'outside', name: 'Outside the field', ask: 'the same activity or feeling in an unrelated domain, for a fresh view and for things nobody thought to ask' },
+  { id: 'disconfirm', name: 'Disconfirm', ask: 'evidence AGAINST the creative\'s fears and important assumptions, starting from their fears (marked "a fear"): look for whether each fear comes true' },
 ]
-const MAX_SOURCES = 10 // per helper: the hard cap beside saturation (H15)
-const PROBES = ['spike', 'sketch', 'playtest', 'ask the creative']
+const MAX_SOURCES = 6 // per helper: the hard cap beside saturation (H15), kept small so a discover run stays affordable
+const PROBES = ['sketch', 'proto', 'spike', 'playtest', 'ask the creative']
 
 const URLS = { type: 'array', items: { type: 'string' } }
+const BRICK = { type: 'object', properties: { shelf: { type: 'string', enum: topic.shelves }, text: { type: 'string' }, urls: URLS }, required: ['shelf', 'text', 'urls'] }
 const NOTES = {
   type: 'object',
   properties: {
@@ -100,6 +156,7 @@ const NOTES = {
         required: ['q', 'says', 'means', 'urls'],
       },
     },
+    bricks: { type: 'array', items: BRICK },
     assumptions: {
       type: 'array',
       items: {
@@ -116,34 +173,39 @@ const NOTES = {
     saturation: { type: 'string' },
     sources: { type: 'array', items: { type: 'object', properties: { url: { type: 'string' }, title: { type: 'string' } }, required: ['url', 'title'] } },
   },
-  required: ['notes', 'assumptions', 'open', 'onIce', 'saturation', 'sources'],
+  required: ['notes', 'bricks', 'assumptions', 'open', 'onIce', 'saturation', 'sources'],
 }
 
 const numbered = xs => xs.map((x, i) => `${i + 1}. ${x}`).join('\n')
 const frame = [
-  `A creative (a game designer, not an engineer) is in the Discover stage: understanding the problem before anyone solves it.`,
-  `Brief, as they said it: "${brief}"`,
-  `The goal underneath: "${goal}"`,
-  `This is ${KIND_WORDS[kind]}.`,
+  'A creative (a game designer, not an engineer) is in the Discover stage of a new game: collecting the building blocks ("bricks") of the game before anyone chooses which to build with. Choosing is the next stage, Define, and it is theirs.',
+  `The idea, in their words: "${brief}"`,
+  youAre ? `Who the player is: "${youAre}"` : '',
+  collectedLines.length ? `Bricks collected so far in this run (the creative's and Claude's, from the talk steps):\n${collectedLines.join('\n')}` : '',
   constraints.length ? `It must fit / off the table: ${constraints.join('; ')}.` : '',
+  `This research: ${topic.name} — ${topic.task}.`,
   `Research questions (the numbers are "q" in your notes):\n${numbered(questions)}`,
-  important.length ? `The creative's important assumptions: things they believe, to be TESTED, not taken as true (the numbers are "n"):\n${numbered(important.map(withLabel))}` : 'The creative named no important assumptions.',
+  important.length ? `The creative's fears and important assumptions: things to TEST, not take as true (the numbers are "n"):\n${numbered(important.map(withLabel))}` : 'The creative named no fears or important assumptions.',
+  'MDA\'s "Aesthetics" means the feelings a game evokes in players (Sensation, Fantasy, Narrative, Challenge, Fellowship, Discovery, Expression, Submission); keep it apart from look and feel.',
 ].filter(Boolean).join('\n')
 
+const shelfRules = topic.shelves.map(s => `  - ${s}: ${SHELF_FORMS[s]}`).join('\n')
 const helperPrompt = lens => [
   frame,
   '',
-  `Your lens: ${lens.name} — ${lens.ask}. For this topic, look in: ${lens.where[kind]}.`,
+  `Your lens: ${lens.name} — ${lens.ask}. For this research, look in: ${topic.where[lens.id]}.`,
   'You work alone; other helpers cover other lenses. Answer every research question you can from your lens.',
-  'Use WebSearch to find sources and WebFetch to open the pages you rely on (if they are not loaded yet, load them with ToolSearch "select:WebSearch,WebFetch").',
+  'Use WebSearch to find sources and WebFetch to open the pages you rely on (if they are not loaded yet, load them with ToolSearch "select:WebSearch,WebFetch"). Fetch the pages yourself.',
   'Rules:',
-  '- Gather widely before you sum up. Never rank, recommend, or say what the creative should do or pick: that is the next stage, and theirs.',
+  '- Collect widely before you sum up. Never rank, recommend, or say what the creative should do or pick: that is the next stage, and theirs.',
   '- Two columns per note: "says" = what the source says or shows; "means" = what you think it means. Keep them apart.',
-  '- Every note lists the full https URL of each page it comes from. Cite only pages that came back in your searches or that you opened; never make up a URL or guess a page path. A note you cannot source, leave out.',
-  '- "q" = the research question it bears on; 0 = none of them (something nobody asked, worth knowing).',
-  `- "assumptions": evidence that supports or contradicts an important assumption, by its number.${lens.id === 'disconfirm' ? ' This is your main job: look hard for evidence AGAINST each one.' : ''}`,
+  '- Every note and every brick lists the full https URL of each page it comes from. Cite only pages that came back in your searches or that you opened; never make up a URL or guess a page path. What you cannot source, leave out.',
+  '- "q" = the research question a note bears on; 0 = none of them (something nobody asked, worth knowing).',
+  `- "bricks": building blocks for the creative's shelves, each one line in the shelf's form:\n${shelfRules}\n  Extend what the creative already collected rather than repeat it; a brick already on their list adds nothing.`,
+  `- ${BGG_RULE}`,
+  `- "assumptions": evidence that supports or contradicts a fear or important assumption, by its number.${lens.id === 'disconfirm' ? ' This is your main job: look hard for evidence AGAINST each one.' : ''}`,
   `- Stop when your last few sources added nothing new, and say so in "saturation" (how many sources, and whether you stopped at "nothing new" or at the cap). Never more than ${MAX_SOURCES} sources.`,
-  `- "open": what reading can't answer, as the one question a probe would answer, with the probe (${PROBES.join(' / ')}) and a "timebox" (like "1 hour", "half a day"). A spike (timeboxed, throwaway, knowledge not product) for a tech unknown; a sketch for feel, because feel only shows up when played (H26). Real players are never imagined by you: what players would feel is a playtest or a question for the creative.`,
+  `- "open": what reading can't answer, as the one question a probe would answer, with the probe (${PROBES.join(' / ')}) and a "timebox" (like "1 hour", "half a day"). A sketch (a throwaway playable toy) for feel, because feel only shows up when played; a proto (a quick rules simulation) for numbers and balance; a spike for a tech unknown (H26). Real players are never imagined by you: what players would feel is a playtest or a question for the creative.`,
   '- "onIce": ready-made solutions or ideas you came across: kept for later, not pursued.',
   '- List every page you cited in "sources" with its title.',
 ].join('\n')
@@ -167,12 +229,14 @@ LENSES.forEach((lens, i) => {
   }
   const urls = us => list(us).filter(isLink).map(u => u.trim())
   const notes = list(r.notes).map(n => ({ q: Number(n.q) || 0, says: text(n.says), means: text(n.means), urls: urls(n.urls).filter(allow) }))
+  const bricks = list(r.bricks).map(b => ({ shelf: topic.shelves.includes(b && b.shelf) ? b.shelf : topic.shelves[0], text: text(b && b.text), urls: urls(b && b.urls).filter(allow) }))
   const ev = list(r.assumptions).map(x => ({ n: Number(x.n) || 0, bears: x.bears === 'contradicts' ? 'contradicts' : 'supports', says: text(x.says), urls: urls(x.urls).filter(allow) }))
-  const before = list(r.notes).length + list(r.assumptions).length
-  const kept = notes.filter(n => n.says && n.urls.length).length + ev.filter(x => x.says && x.urls.length).length
+  const before = list(r.notes).length + list(r.bricks).length + list(r.assumptions).length
+  const kept = [...notes.filter(n => n.says), ...bricks.filter(b => b.text), ...ev.filter(x => x.says)].filter(x => x.urls.length).length
   capped += Math.max(0, before - kept)
   raw[lens.id] = {
     notes: notes.filter(n => n.says && n.urls.length),
+    bricks: bricks.filter(b => b.text && b.urls.length),
     assumptions: ev.filter(x => x.says && x.urls.length && x.n >= 1 && x.n <= important.length),
     open: list(r.open).map(o => ({ question: text(o.question), probe: PROBES.includes(o.probe) ? o.probe : 'ask the creative', timebox: text(o.timebox), why: text(o.why) })).filter(o => o.question),
     onIce: list(r.onIce).map(text).filter(Boolean),
@@ -181,9 +245,9 @@ LENSES.forEach((lens, i) => {
 })
 const helpersFailed = LENSES.filter((_, i) => !found[i]).map(x => x.id)
 if (helpersFailed.length) log(`no answer from: ${helpersFailed.join(', ')}`)
-if (capped) log(`left out ${capped} note${capped > 1 ? 's' : ''} with no source (or past the ${MAX_SOURCES}-source cap)`)
-const known = new Set([...titles.keys(), ...Object.values(raw).flatMap(r => [...r.notes, ...r.assumptions].flatMap(n => n.urls))])
-if (!Object.values(raw).some(r => r.notes.length)) throw new Error(`no sourced findings on "${brief}"`)
+if (capped) log(`left out ${capped} note${capped > 1 ? 's' : ''} or bricks with no source (or past the ${MAX_SOURCES}-source cap)`)
+const known = new Set([...titles.keys(), ...Object.values(raw).flatMap(r => [...r.notes, ...r.bricks, ...r.assumptions].flatMap(n => n.urls))])
+if (!Object.values(raw).some(r => r.notes.length)) throw new Error(`no sourced findings on "${brief}" (${topic.name})`)
 
 // ---- Stage C: converge-lite. Organise, check strength, keep disagreements: never choose ----
 phase('Converge-lite')
@@ -203,6 +267,7 @@ const MERGED = {
         required: ['q', 'theme', 'claims', 'soWhat'],
       },
     },
+    bricks: { type: 'array', items: BRICK },
     contradictions: { type: 'array', items: { type: 'object', properties: { a: SIDE, b: SIDE }, required: ['a', 'b'] } },
     scoreboard: {
       type: 'array',
@@ -213,27 +278,29 @@ const MERGED = {
     onIce: { type: 'array', items: { type: 'string' } },
     hmw: { type: 'array', items: { type: 'string' } },
   },
-  required: ['themes', 'contradictions', 'scoreboard', 'surprises', 'open', 'onIce', 'hmw'],
+  required: ['themes', 'bricks', 'contradictions', 'scoreboard', 'surprises', 'open', 'onIce', 'hmw'],
 }
 const merged = await agent([
   frame,
   '',
-  'Four helpers researched this alone, each through one lens. Their notes, as JSON:',
-  JSON.stringify(Object.fromEntries(LENSES.map(l => [l.name, { notes: raw[l.id].notes, assumptions: raw[l.id].assumptions, open: raw[l.id].open, onIce: raw[l.id].onIce }])), null, 1),
+  'Four helpers researched this alone, each through one lens. Their notes and bricks, as JSON:',
+  JSON.stringify(Object.fromEntries(LENSES.map(l => [l.name, { notes: raw[l.id].notes, bricks: raw[l.id].bricks, assumptions: raw[l.id].assumptions, open: raw[l.id].open, onIce: raw[l.id].onIce }])), null, 1),
   '',
   'Organise them. You never choose: no recommendation, no ranking of options, no scope. Choosing is the next stage.',
   '- "themes": group the notes into themes under each research question ("q", 0 = none). Each claim is one plain sentence a non-engineer can read, with the URLs of the notes it rests on. "interpretation": true when the claim is a helper\'s reading (their "means") rather than what a source says. Combine notes that say the same thing into one claim with all their URLs.',
   '- Each theme gets "soWhat": one draft line for the next stage — the observation plus why it might matter — with the URLs it rests on.',
+  `- "bricks": every distinct brick, on its shelf, in the shelf's form:\n${shelfRules}\n  Combine bricks that say the same thing into one with all their URLs. Keep every other brick: collecting, not trimming.`,
+  `- ${BGG_RULE}`,
   '- "contradictions": where notes disagree, keep both sides with each side\'s context (who or what the source was looking at). Never average them away.',
-  '- "scoreboard": each important assumption by number: supported / contradicted / no evidence, with the evidence and its URLs.',
+  '- "scoreboard": each fear or important assumption by number: supported / contradicted / no evidence, with the evidence and its URLs.',
   '- "surprises": 1 or 2 findings that answer a question nobody asked, with URLs.',
-  '- "open": what reading couldn\'t answer, each with its probe.',
+  '- "open": what reading couldn\'t answer, each with its probe and timebox.',
   '- "onIce": solutions and ideas that came up, kept for the next stage.',
   '- "hmw": at most 2 draft "How might we …?" questions with no solution in them, or none.',
   'Use only URLs that appear above. Add nothing new.',
 ].join('\n'), { label: 'merge', phase: 'Converge-lite', schema: MERGED })
 
-// The merge is checked in code, not trusted: a URL no helper cited is removed, and a claim left with
+// The merge is checked in code, not trusted: a URL no helper cited is removed, and a claim or brick left with
 // no source is dropped. Strength is counted here too (H14): 2+ different sites = several sources.
 let dropped = 0
 const clean = us => [...new Set(list(us).filter(isLink).map(u => u.trim()).filter(u => known.has(u)))]
@@ -256,14 +323,25 @@ if (merged) {
   })).filter(t => t.claims.length)
 } else {
   // No merge (the helper died): each question's notes as they came, one theme per question.
-  log('the merge helper gave no answer; the report lists the notes by question as they came')
+  log('the merge helper gave no answer; the report lists the notes and bricks as they came')
   const notes = Object.values(raw).flatMap(r => r.notes)
   themes = [...new Set(notes.map(n => n.q))].map(q => ({ q, theme: 'Notes from the lenses', claims: notes.filter(n => n.q === q).map(n => ({ text: n.says, urls: n.urls, interpretation: false })), soWhat: null }))
 }
-if (!themes.length) throw new Error(`no sourced findings on "${brief}" after the merge`)
+if (!themes.length) throw new Error(`no sourced findings on "${brief}" (${topic.name}) after the merge`)
+// Bricks: the merge's, checked; without them (or with none left) the lenses' own, so nothing collected is lost.
+const brickOf = b => ({ shelf: topic.shelves.includes(b && b.shelf) ? b.shelf : topic.shelves[0], text: text(b && b.text), urls: clean(b && b.urls), interpretation: false })
+let bricks = merged ? sourcedOnly(list(merged.bricks).map(brickOf)) : []
+if (!bricks.length) bricks = Object.values(raw).flatMap(r => r.bricks).map(brickOf).filter(b => b.text && b.urls.length)
+const bricksSeen = new Set()
+bricks = bricks.filter(b => {
+  const k = `${b.shelf}|${b.text.toLowerCase()}`
+  if (bricksSeen.has(k)) return false
+  bricksSeen.add(k)
+  return true
+})
 const sides = s => ({ says: text(s && s.says), context: text(s && s.context), urls: clean(s && s.urls) })
 const contradictions = merged ? list(merged.contradictions).map(c => ({ a: sides(c.a), b: sides(c.b) })).filter(c => c.a.says && c.b.says && c.a.urls.length && c.b.urls.length) : []
-// Every important assumption is on the scoreboard. A verdict with no source left is "no evidence".
+// Every fear and important assumption is on the scoreboard. A verdict with no source left is "no evidence".
 const fromHelpers = n => {
   const ev = Object.values(raw).flatMap(r => r.assumptions).filter(x => x.n === n)
   const against = ev.filter(x => x.bears === 'contradicts')
@@ -291,9 +369,9 @@ const onIce = [
 ]
 const soWhats = themes.filter(t => t.soWhat && t.soWhat.text && t.soWhat.urls.length)
 const hmw = merged ? list(merged.hmw).map(text).filter(x => /^how might we\b/i.test(x)).slice(0, 2) : []
-if (dropped) log(`dropped ${dropped} claim${dropped > 1 ? 's' : ''} with no source`)
+if (dropped) log(`dropped ${dropped} claim${dropped > 1 ? 's' : ''} or bricks with no source`)
 
-// ---- The report (format checked by plugin/scripts/check-sources.mjs) ----
+// ---- The report (format checked by plugin/scripts/check-sources.mjs; bricks read back by discover-doc.mjs) ----
 const numbers = new Map()
 const cite = us => us.map(u => {
   if (!numbers.has(u)) numbers.set(u, numbers.size + 1)
@@ -302,19 +380,19 @@ const cite = us => us.map(u => {
 const bare = s => s.replace(/\s*\[\d+\]/g, '')
 const none = '- none found'
 const md = [
-  `# Discover: ${brief}`,
+  `# Discover (${topic.name.toLowerCase()}): ${brief}`,
   '',
-  'Made by the BMUZ research flow: four lenses (Mainstream, Extremes & failures, Outside the field, Disconfirm), each working alone, merged after. Strength: (several sources) = two or more different sites agree · (one source) · (interpretation only) = a helper\'s reading. Nothing here is a decision: choosing is /define\'s.',
+  `Made by the BMUZ research flow: four lenses (Mainstream, Extremes & failures, Outside the field, Disconfirm), each working alone, merged after. Strength: (several sources) = two or more different sites agree · (one source) · (interpretation only) = a helper's reading. Nothing here is a decision: choosing is /define's. The bricks below join the project's .planning/DISCOVER.md.`,
   '',
   'Where each lens stopped (saturation or the cap):',
   ...LENSES.map(l => `${l.name}: ${raw[l.id].saturation}`),
   '',
   '## Question',
-  `- Brief as said: ${brief}`,
-  `- Goal underneath: ${goal}`,
-  `- Topic type: ${kind === 'aesthetic' ? 'aesthetic (look, feel, sound, juice; not MDA\'s "Aesthetics", which means what players feel)' : kind}`,
+  `- Research: ${topic.name} — ${topic.task}`,
+  `- The idea, in the creative's words: ${brief}`,
+  ...(youAre ? [`- Who the player is: ${youAre}`] : []),
   `- Must fit / off the table: ${constraints.length ? constraints.join('; ') : 'none named'}`,
-  `- Assumptions: ${assumptions.length ? assumptions.map(x => `"${x.text}" (${[x.important ? 'important' : 'not important', label(x)].filter(Boolean).join(', ')})`).join('; ') : 'none named'}`,
+  `- Fears and assumptions: ${assumptions.length ? assumptions.map(x => `"${x.text}" (${[x.important ? 'important' : 'not important', label(x)].filter(Boolean).join(', ')})`).join('; ') : 'none named'}`,
   '',
   '## Research questions',
   numbered(questions),
@@ -329,6 +407,12 @@ for (const { n, q } of qs) {
   if (!ts.length) md.push('- none found: see Open questions')
   for (const t of ts) md.push(`**${bare(t.theme) || 'Theme'}**`, ...t.claims.map(c => `- ${bare(c.text)} ${cite(c.urls)} (${strength(c)})`))
 }
+// Bricks by shelf, each with its sources and strength, like a finding (the source check holds them to the same rule).
+md.push('', '## Bricks')
+for (const shelf of topic.shelves) {
+  const on = bricks.filter(b => b.shelf === shelf)
+  md.push(`### ${shelf}`, ...(on.length ? on.map(b => `- ${bare(b.text)} ${cite(b.urls)} (${strength(b)})`) : [none]))
+}
 md.push('', '## Contradictions', ...(contradictions.length ? contradictions.map(c => `- ${bare(c.a.says)} ${cite(c.a.urls)} (context: ${c.a.context || 'not said'}) — but ${bare(c.b.says)} ${cite(c.b.urls)} (context: ${c.b.context || 'not said'})`) : [none]))
 const count = v => scoreboard.filter(s => s.verdict === v).length
 md.push('', '## Assumption scoreboard')
@@ -336,9 +420,9 @@ if (scoreboard.length) {
   md.push(`${count('supported')} supported · ${count('contradicted')} contradicted · ${count('no evidence')} no evidence`)
   const tagged = s => `"${s.assumption}"${s.label ? ` (${s.label})` : ''}`
   for (const s of scoreboard) md.push(s.verdict === 'no evidence' ? `- No evidence: ${tagged(s)}` : `- ${s.verdict === 'supported' ? 'Supported' : 'Contradicted'}: ${tagged(s)} — ${bare(s.evidence)} ${cite(s.urls)}`)
-} else md.push('- none: the creative named no important assumptions')
+} else md.push('- none: the creative named no fears or important assumptions')
 md.push('', '## Surprises', ...(surprises.length ? surprises.map(s => `- ${bare(s.text)} ${cite(s.urls)}`) : [none]))
-// Each probe answers one question in a timebox (H26): a spike for tech, a sketch for feel.
+// Each probe answers one question in a timebox (H26): a sketch for feel, a proto for numbers, a spike for tech.
 md.push('', '## Open questions → probes', ...(probes.size ? [...probes.values()].map(o => `- ${o.question} → ${o.probe}${o.timebox ? ` (timebox: ${o.timebox})` : ''}`) : [none]))
 md.push('', '## On ice', ...(onIce.length ? onIce.map(x => `- ${x}`) : ['- none']))
 md.push('', '## So what (draft for Define)', ...(soWhats.length ? soWhats.map(t => `- ${bare(t.theme)}: ${bare(t.soWhat.text)} ${cite(t.soWhat.urls)}`) : ['- none drafted']))
@@ -357,7 +441,7 @@ const said = await agent([
 
 const findings = themes.reduce((n, t) => n + t.claims.length, 0)
 return {
-  wrote: out, brief, kind, findings, sources: numbers.size, dropped, capped,
+  wrote: out, topic: topicId, brief, findings, bricks: bricks.length, sources: numbers.size, dropped, capped,
   scoreboard: { supported: count('supported'), contradicted: count('contradicted'), noEvidence: count('no evidence'), contradictedNames: scoreboard.filter(s => s.verdict === 'contradicted').map(s => s.assumption) },
   surprises: surprises.length, probes: probes.size, helpersFailed, said,
 }

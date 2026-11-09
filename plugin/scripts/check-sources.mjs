@@ -4,7 +4,8 @@
 //
 // The rules (the report format: framework .planning/research/bmuz-vision/discover-research.md, section 5):
 // - the sections are all there, in order (SECTIONS below)
-// - every finding (a "- " line under "Findings by question") cites a source, like [2], and carries its
+// - every finding (a "- " line under "Findings by question") and every brick (under "Bricks", by shelf)
+//   cites a source, like [2], and carries its
 //   strength mark: (several sources) · (one source) · (interpretation only)   (H14 triangulation)
 // - every contradiction, surprise and "so what" line cites a source; so does every supported or
 //   contradicted assumption on the scoreboard ("no evidence" needs none); a "- none …" line is fine
@@ -26,6 +27,7 @@ export const SECTIONS = [
   { name: 'Question', re: /^question$/i, cite: 'none' },
   { name: 'Research questions', re: /^research questions$/i, cite: 'none' },
   { name: 'Findings by question', re: /^findings by question$/i, cite: 'finding' },
+  { name: 'Bricks', re: /^bricks$/i, cite: 'brick' },
   { name: 'Contradictions', re: /^contradictions$/i, cite: 'every' },
   { name: 'Assumption scoreboard', re: /^assumption scoreboard$/i, cite: 'scoreboard' },
   { name: 'Surprises', re: /^surprises$/i, cite: 'every' },
@@ -71,13 +73,12 @@ export function checkReport(text) {
     for (const n of nums) if (!cited.has(n)) cited.set(n, line)
     // Only list lines are claims; a line saying there is nothing ("- none found") needs no source.
     if (!/^[-*]\s/.test(line) || /^[-*]\s+(\*\*)?none\b/i.test(line)) continue
-    const mustCite = rule === 'every' || rule === 'finding' ||
+    const mustCite = rule === 'every' || rule === 'finding' || rule === 'brick' ||
       (rule === 'scoreboard' && /^[-*]\s+(\*\*)?(supported|contradicted)\b/i.test(line))
     if (mustCite && !nums.length) problems.push(`"${clip(line)}" (under "${section}") cites no source; every claim needs one, like [1]`)
-    if (rule === 'finding') {
-      findings++
-      if (!STRENGTH_RE.test(line)) problems.push(`"${clip(line)}" (under "${section}") has no strength mark: (several sources), (one source) or (interpretation only)`)
-    }
+    if (rule === 'finding') findings++
+    // A brick is held to a finding's rule: it joins DISCOVER.md with its sources and its strength.
+    if ((rule === 'finding' || rule === 'brick') && !STRENGTH_RE.test(line)) problems.push(`"${clip(line)}" (under "${section}") has no strength mark: (several sources), (one source) or (interpretation only)`)
   }
   const missing = SECTIONS.filter(x => !order.includes(x.name)).map(x => `"## ${x.name}"`)
   if (missing.length) problems.push(`the report has no ${missing.join(', ')} section${missing.length > 1 ? 's' : ''}`)
