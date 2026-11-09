@@ -243,11 +243,20 @@ async function startTalk($: any, step: any, why: string) {
 // The creative's answers by number ("1 yes"): recorded in the decisions list and marked answered.
 // Returns the engine's note for the message, or null when the message answers nothing.
 async function recordAnswerLines($: any, text: string) {
-  const questions = await readList($, 'questions.json')
+  let questions: any[]
+  let decisions: any[]
+  // A hand-damaged list is not an engine fault: say so plainly and let the message through, rather than
+  // holding back every message (the doctor can't mend these files).
+  try {
+    questions = await readList($, 'questions.json')
+    decisions = await readList($, 'decisions.json')
+  } catch (err) {
+    return /^\s*\d/m.test(text) ? `BMUZ engine: .bmuz/questions.json or decisions.json is damaged (${String(err).slice(0, 80)}), so no answers were recorded. Tell the creative in one line.` : null
+  }
   const answers = E.matchAnswers(text, questions)
   if (!answers.length) return null
   const day = new Date(await $.clock.now()).toISOString().slice(0, 10)
-  const out = E.recordAnswers(questions, await readList($, 'decisions.json'), answers, day)
+  const out = E.recordAnswers(questions, decisions, answers, day)
   await $.fs.write(`${ctx.dir}/.bmuz/decisions.json`, JSON.stringify(out.decisions, null, 2))
   await $.fs.write(`${ctx.dir}/.bmuz/decisions.md`, E.decisionsMd(out.decisions))
   await saveQuestions($, out.list)

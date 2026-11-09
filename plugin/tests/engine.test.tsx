@@ -548,3 +548,14 @@ test('F213: a card asking a question already decided is refused with the earlier
   expect(String(r.result ?? r.text ?? JSON.stringify(r))).toMatch(/already answered on 2026-11-03: portrait — use it, don't ask again/)
   expect(JSON.parse(w.files['/proj/.bmuz/state.json']).retries.review).toBe(1)
 })
+
+test('F213: a damaged questions.json is said plainly; the message still goes through and the engine stays on', async ($, on) => {
+  const { prompts } = atReview(on, { '/proj/.bmuz/questions.json': '[{"n": 1,' })
+  await start($, true)
+  await $.prompt.submit({ text: '1 yes' } as any)
+  expect(prompts[0]).toMatch(/^1 yes\n\(BMUZ engine: .bmuz\/questions.json or decisions.json is damaged/)
+  await $.prompt.submit({ text: 'hello' } as any)
+  expect(prompts[1]).toBe('hello')
+  const read: any = await $.tool.call({ tool: 'Read', file_path: '/proj/hello.html' } as any)
+  expect(refused(read)).toBe(false)
+})
