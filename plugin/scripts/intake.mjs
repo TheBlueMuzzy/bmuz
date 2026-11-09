@@ -165,7 +165,7 @@ function readLines(brief, items) {
 // Everything the intake writes, from the opening's result. sources = [{ name, text }] (the pasted text and the
 // files read); unreadable = [{ path, why }]. Returns { json, md, run } (run = DISCOVER.md's new section, or null).
 export function buildIntake({ result, sources, unreadable = [], defineKeys, date, key }) {
-  const where = ['nothing', 'spark', 'concept', 'written'].includes(result.where) ? result.where : 'concept'
+  const where = ['nothing', 'spark', 'concept', 'written', 'prototype'].includes(result.where) ? result.where : 'concept'
   const goal = where === 'nothing' || where === 'spark' ? 'open' : GOALS[result.goal] ? result.goal : 'open'
   const { items, unknown, notVerbatim } = checkMaterial(result.material, sources.map(s => s.text).join('\n\n'), defineKeys)
   const { gaps, why, discoverGot } = gapMap(items)

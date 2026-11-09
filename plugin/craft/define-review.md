@@ -14,7 +14,7 @@ Hand back "found" (one line: the most useful thing the review found, or "the con
   - "Define run <N> wrote the concept: GDD Part 1 (about one page)"
   - what was chosen, part by part, in a few words each (the story's first line, the primary feelings, the pillars, the first release's musts)
   - what is still open: each field marked "open — not chosen yet", by name ("none" if nothing)
-  - "<M> bricks marked → chosen in DISCOVER.md; nothing removed from the shelves" (the Part 1 "From the shelves" line)
+  - "<M> pieces of material marked → chosen in DISCOVER.md; nothing removed from the shelves" (the Part 1 "From the shelves" line)
 - see: a list: .planning/GDD.md Part 1 (its eight headings); .planning/research/define-check.md (the review); .planning/research/define-fit.md (the fit check)
 - try: "open .planning/GDD.md and read Part 1: it fits on about one page"
 - proof: a list: the concept lint passed (the engine ran it in the step before this one, and runs it again on this step's end: every part there or marked open, the counts right); the review's checks that agree; which choices are the creative's own words and which were picked from the shelves

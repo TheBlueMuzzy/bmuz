@@ -901,7 +901,7 @@ test('F225: a next stage not on the engine yet is said plainly, and nothing move
   await start($, false)
   await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { coreVerbs: ['tend'] } } as any)
   await turn($, 't1')
-  expect(prompts.some(p => /Define is done. Design isn't on the BMUZ engine yet .* For now use today's \/define skill for the design work/.test(p))).toBe(true)
+  expect(prompts.some(p => /Define is done. Design isn't on the BMUZ engine yet \(it comes with F227 — Design pipeline\)\. For now use today's \/define skill for the design work/.test(p))).toBe(true)
   expect(JSON.parse(w.files['/proj/bmuz.json']).pipeline).toBe('define')
   expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('done')
   expect(w.files['/proj/.bmuz/stages.json']).toBeUndefined()

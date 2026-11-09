@@ -20,9 +20,9 @@ const NEXT_KEYS = ['pipeline', 'at', 'carry', 'ask']
 export const STAGES = [
   { id: 'discover', name: 'Discover', intro: "We're in Discover: gathering the raw material for the game — how it should feel, its theme, things you might do in it, games like it. Nothing is shaped or chosen yet. A few questions at a time, research in between, and you can wrap up whenever you have enough." },
   { id: 'define', name: 'Define', intro: "We're in Define: turning that material into the game's building blocks — the feelings that matter, a 3–5 line story, the pillars, the core verbs, and what goes in the first release. It ends with one page, the concept." },
-  { id: 'design', name: 'Design', intro: "We're in Design: assembling the blocks in whatever way feels right — cutting some, tweaking others — into rules and systems, tested with sketches and paper playtests. It ends with the blueprint: the full design and the build plan.", forNow: "today's /define skill for the design work (rules, systems, the rest of the GDD), then /develop" },
+  { id: 'design', name: 'Design', intro: "We're in Design: assembling the blocks in whatever way feels right — cutting some, tweaking others — into rules and systems, tested with sketches and paper playtests. It ends with the blueprint: the full design and the build plan.", feature: 'F227 — Design pipeline', forNow: "today's /define skill for the design work (rules, systems, the rest of the GDD), then /develop" },
   { id: 'develop', name: 'Develop', intro: "We're in Develop: building the production model from the blueprint, in short sprints you play and approve one piece at a time.", forNow: 'today\'s /develop skill' },
-  { id: 'release', name: 'Release', intro: "We're in Release: letting the public start experiencing it — final checks, polish, and a live link.", forNow: "today's /deliver skill" },
+  { id: 'release', name: 'Release', intro: "We're in Release: letting the public start experiencing it — final checks, polish, and a live link.", feature: 'F219 — Release pipeline', forNow: "today's /deliver skill (nothing is renamed until F226)" },
 ]
 export const stageOf = id => STAGES.find(s => s.id === id) || null
 // A "next" that names one of these means "no stage now" (the start's "Not now": the creative starts later).
@@ -32,7 +32,7 @@ export const NO_STAGE = ['later', 'none', '']
 export function notOnEngineLine(id) {
   const s = stageOf(id)
   if (!s) return `"${id}" isn't a stage (the stages are ${STAGES.map(x => x.id).join(', ')})`
-  return `${s.name} isn't on the BMUZ engine yet (it comes with F226 — Five stages, one meaning each). For now use ${s.forNow || 'the matching /command'}`
+  return `${s.name} isn't on the BMUZ engine yet${s.feature ? ` (it comes with ${s.feature})` : ''}. For now use ${s.forNow || 'the matching /command'}`
 }
 
 // The filled "next" of a finished pipeline: { pipeline, at, carry, ask } or null (no next, or "not now").

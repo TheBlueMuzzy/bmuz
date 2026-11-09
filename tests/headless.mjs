@@ -130,7 +130,7 @@ const RULEBOOK = [
 ].join('\n') + '\n'
 const ENTRY_RULEBOOK_ANSWERS = {
   opening: {
-    "Where's your game right now?": 'Something written or played',
+    "Where's your game right now?": 'Something written',
     'What do you want from this pass?': 'Work it out',
     'Paste it here, or name the files': 'Read rules.md in this folder: that is my rulebook, with my playtest notes at the end.',
   },

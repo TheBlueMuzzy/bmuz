@@ -86,9 +86,9 @@ test('a finished stage\'s band says where "bmuz go" goes next (only for a stage 
 })
 
 test('a stage not on the engine says what to use for now; a word that is no stage says so', () => {
-  assert.match(E.notOnEngineLine('design'), /^Design isn't on the BMUZ engine yet .* For now use today's \/define skill/)
-  assert.match(E.notOnEngineLine('develop'), /\/develop/)
-  assert.match(E.notOnEngineLine('release'), /\/deliver/)
+  assert.match(E.notOnEngineLine('design'), /^Design isn't on the BMUZ engine yet \(it comes with F227 — Design pipeline\)\. For now use today's \/define skill/)
+  assert.match(E.notOnEngineLine('develop'), /^Develop isn't on the BMUZ engine yet\. For now use today's \/develop/)
+  assert.match(E.notOnEngineLine('release'), /^Release isn't on the BMUZ engine yet \(it comes with F219 — Release pipeline\)\. For now use today's \/deliver skill \(nothing is renamed until F226\)/)
   assert.match(E.notOnEngineLine('designn'), /"designn" isn't a stage/)
 })
 

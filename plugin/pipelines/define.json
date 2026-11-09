@@ -1,7 +1,7 @@
 {
   "id": "define",
   "version": 1,
-  "description": "Define a game (framework .planning/research/bmuz-vision/define-research.md section 5, with section 6's 'Muzzy's answers' built in): build on DISCOVER.md's shelves, choose the direction, the 3-5 line story, the bricks, the pillars, the scope and the risks, check them against each other, write the concept (GDD Part 1) and lock it. Choosing is the creative's: an auto run chooses nothing. Wrap up after any talk step.",
+  "description": "Define a game (framework .planning/research/bmuz-vision/define-research.md section 5, with section 6's 'Muzzy's answers' built in): build on DISCOVER.md's shelves, choose the direction, the 3-5 line story, the blocks (core verbs and mechanisms), the pillars, the scope and the risks, check them against each other, write the concept (GDD Part 1) and lock it. Choosing is the creative's: an auto run chooses nothing. Wrap up after any talk step.",
   "watchdogMs": 1200000,
   "next": {"pipeline": "design"},
   "steps": [
@@ -40,7 +40,7 @@
       "id": "bricks",
       "kind": "talk",
       "needs": ["story"],
-      "description": "Bricks: the core verbs, a mechanism for each (yours first), what players act on, theme and tone",
+      "description": "Blocks: the core verbs, a mechanism for each (yours first), what players act on, theme and tone",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "craft": "craft/define-bricks.md",
       "results": ["coreVerbs", "mechanisms", "interactables", "theme", "tone"],
@@ -129,7 +129,7 @@
       "kind": "script",
       "needs": ["risks"],
       "always": true,
-      "description": "Write: the concept into GDD Part 1 (hand edits kept, changes logged) and the chosen bricks marked in DISCOVER.md (never trimmed)",
+      "description": "Write: the concept into GDD Part 1 (hand edits kept, changes logged) and the material it used marked in DISCOVER.md (never trimmed)",
       "run": ["node", "{plugin}/scripts/define-doc.mjs"],
       "writes": [".planning/GDD.md", ".planning/DISCOVER.md"],
       "done": { "type": "file-contains", "path": ".planning/GDD.md", "text": "## Part 1 — The concept" }

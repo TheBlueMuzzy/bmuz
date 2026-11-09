@@ -4,16 +4,15 @@ Purpose: find out where the game is right now, in at most two taps, and read wha
 Ask with AskUserQuestion, one question per call, their own words always open (the box's "Other"). No intro line before it: the question is the opening.
 
 Question 1 — "Where's your game right now?" (header "Your game"). These four options, in this order, word for word:
-1. "Nothing yet" — description: "I want to make something but don't know what"
-2. "A spark" — description: "a theme, a mechanism, a feeling or a what-if"
-3. "A concept" — description: "I can describe it in a few sentences"
-4. "Something written or played" — description: "notes, a pitch, a rulebook, a GDD, or a prototype I've played"
-(AskUserQuestion takes four options at most, so the design's fifth, "a prototype I've played", is part of the fourth; the reading tells the engine whether there's a prototype.)
+1. "Nothing yet, or just a spark" — description: "a theme, a mechanism, a feeling or a what-if"
+2. "A concept" — description: "I can describe it in a few sentences"
+3. "Something written" — description: "notes, a pitch, a rulebook or a GDD"
+4. "A prototype I've played" — description: "paper or digital"
+(AskUserQuestion takes four options at most: the design's "Nothing yet" and "A spark" share one, since both start Discover at the Spark.)
 
 Then, by answer:
-- "Nothing yet": ask nothing more. Hand back at once.
-- "A spark": ask in plain words "Type it: the theme, mechanism, feeling or what-if, in your own words." Wait for their reply. No Question 2.
-- "A concept" or "Something written or played": Question 2 — "What do you want from this pass?" (header "This pass"), these options word for word:
+- "Nothing yet, or just a spark": ask in plain words "Type your spark in your own words — or just say 'nothing yet'." Wait for their reply. A spark → "where": "spark" with their words as material; "nothing yet" (or nothing typed) → "where": "nothing". No Question 2.
+- "A concept", "Something written" or "A prototype I've played": Question 2 — "What do you want from this pass?" (header "This pass"), these options word for word:
   1. "Open it up" — "find more options before choosing"
   2. "Pin it down" — "choose what it's made of and what's in the first release"
   3. "Work it out" — "rules, systems, playtests"
@@ -31,10 +30,10 @@ Keys (each a JSON list of items):
 - Design and beyond: "rules" (written rules or systems: one item per rule or section), "playtests" (what happened when it was played), "built" (a digital prototype or build that exists), "released" (something already out in public).
 
 Hand back:
-- "where": "nothing" | "spark" | "concept" | "written" (Question 1)
+- "where": "nothing" | "spark" | "concept" | "written" | "prototype" (Question 1)
 - "goal": "open" | "pin" | "work" | "build" (Question 2), or "none" when it wasn't asked
 - "brief": the idea in one line, in their words ("" for nothing yet); "slug": 2–4 words of it, lower case with dashes, like "lighthouse-keeper" ("" for nothing yet)
 - "pasted": [their pasted text, exactly as given, one item per paste] ([] when none); "files": [the paths you read, relative to this folder] ([] when none); a Drive link or a PDF they named goes in "files" too (the intake says it can't read it yet)
 - "material": { key: [items] } as above ({} for nothing yet)
 
-Auto run (nobody to answer): take "Nothing yet" unless a test run's answers say otherwise.
+Auto run (nobody to answer): take "Nothing yet, or just a spark" with nothing typed ("where": "nothing"), unless a test run's answers say otherwise.
