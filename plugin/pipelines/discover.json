@@ -1,50 +1,57 @@
 {
   "id": "discover",
   "version": 1,
-  "description": "Discover: the idea in the creative's words, a research flow with every source checked, the players and the feeling, then the hand-off card",
+  "description": "Discover (framework .planning/research/bmuz-vision/discover-research.md): frame the brief, write the research questions, research through four lenses with every source checked, then the hand-off card",
   "watchdogMs": 1200000,
   "steps": [
     {
-      "id": "what",
+      "id": "frame",
       "kind": "talk",
       "needs": [],
-      "description": "what are we discovering: a whole game, a feature in a game, or an itch",
+      "description": "the brief in the creative's words, the goal underneath, assumptions, on ice, constraints, topic type",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob"],
-      "craft": "craft/discover-what.md",
-      "done": { "type": "result-has", "key": "topic" }
+      "craft": "craft/discover-frame.md",
+      "results": ["brief", "goal", "kind", "slug", "assumptions", "onIce", "constraints"]
+    },
+    {
+      "id": "questions",
+      "kind": "talk",
+      "needs": ["frame"],
+      "description": "3-5 research questions the creative can veto, edit or add to",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read"],
+      "craft": "craft/discover-questions.md",
+      "results": ["questions"]
     },
     {
       "id": "research",
       "kind": "flow",
-      "needs": ["what"],
-      "description": "three helpers research the topic, one merges, every source checked",
+      "needs": ["questions"],
+      "description": "four lenses research alone, one merge organises without choosing, every source checked",
       "workflow": "bmuz:research-flow",
-      "args": { "topic": "{topic}", "out": ".planning/research/discover.md" },
+      "args": {
+        "brief": "{brief}",
+        "goal": "{goal}",
+        "kind": "{kind}",
+        "assumptions": "{assumptions}",
+        "onIce": "{onIce}",
+        "constraints": "{constraints}",
+        "questions": "{questions}",
+        "out": ".planning/research/discover-{slug}.md"
+      },
       "agentTools": ["ToolSearch", "WebSearch", "WebFetch", "StructuredOutput", "Write"],
-      "writes": [".planning/research/discover.md"],
-      "craft": "craft/discover-research.md",
+      "writes": [".planning/research/discover-{slug}.md"],
       "timeoutMs": 1800000,
-      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/check-sources.mjs", ".planning/research/discover.md"] }
-    },
-    {
-      "id": "shape",
-      "kind": "talk",
-      "needs": ["research"],
-      "description": "the players, the feeling, references, rough experience targets",
-      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Write", "Edit"],
-      "craft": "craft/discover-shape.md",
-      "writes": [".planning/research/discover-notes.md"],
-      "done": { "type": "file-contains", "path": ".planning/research/discover-notes.md", "text": "## Experience targets" }
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/check-sources.mjs", ".planning/research/discover-{slug}.md"] }
     },
     {
       "id": "handoff",
       "kind": "talk",
-      "needs": ["shape"],
-      "description": "the hand-off card: what was found, where, the questions for the creative",
+      "needs": ["research"],
+      "description": "the hand-off card: brief to goal, findings with strength, assumption scoreboard, surprises, probes, loop back or lock in",
       "tools": ["Read", "Glob", "Grep"],
       "craft": "craft/discover-handoff.md",
       "handoff": true,
-      "done": { "type": "result-has", "key": "found" }
+      "results": ["found"]
     }
   ]
 }
