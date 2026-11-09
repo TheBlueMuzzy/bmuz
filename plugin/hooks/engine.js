@@ -918,7 +918,12 @@ export function isStalled(p, state, now, defaultMs) {
 // The status band's words.
 export function bandText(p, state, now) {
   const total = p.steps.length
-  if (state.status === 'done') return `BMUZ · ${p.id} · all ${total} steps done`
+  if (state.status === 'done') {
+    // (F225: a finished stage says where "bmuz go" goes next)
+    const nx = nextOf(p, state.results)
+    const to = nx && stageOf(nx.pipeline)
+    return `BMUZ · ${p.id} · all ${total} steps done${to && !to.forNow ? ` · bmuz go: on to ${to.name}` : ''}`
+  }
   if (state.status === 'idle' && state.finished.length === 0) return `BMUZ · ${p.id} · ready · /bmuz-go to start`
   const step = stepById(p, state.current) || nextStep(p, state)
   const n = step ? p.steps.indexOf(step) + 1 : state.finished.length

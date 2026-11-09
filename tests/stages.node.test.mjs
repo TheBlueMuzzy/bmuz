@@ -80,6 +80,11 @@ test('the stage intro: the first talk step of a stage pipeline shows it above it
   assert.match(E.talkPrompt(E.stepById(P, 'spark'), 'craft', '', false, [], { intro: true }), /already showed the creative this stage's short intro/)
 })
 
+test('a finished stage\'s band says where "bmuz go" goes next (only for a stage on the engine)', () => {
+  assert.equal(E.bandText(P, { ...E.freshState('discover'), status: 'done' }, 0), 'BMUZ · discover · all 4 steps done · bmuz go: on to Define')
+  assert.equal(E.bandText({ ...P, id: 'define', next: { pipeline: 'design' } }, { ...E.freshState('define'), status: 'done' }, 0), 'BMUZ · define · all 4 steps done')
+})
+
 test('a stage not on the engine says what to use for now; a word that is no stage says so', () => {
   assert.match(E.notOnEngineLine('design'), /^Design isn't on the BMUZ engine yet .* For now use today's \/define skill/)
   assert.match(E.notOnEngineLine('develop'), /\/develop/)

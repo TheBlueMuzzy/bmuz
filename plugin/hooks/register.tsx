@@ -104,7 +104,7 @@ async function planSwitch($: any, dir: string, root: string, from: string, to: s
   return { from, to, at: at || null, given: given || {}, n, archive: `stages/${n}-${from}`, checkpoints: [...ids].filter(id => E.NAME_RE.test(id)).map(id => `checkpoint-${id}.json`) }
 }
 
-async function finishSwitch($: any, dir: string, root: string, sw: any) {
+async function finishSwitch($: any, dir: string, root: string, sw: any, sessionId: string | null = null) {
   const bmuz = `${dir}/.bmuz`
   await $.fs.write(`${bmuz}/switch.json`, JSON.stringify(sw))
   const { pipeline, problems } = await loadPipeline($, root, sw.to)
@@ -133,7 +133,7 @@ async function finishSwitch($: any, dir: string, root: string, sw: any) {
   await $.fs.write(`${dir}/bmuz.json`, JSON.stringify({ ...cfg, pipeline: sw.to }, null, 2))
   await $.fs.write(`${bmuz}/state.json`, JSON.stringify(entered.state, null, 2))
   await journalQueue
-  await $.fs.write(`${bmuz}/journal.jsonl`, JSON.stringify({ t: now, session: ctx?.sessionId ?? null, ev: 'stage.enter', from: sw.from, to: sw.to, at: sw.at, skipped: entered.skipped, record: `.bmuz/${sw.archive}`, state: entered.state }) + '\n')
+  await $.fs.write(`${bmuz}/journal.jsonl`, JSON.stringify({ t: now, session: sessionId, ev: 'stage.enter', from: sw.from, to: sw.to, at: sw.at, skipped: entered.skipped, record: `.bmuz/${sw.archive}`, state: entered.state }) + '\n')
   await $.process.run(['node', `${root}/scripts/rm.mjs`, `${bmuz}/switch.json`])
 }
 
@@ -144,7 +144,7 @@ async function loadCtx($: any) {
   const c: any = { dir, root, sessionId: await $.session.id(), broken: null }
   // A stage switch cut short by a crash is finished first (it may still have bmuz.json to point on).
   const sw = await readJson($, `${dir}/.bmuz/switch.json`)
-  if (sw && sw.from && sw.to) await finishSwitch($, dir, root, sw)
+  if (sw && sw.from && sw.to) await finishSwitch($, dir, root, sw, c.sessionId)
   const cfgText = String(await readText($, `${dir}/bmuz.json`))
   try {
     c.cfg = JSON.parse(cfgText)
@@ -170,7 +170,7 @@ async function loadCtx($: any) {
   const raw = await readJson($, `${dir}/.bmuz/state.json`)
   if (!c.broken && raw && typeof raw.pipeline === 'string' && raw.pipeline !== c.pipeline.id) {
     if (raw.status === 'done') {
-      await finishSwitch($, dir, root, await planSwitch($, dir, root, raw.pipeline, c.pipeline.id, null, {}))
+      await finishSwitch($, dir, root, await planSwitch($, dir, root, raw.pipeline, c.pipeline.id, null, {}), c.sessionId)
       c.movedOn = raw.pipeline
     } else {
       c.mismatch = { from: raw.pipeline, to: c.pipeline.id }
@@ -350,7 +350,7 @@ async function switchStage($: any, to: string, at: string | null, given: any) {
     const { pipeline, problems } = await loadPipeline($, ctx.root, to)
     if (problems.length) return `pipeline ${to} has problems: ${problems.join('; ')}`
     if (at && !E.stepById(pipeline, at)) return `"${at}" isn't a step of ${to} (its steps: ${pipeline.steps.map((s: any) => s.id).join(', ')})`
-    await finishSwitch($, ctx.dir, ctx.root, await planSwitch($, ctx.dir, ctx.root, from, to, at, given))
+    await finishSwitch($, ctx.dir, ctx.root, await planSwitch($, ctx.dir, ctx.root, from, to, at, given), ctx.sessionId)
   } catch (err) {
     return `the move to ${to} failed (${String(err).slice(0, 160)}); run /bmuz-doctor`
   }
