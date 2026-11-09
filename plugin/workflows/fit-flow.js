@@ -84,7 +84,7 @@ const prompt = lens => [
   '- Find, never choose: no recommendation, no ranking, no "you should". The creative decides each tension in the next step (keep both / change one / park one).',
   '- Every tension names the two choices that pull against each other ("a", "b") in a few words each, and "why" in one plain sentence a non-engineer can read.',
   '- Quote choices and bricks as they are written; give a brick\'s id (like OI12) in "brick" when it has one.',
-  '- Only what the files and the choices show. Nothing invented about real players: what players would feel is a playtest or a question for the creative.',
+  '- Only what the files and the choices show. Nothing invented about real players: what players would feel is a playtest or a question for the creative. Call the person "the creative" (or "they"), never he or she.',
   '- Use only Read, Glob and Grep. Change no file.',
   '- "checked": one line saying what you looked at.',
 ].join('\n')

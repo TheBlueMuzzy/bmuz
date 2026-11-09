@@ -98,26 +98,37 @@ export const SHELVES_LABEL = 'From the shelves'
 export const CORE = [['Experience targets', 'Primary feelings', 'direction'], ['The story', 'Story', 'story'], ['Pillars', 'Pillars', 'pillars'], ['Scope per release', 'First release (musts)', 'scope']]
 
 // One chosen item as text. An item is text, or an object: {text, his?, picked?, brick?} or a field's own shape.
+// One part of an item (a pillar's words, a mechanism's lead): text, {text, …}, or a list of those. A helper
+// sometimes hands back {"text": "...", "his": true} where text was asked for (headless run 2026-11-09: the
+// mechanisms printed "[object Object]").
+export function partText(v) {
+  if (Array.isArray(v)) return v.map(partText).filter(Boolean).join(' / ')
+  if (v && typeof v === 'object') return clean(v.text !== undefined ? partText(v.text) : Object.values(v).filter(x => typeof x === 'string').join(' · '))
+  return clean(v)
+}
+
 export function itemText(x, bricks = new Map()) {
   if (typeof x === 'string') return clean(x)
   if (!x || typeof x !== 'object') return ''
+  const p = partText
   const brickText = () => {
     const b = typeof x.brick === 'string' ? bricks.get(x.brick) : null
     return b ? clean(b.label ? b.text.slice(b.label.length + 1) : b.text) : ''
   }
-  if (x.pillar) return `${clean(x.pillar)}${x.kind ? ` (${clean(x.kind)})` : ''} — settles: ${clean(x.settles) || 'not said yet'}`
+  if (x.pillar) return `${p(x.pillar)}${x.kind ? ` (${p(x.kind)})` : ''} — settles: ${p(x.settles) || 'not said yet'}`
   // (a backup is offered, never required: it shows only when there is one)
-  if (x.verb && (x.lead !== undefined || x.backup !== undefined)) return `${clean(x.verb)} — lead: ${clean(x.lead) || 'open'}${clean(x.backup) ? ` · backup: ${clean(x.backup)}` : ''}`
-  if (x.verb) return `${clean(x.verb)}${x.outcome ? ` → ${clean(x.outcome)}` : ''}${x.fun ? ` (fun because: ${clean(x.fun)})` : ''}`
-  if (x.risk) return `${clean(x.risk)} → test: ${clean(x.test) || 'not named'} → we'd rethink if: ${clean(x.rethink) || 'not said'} → status: ${clean(x.status) || 'open'}`
-  if (x.what) return `${clean(x.what)} — why: ${clean(x.why)}`
-  if (x.idea) return `${clean(x.idea)} → ${clean(x.where) || 'kept on ice'}`
-  return clean(x.text) || brickText()
+  if (x.verb && (x.lead !== undefined || x.backup !== undefined)) return `${p(x.verb)} — lead: ${p(x.lead) || 'open'}${p(x.backup) ? ` · backup: ${p(x.backup)}` : ''}`
+  if (x.verb) return `${p(x.verb)}${x.outcome ? ` → ${p(x.outcome)}` : ''}${x.fun ? ` (fun because: ${p(x.fun)})` : ''}`
+  if (x.risk) return `${p(x.risk)} → test: ${p(x.test) || 'not named'} → we'd rethink if: ${p(x.rethink) || 'not said'} → status: ${p(x.status) || 'open'}`
+  if (x.what) return `${p(x.what)} — why: ${p(x.why)}`
+  if (x.idea) return `${p(x.idea)} → ${p(x.where) || 'kept on ice'}`
+  return p(x.text) || brickText()
 }
 
 // A field's markdown lines from its items (none = open).
 export function fieldLines(label, items, list, bricks) {
-  const texts = items.map(x => itemText(x, bricks)).filter(Boolean)
+  // (an item that repeats the field's own label, "Hook: the light's pattern…" under **Hook:**, loses the repeat)
+  const texts = items.map(x => itemText(x, bricks)).map(s => (s.toLowerCase().startsWith(`${label.toLowerCase()}: `) ? s.slice(label.length + 2) : s)).filter(Boolean)
   if (!texts.length) return [`**${label}:** ${OPEN}`]
   if (!list) return [`**${label}:** ${texts.join(' / ')}`]
   return [`**${label}:**`, ...texts.map((t, i) => (label === 'Pillars' ? `${i + 1}. ${t}` : `- ${t}`))]

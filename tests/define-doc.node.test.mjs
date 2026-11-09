@@ -238,3 +238,15 @@ test('the commands: no DISCOVER.md is refused in plain words', () => {
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// Headless run 2026-11-09: haiku handed a mechanism's lead back as {"text": ..., "his": true} and the hook as
+// "Hook: …"; Part 1 printed "lead: [object Object]" and "**Hook:** Hook: …", and the lint let it through.
+test('write: a lead given as {text} is written as words; a value repeating its label loses the repeat; the lint refuses "[object Object]"', () => {
+  const odd = { ...FULL, bricks: { ...FULL.bricks, mechanisms: [{ verb: 'trim', lead: { text: 'a slow routine in any order', his: true }, backup: [{ text: 'a timed check' }] }] }, story: { ...FULL.story, hook: ['Hook: the light pattern is yours'] } }
+  const r = runOnce(DISCOVER, null, odd)
+  assert.match(r.gdd.text, /\n- trim — lead: a slow routine in any order · backup: a timed check\n/)
+  assert.match(r.gdd.text, /\*\*Hook:\*\* the light pattern is yours\n/)
+  const broken = r.gdd.text.replace('lead: a slow routine in any order', 'lead: [object Object]')
+  assert.ok(lintConcept(broken, r.discover).problems.some(p => /Made of: \*\*Mechanisms:\*\* has broken text/.test(p)))
+  assert.deepEqual(lintConcept(r.gdd.text, r.discover).problems, [])
+})

@@ -38,6 +38,8 @@ export function lintConcept(gddText, discoverText) {
       if (t === null) problems.push(`${name} has no **${label}:** line (fill it, or write "open — not chosen yet")`)
       else if (!t.replace(/^\*\*[^*]+:\*\*/, '').trim()) problems.push(`${name}: **${label}:** is empty (fill it, or write "open — not chosen yet")`)
       else if (isOpen(t)) open.push(`${name}: ${label}`)
+      // (a value written as "[object Object]" is a broken write, not words: headless run 2026-11-09)
+      if (t !== null && /\[object Object\]|:\*\*\s*(undefined|null)\s*$|^\s*(?:- |\d+\.\s+)(undefined|null)\s*$/m.test(t)) problems.push(`${name}: **${label}:** has broken text ("[object Object]", "undefined" or "null") where words should be`)
     }
   }
   count('The story', 'Story', 3, 5, 'the story')

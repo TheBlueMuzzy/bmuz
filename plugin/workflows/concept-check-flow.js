@@ -78,7 +78,7 @@ const prompt = r => [
   '- "finding": what you saw, in one plain sentence, quoting the parts that disagree. "part": the Part 1 heading it is about.',
   '- A part marked "open — not chosen yet" is not a problem: list it in "notChecked" and skip the checks that need it.',
   '- "agrees": each check that passed, with one line saying why.',
-  '- Only what the files show. Nothing invented about real players. Use only Read, Glob and Grep.',
+  '- Only what the files show. Nothing invented about real players. Use only Read, Glob and Grep. Call the person "the creative" (or "they"), never he or she.',
 ].join('\n')
 
 phase('Review')
