@@ -207,7 +207,19 @@ async function rollback($: any, step: any) {
 async function look($: any, step: any, result: any) {
   const files: Record<string, string | null> = {}
   for (const f of E.checkFiles(step, vars())) files[f] = await readText($, `${ctx.dir}/${f}`)
-  return { result, files }
+  // A "script-ok" check runs its command in the project folder (the research flow's source check
+  // fetches every link: a few seconds, up to a couple of minutes for a long list).
+  const argv = E.checkRun(step, vars())
+  let ran = null
+  if (argv) {
+    try {
+      ran = await $.process.run(argv, { cwd: ctx.dir, timeoutMs: 180000 })
+    } catch (err) {
+      ran = { exitCode: -1, stdout: `the check could not run: ${String(err).slice(0, 200)}` }
+    }
+    await journal($, { ev: 'check.ran', step: step.id, exitCode: ran.exitCode, stdout: String(ran.stdout ?? '').trim().slice(0, 600) })
+  }
+  return { result, files, ran }
 }
 
 // A step's done-check passed or failed: finish, retry or block. Returns 'next' | 'retry' | 'stop'.

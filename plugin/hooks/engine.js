@@ -21,6 +21,8 @@ const DONE_KEYS = {
   'result-has': ['type', 'key'],
   'file-contains': ['type', 'path', 'text'],
   'file-json-has': ['type', 'path', 'key'],
+  // A command the engine runs after the step (like the research flow's source check): passes on exit 0.
+  'script-ok': ['type', 'run'],
 }
 const BUILT_IN_HOLES = ['project', 'plugin']
 
@@ -92,7 +94,9 @@ export function checkPipeline(p) {
       if (!keys) problems.push(`${at}: done-check type "${d && d.type}" is not one of ${Object.keys(DONE_KEYS).join(', ')}`)
       else {
         for (const k of Object.keys(d)) if (!keys.includes(k)) problems.push(`${at}: done-check "${d.type}" has an unknown setting "${k}"`)
-        for (const k of keys.slice(1)) if (typeof d[k] !== 'string' || !d[k]) problems.push(`${at}: done-check "${d.type}" needs "${k}"`)
+        if (d.type === 'script-ok') {
+          if (!isList(d.run) || d.run.length === 0) problems.push(`${at}: done-check "script-ok" needs "run": the command as a list, like ["node", "{plugin}/scripts/check.mjs"]`)
+        } else for (const k of keys.slice(1)) if (typeof d[k] !== 'string' || !d[k]) problems.push(`${at}: done-check "${d.type}" needs "${k}"`)
         if (typeof d.path === 'string' && d.path && !isSafePath(d.path)) problems.push(`${at}: done-check path "${d.path}" must stay inside the project`)
         if (d.type === 'result-has' && s.kind !== 'talk') problems.push(`${at}: only talk steps hand back a result, so "result-has" can't check a ${s.kind} step`)
       }
@@ -128,7 +132,7 @@ export function checkPipeline(p) {
       for (const m of Array.isArray(n.needs) ? n.needs : []) walk(m)
     }
     for (const n of Array.isArray(s.needs) ? s.needs : []) walk(n)
-    const filled = { question: s.question, run: s.run, args: s.args, path: s.done && s.done.path, text: s.done && s.done.text }
+    const filled = { question: s.question, run: s.run, args: s.args, path: s.done && s.done.path, text: s.done && s.done.text, check: s.done && s.done.run }
     for (const h of new Set(holesIn(filled))) if (!known.has(h)) problems.push(`${at}: {${h}} isn't known here (known: ${[...known].map(k => `{${k}}`).join(', ')}); a result comes from a talk step this step needs`)
     if (typeof s.id === 'string' && !byId.has(s.id)) byId.set(s.id, s)
   })
@@ -505,6 +509,13 @@ export function doneCheck(step, vars, look) {
     const v = look.result && look.result[d.key]
     return v ? { ok: true } : { ok: false, why: `the result has no "${d.key}"; give it in step_done's result` }
   }
+  if (d.type === 'script-ok') {
+    // look.ran = what the motor's run of the command gave: { exitCode, stdout }.
+    if (!look.ran) return { ok: false, why: 'the check command did not run' }
+    if (look.ran.exitCode === 0) return { ok: true }
+    const said = String(look.ran.stdout || look.ran.stderr || '').trim()
+    return { ok: false, why: `the check ${d.run.map(x => String(x).split('/').pop()).slice(0, 2).join(' ')} said: ${said.length > 600 ? said.slice(0, 600) + '…' : said || `exit ${look.ran.exitCode}`}` }
+  }
   const path = fill(d.path, vars)
   if (!isSafePath(path)) return { ok: false, why: `${path} is outside the project; the engine won't read it` }
   const text = look.files ? look.files[path] : undefined
@@ -522,6 +533,12 @@ export function doneCheck(step, vars, look) {
     }
   }
   return { ok: false, why: `unknown done-check type ${d.type}` }
+}
+
+// The command a "script-ok" done-check runs, holes filled (null = this check runs nothing).
+export function checkRun(step, vars) {
+  const d = step.done
+  return d && d.type === 'script-ok' ? fillDeep(d.run, vars) : null
 }
 
 // The files a done-check needs read.

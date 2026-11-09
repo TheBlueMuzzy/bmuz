@@ -31,8 +31,10 @@ export function checkFile(file) {
     if (s && s.kind === 'flow' && typeof s.workflow === 'string' && !autoAllow.includes(`Workflow(${s.workflow})`)) {
       problems.push(`step "${s.id}": add "Workflow(${s.workflow})" to settings/auto-run.json's permissions.allow, or an overnight run stops at Claude Code's "run this workflow?" question`)
     }
-    if (s && s.kind === 'script' && Array.isArray(s.run)) {
-      for (const arg of s.run) {
+    // A script step's command and a "script-ok" done-check's command: a {plugin}/ script they name must exist.
+    const commands = [s && s.kind === 'script' && s.run, s && s.done && s.done.type === 'script-ok' && s.done.run].filter(Array.isArray)
+    for (const run of commands) {
+      for (const arg of run) {
         const m = typeof arg === 'string' && arg.match(/^\{plugin\}\/(.+)$/)
         if (m && !existsSync(join(root, m[1]))) problems.push(`step "${s.id}": the script ${m[1]} is missing`)
       }

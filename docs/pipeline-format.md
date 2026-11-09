@@ -63,6 +63,7 @@ How the engine knows a step really finished. A failed check retries the step twi
 | `result-has` | `key` | the talk step's result has `key` (talk steps only: they are the only ones that hand back a result) |
 | `file-contains` | `path`, `text` | the file exists and contains the text |
 | `file-json-has` | `path`, `key` | the file is JSON and has `key` |
+| `script-ok` | `run` | the command (a list, `{holes}` allowed, run in the project folder) exits 0; its output is the reason when it doesn't. Like the research flow's `["node", "{plugin}/scripts/check-sources.mjs", ".planning/research/discover.md"]` |
 
 No `done` = the step passes when it ends.
 
@@ -72,7 +73,7 @@ Because the engine may delete them, each path must stay inside the project: rela
 The engine checks this again right before it saves or puts back a file, so a hand-edited checkpoint can't reach outside the project either.
 
 ## `{holes}`
-Text in `question`, `run`, `args` and a done-check's `path` / `text` can carry `{holes}`, filled in when the step runs:
+Text in `question`, `run`, `args` and a done-check's `path` / `text` / `run` can carry `{holes}`, filled in when the step runs:
 - `{project}`: the project folder; `{plugin}`: the plugin folder.
 - A result from a talk step this step needs, directly or through other steps: `{name}` if an earlier talk step's done-check is `result-has` `name`.
 
