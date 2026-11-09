@@ -106,6 +106,9 @@ async function planSwitch($: any, dir: string, root: string, from: string, to: s
 
 async function finishSwitch($: any, dir: string, root: string, sw: any, sessionId: string | null = null) {
   const bmuz = `${dir}/.bmuz`
+  // Re-checked here, right before anything is copied or deleted (a crash-recovery pass reads it from disk).
+  const bad = E.switchProblem(sw)
+  if (bad) throw new Error(`the stage-switch plan .bmuz/switch.json can't be used: ${bad}. Nothing was moved or deleted; take the file out of .bmuz (or fix it), then start again`)
   await $.fs.write(`${bmuz}/switch.json`, JSON.stringify(sw))
   const { pipeline, problems } = await loadPipeline($, root, sw.to)
   if (problems.length) throw new Error(`pipeline ${sw.to} has problems: ${problems.join('; ')}`)

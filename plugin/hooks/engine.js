@@ -398,6 +398,21 @@ export function testAnswersProblem(cfg, testEnv) {
   return null
 }
 
+// A stage-switch plan (.bmuz/switch.json) names folders that get files copied in and files that get deleted, and
+// it can be hand-edited or damaged: every value is re-checked right before the engine acts on it (a "../" in a
+// checkpoint name would otherwise delete a file outside the project). Returns null when fine, else the problem.
+export function switchProblem(sw) {
+  if (!sw || typeof sw !== 'object') return 'the stage-switch plan is not an object'
+  if (typeof sw.from !== 'string' || !NAME_RE.test(sw.from)) return 'its "from" is not a stage name'
+  if (typeof sw.to !== 'string' || !NAME_RE.test(sw.to)) return 'its "to" is not a stage name'
+  if (!(Number.isInteger(sw.n) && sw.n > 0)) return 'its "n" is not a whole number above 0'
+  if (sw.archive !== `stages/${sw.n}-${sw.from}`) return `its "archive" is not stages/${sw.n}-${sw.from}`
+  if (!Array.isArray(sw.checkpoints) || !sw.checkpoints.every(f => typeof f === 'string' && /^checkpoint-[a-z][a-z0-9-]*\.json$/.test(f))) return 'its "checkpoints" are not all checkpoint-<step>.json names'
+  if (sw.at !== null && sw.at !== undefined && (typeof sw.at !== 'string' || !NAME_RE.test(sw.at))) return 'its "at" is not a step name'
+  if (sw.given !== undefined && (typeof sw.given !== 'object' || sw.given === null || Array.isArray(sw.given))) return 'its "given" is not an object'
+  return null
+}
+
 // The one line the creative sees when a talk step starts; talkPrompt's words travel with it as hidden context
 // (register.tsx prompt.submit). It still says where it's from, so Claude never reads it as the creative's.
 // intro: the stage's short paragraph (F225), shown above the headline at a stage's first talk step.
