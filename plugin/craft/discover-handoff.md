@@ -1,11 +1,19 @@
-Craft note (discover, step "handoff"): hand the discovery back to the creative. Read .planning/research/discover.md and .planning/research/discover-notes.md. You only read here: no edits.
+Craft note (discover, step "handoff" — Stage D of discover-research.md: H19, H22, H9, H24, H14).
+Purpose: a shared picture the creative can react to in a minute, and the choice to loop back or move on. Read the research file .planning/research/discover-<slug>.md (the slug from the frame step; Glob .planning/research/discover-*.md if unsure). You only read here: no edits. Nothing here chooses an option, a direction or a style: that is /define's.
 
-Hand back "found" (one line: what discovery turned up) and the hand-off card as "card":
-- title: "Discovery: <the idea in a few words>"
-- done: a list of 2–4 short lines (a JSON list, one line per item; never one text with "- " in it): the strongest findings and the experience targets, in plain words
-- see: a list: each file, where it is and what it holds
-- try: open .planning/research/discover-notes.md first, then the research file for the sources
-- proof: a list: the research passed the engine's source check (say how many sources), and which answers were the creative's and which were defaults (an auto run)
-- todos: "none" unless only the creative can do something (like read the notes before /define)
-- questions: at most 3, the ones that matter for /define. Each with a "key" and a "kind": taste (how it looks, feels or plays: no pick, their view first), want (what they want), or choice (2+ options, may carry your "pick"). Never an engineering question. Skip anything already decided.
-- next: "/define: narrow it down: pick the concept, set the scope, and map out the build"
+Hand back "found" (one line: the most useful thing discovery turned up) and the hand-off card as "card". Lists are JSON lists, one line per item:
+- title: "Discovery: <the brief in a few words>"
+- done: a list:
+  - "<brief as said> → <goal underneath>"
+  - the top 3–5 findings, each with its strength mark as the report gives it: (several sources) · (one source) · (interpretation only)
+  - "Assumptions: N supported · N contradicted · N no evidence", naming the contradicted ones
+  - 1–2 surprises
+- see: a list: the research file, where it is and what is in it (sections, number of sources)
+- try: open the research file; start with Findings by question and the Assumption scoreboard
+- proof: a list: the research passed the engine's source check (how many sources, every link answers); what the creative said and what was a default (an auto run)
+- todos: "none", or the open questions only the creative can settle, each with its probe ("How much shake is too much on a phone? → sketch")
+- questions, two of them, with keys that carry the slug so a later discover asks them fresh:
+  - {"key": "discover-missing-<slug>", "q": "Anything surprising or missing?", "kind": "want"}
+  - {"key": "discover-loop-<slug>", "q": "Loop back on one question, or lock it in?", "kind": "choice", "options": ["Lock it in", "Loop back on question <n>" for the open question that matters most]}
+  Never an engineering question; never a taste question with a pick.
+- next: "/sketch: <the feel question to try>" if an open question is about feel; "another discover pass: <why>" if a contradicted assumption changes the goal; otherwise "/define: narrow it down: pick the direction, set the scope, map the build"
