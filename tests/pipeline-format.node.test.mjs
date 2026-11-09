@@ -30,7 +30,7 @@ test('a "script-ok" check naming a {plugin} script that is missing is refused', 
   try {
     const p = JSON.parse(readFileSync(new URL('../plugin/pipelines/discover.json', import.meta.url), 'utf8'))
     p.id = 'gone'
-    p.steps.find(s => s.id === 'research').done.run[1] = '{plugin}/scripts/no-such-check.mjs'
+    p.steps.find(s => s.id === 'theme-dig').done.run[1] = '{plugin}/scripts/no-such-check.mjs'
     writeFileSync(join(dir, 'gone.json'), JSON.stringify(p))
     assert.ok(checkFile(join(dir, 'gone.json')).some(x => /the script scripts\/no-such-check\.mjs is missing/.test(x)))
   } finally {

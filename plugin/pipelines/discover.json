@@ -1,57 +1,185 @@
 {
   "id": "discover",
   "version": 1,
-  "description": "Discover (framework .planning/research/bmuz-vision/discover-research.md): frame the brief, write the research questions, research through four lenses with every source checked, then the hand-off card",
+  "description": "Discover a game idea (framework .planning/research/bmuz-vision/discover-creative-research.md section 6): experience first — spark, experience and fantasy, theme dig, simulation breakdown, mechanism shelf, prior art and twists — collecting bricks into .planning/DISCOVER.md, then the brick board. Collects, never chooses: choosing is /define's. Wrap up after any step.",
   "watchdogMs": 1200000,
   "steps": [
     {
-      "id": "frame",
+      "id": "spark",
       "kind": "talk",
       "needs": [],
-      "description": "the brief in the creative's words, the goal underneath, assumptions, on ice, constraints, topic type",
+      "description": "Spark: the idea in your words, who the player is, what excites you, hopes and fears",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob"],
-      "craft": "craft/discover-frame.md",
-      "results": ["brief", "goal", "kind", "slug", "assumptions", "onIce", "constraints"]
+      "craft": "craft/discover-spark.md",
+      "results": ["brief", "slug", "youAre", "spark", "hopes", "fears", "onIce", "constraints"],
+      "wrapTo": "bricks"
     },
     {
-      "id": "questions",
+      "id": "experience",
       "kind": "talk",
-      "needs": ["frame"],
-      "description": "3-5 research questions the creative can veto, edit or add to",
+      "needs": ["spark"],
+      "description": "Experience and fantasy: the moments you hope a player has, and the dream it fulfils",
       "tools": ["AskUserQuestion", "ToolSearch", "Read"],
-      "craft": "craft/discover-questions.md",
-      "results": ["questions"]
+      "craft": "craft/discover-experience.md",
+      "results": ["experiences", "stories", "aesthetics", "fantasies", "curiosity", "toy", "players"],
+      "recap": ["brief", "youAre", "spark", "hopes"],
+      "wrapTo": "bricks"
     },
     {
-      "id": "research",
+      "id": "theme",
+      "kind": "talk",
+      "needs": ["experience"],
+      "description": "Theme: what you see, hear and know of this world, its tone, and what to research",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read"],
+      "craft": "craft/discover-theme.md",
+      "results": ["senses", "known", "life", "outside", "tone", "questions"],
+      "recap": ["brief", "youAre", "spark", "experiences", "fantasies"],
+      "wrapTo": "bricks"
+    },
+    {
+      "id": "theme-dig",
       "kind": "flow",
-      "needs": ["questions"],
-      "description": "four lenses research alone, one merge organises without choosing, every source checked",
+      "needs": ["theme"],
+      "always": true,
+      "description": "Theme dig: research the subject itself, in and outside games (always runs: Discover always researches)",
       "workflow": "bmuz:research-flow",
       "args": {
+        "topic": "theme",
         "brief": "{brief}",
-        "goal": "{goal}",
-        "kind": "{kind}",
-        "assumptions": "{assumptions}",
+        "youAre": "{youAre}",
+        "collected": {
+          "spark": "{spark}",
+          "experiences": "{experiences}",
+          "fantasies": "{fantasies}",
+          "aesthetics": "{aesthetics}",
+          "senses": "{senses}",
+          "known": "{known}",
+          "life": "{life}",
+          "outside": "{outside}",
+          "tone": "{tone}"
+        },
+        "fears": "{fears}",
         "onIce": "{onIce}",
         "constraints": "{constraints}",
         "questions": "{questions}",
-        "out": ".planning/research/discover-{slug}.md"
+        "out": ".planning/research/discover-{slug}-theme.md"
       },
       "agentTools": ["ToolSearch", "WebSearch", "WebFetch", "StructuredOutput", "Write"],
-      "writes": [".planning/research/discover-{slug}.md"],
+      "writes": [".planning/research/discover-{slug}-theme.md"],
       "timeoutMs": 1800000,
-      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/check-sources.mjs", ".planning/research/discover-{slug}.md"] }
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/check-sources.mjs", ".planning/research/discover-{slug}-theme.md"] }
     },
     {
-      "id": "handoff",
+      "id": "simulation",
       "kind": "talk",
-      "needs": ["research"],
-      "description": "the hand-off card: brief to goal, findings with strength, assumption scoreboard, surprises, probes, loop back or lock in",
+      "needs": ["theme-dig"],
+      "description": "Simulation breakdown: the things in this world and their states, the verbs, the verb × noun grid, the choices",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob"],
+      "craft": "craft/discover-simulation.md",
+      "results": ["nouns", "verbs", "skills", "grid", "choices", "problems", "reminds"],
+      "recap": ["brief", "slug", "youAre", "experiences", "fantasies", "tone"],
+      "wrapTo": "bricks"
+    },
+    {
+      "id": "mechanisms",
+      "kind": "flow",
+      "needs": ["simulation"],
+      "description": "Mechanisms: research candidate mechanisms for each outcome verb, from designer-written sources",
+      "workflow": "bmuz:research-flow",
+      "args": {
+        "topic": "mechanisms",
+        "brief": "{brief}",
+        "youAre": "{youAre}",
+        "collected": {
+          "verbs": "{verbs}",
+          "skills": "{skills}",
+          "nouns": "{nouns}",
+          "choices": "{choices}",
+          "experiences": "{experiences}",
+          "fantasies": "{fantasies}",
+          "aesthetics": "{aesthetics}"
+        },
+        "fears": "{fears}",
+        "onIce": "{onIce}",
+        "constraints": "{constraints}",
+        "out": ".planning/research/discover-{slug}-mechanisms.md"
+      },
+      "agentTools": ["ToolSearch", "WebSearch", "WebFetch", "StructuredOutput", "Write"],
+      "writes": [".planning/research/discover-{slug}-mechanisms.md"],
+      "timeoutMs": 1800000,
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/check-sources.mjs", ".planning/research/discover-{slug}-mechanisms.md"] }
+    },
+    {
+      "id": "mechanism-shelf",
+      "kind": "talk",
+      "needs": ["mechanisms"],
+      "description": "Mechanism shelf: which mechanisms feel like your verbs, and which feel pasted on",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob"],
+      "craft": "craft/discover-mechanism-shelf.md",
+      "results": ["feelsRight", "pastedOn", "genres"],
+      "recap": ["brief", "slug", "verbs"],
+      "wrapTo": "bricks"
+    },
+    {
+      "id": "prior-art",
+      "kind": "flow",
+      "needs": ["mechanism-shelf"],
+      "description": "Prior art: research the games closest to this idea, what players praise and miss, hooks, anchors and twists",
+      "workflow": "bmuz:research-flow",
+      "args": {
+        "topic": "prior-art",
+        "brief": "{brief}",
+        "youAre": "{youAre}",
+        "collected": {
+          "reminds": "{reminds}",
+          "verbs": "{verbs}",
+          "nouns": "{nouns}",
+          "experiences": "{experiences}",
+          "fantasies": "{fantasies}",
+          "tone": "{tone}",
+          "genres": "{genres}",
+          "feelsRight": "{feelsRight}"
+        },
+        "fears": "{fears}",
+        "onIce": "{onIce}",
+        "constraints": "{constraints}",
+        "out": ".planning/research/discover-{slug}-prior-art.md"
+      },
+      "agentTools": ["ToolSearch", "WebSearch", "WebFetch", "StructuredOutput", "Write"],
+      "writes": [".planning/research/discover-{slug}-prior-art.md"],
+      "timeoutMs": 1800000,
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/check-sources.mjs", ".planning/research/discover-{slug}-prior-art.md"] }
+    },
+    {
+      "id": "twists",
+      "kind": "talk",
+      "needs": ["prior-art"],
+      "description": "Prior art and twists: what the closest games missed, the familiar part and the new part, twists to try",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob"],
+      "craft": "craft/discover-twists.md",
+      "results": ["missed", "anchors", "hooks", "twists", "extremes"],
+      "recap": ["brief", "slug", "youAre", "reminds"]
+    },
+    {
+      "id": "save",
+      "kind": "script",
+      "needs": ["twists"],
+      "always": true,
+      "description": "Save: every brick of this run into .planning/DISCOVER.md (shelves only grow) and the run's section",
+      "run": ["node", "{plugin}/scripts/discover-doc.mjs", ".planning/DISCOVER.md"],
+      "writes": [".planning/DISCOVER.md"],
+      "done": { "type": "file-contains", "path": ".planning/DISCOVER.md", "text": "## Shelves" }
+    },
+    {
+      "id": "bricks",
+      "kind": "talk",
+      "needs": ["save"],
+      "description": "the brick board: what this run collected, and every open question",
       "tools": ["Read", "Glob", "Grep"],
-      "craft": "craft/discover-handoff.md",
+      "craft": "craft/discover-bricks.md",
       "handoff": true,
-      "results": ["found"]
+      "results": ["found"],
+      "recap": ["brief", "slug"]
     }
   ]
 }
