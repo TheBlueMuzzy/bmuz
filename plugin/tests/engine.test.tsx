@@ -498,8 +498,8 @@ test('F213: a good card is shown by the engine\'s own message at turn.complete, 
   await endTurn($, 't1')
   expect(prompts.length).toBe(1)
   expect(prompts[0]).toMatch(/^BMUZ hand-off card — this message comes from the BMUZ engine/)
-  expect(prompts[0]).toMatch(/## Hello page for Moon Goat — ready for you to check\n\*\*Done:\*\* it matches the plan\n/)
-  expect(prompts[0]).toMatch(/\*\*Questions:\*\* none\n\*\*Next:\*\* nothing to type$/)
+  expect(prompts[0]).toMatch(/## Hello page for Moon Goat — ready for you to check\n\n\*\*Done:\*\* it matches the plan\n\n/)
+  expect(prompts[0]).toMatch(/\*\*Questions:\*\* none\n\n\*\*Next:\*\* nothing to type$/)
   expect(w.files['/proj/.bmuz/last-card.md']).toMatch(/^## Hello page for Moon Goat/)
   expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('idle') // the card turn comes first
   await endTurn($, 't2')
@@ -517,7 +517,7 @@ test('F213: every card lists the open questions with their numbers; one shown in
   const card = { ...CARD, questions: [{ key: 'greeting', q: 'Should it say hello or welcome?', kind: 'want', options: ['hello', 'welcome'], pick: 'welcome' }] }
   await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { verdict: 'matches', card } } as any)
   await endTurn($, 't1')
-  expect(prompts[0]).toMatch(/\*\*Questions:\*\*\n2\. What colour should the page be\?\n {3}What's your view\?\n {3}- white\n {3}- black\n3\. Should it say hello or welcome\?\n {3}- welcome \(my pick\)\n {3}- hello\n\*\*Next:\*\*/)
+  expect(prompts[0]).toMatch(/\*\*Questions:\*\*\n2\. What colour should the page be\?\n {3}What's your view\?\n {3}- white\n {3}- black\n3\. Should it say hello or welcome\?\n {3}- welcome \(my pick\)\n {3}- hello\n\n\*\*Next:\*\*/)
   expect(prompts[0]).not.toMatch(/heading font/)
   const list = JSON.parse(w.files['/proj/.bmuz/questions.json'])
   expect(list.map((q: any) => [q.n, q.status, q.askedIn])).toEqual([[1, 'parked', 2], [2, 'open', 2], [3, 'open', 1]])

@@ -303,7 +303,9 @@ export function renderCard(card, openQuestions = []) {
     if (key === 'next') lines.push(questionsBlock(openQuestions))
     lines.push(cardLine(label, card[key]))
   }
-  return lines.join('\n')
+  // A blank line between parts: without it a part after a list slid into the list's last item and was
+  // drawn indented, labels and all (Muzzy's live look, 2026-11-09).
+  return lines.join('\n\n')
 }
 
 function questionsBlock(qs) {

@@ -31,20 +31,18 @@ test('the card has today\'s labels, in today\'s order; lists go one line each un
     '**Done:** checked hello.html against plan.json',
     "**You'll see:** a hello page with the name as its heading",
     '**Try it:** open hello.html',
-    '**Proof:**',
-    '- hello.html has the heading',
-    '- plan.json names Moon Goat',
+    '**Proof:**\n- hello.html has the heading\n- plan.json names Moon Goat',
     '**Your to-dos:** none',
     '**Questions:** none',
     '**Next:** nothing to type: the run is finished',
-  ].join('\n'))
+  ].join('\n\n')) // a blank line between parts, so a part after a list isn't drawn inside it
   // a title that already says "ready for you to check" doesn't say it twice
-  assert.match(E.renderCard({ ...CARD, title: 'X — ready for you to check' }, []), /^## X — ready for you to check\n/)
+  assert.match(E.renderCard({ ...CARD, title: 'X — ready for you to check' }, []), /^## X — ready for you to check\n\n/)
 })
 
 test('questions are numbered, end in "?", options indented under them', () => {
   const text = E.renderCard(CARD, [{ n: 3, key: 'colour', q: 'Which colour?', kind: 'choice', options: ['blue', 'black'] }])
-  assert.match(text, /\*\*Questions:\*\*\n3\. Which colour\?\n {3}- blue\n {3}- black\n\*\*Next:\*\*/)
+  assert.match(text, /\*\*Questions:\*\*\n3\. Which colour\?\n {3}- blue\n {3}- black\n\n\*\*Next:\*\*/)
   assert.match(E.checkCard({ ...CARD, questions: [{ key: 'colour', q: 'Pick a colour', kind: 'choice' }] }).why, /must be a question ending in "\?"/)
   assert.match(E.checkCard({ ...CARD, questions: [{ key: 'colour', kind: 'choice' }] }).why, /question 1 has no "q"/)
 })
