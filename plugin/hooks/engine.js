@@ -245,7 +245,8 @@ export const CARD_PARTS = [
 const hasWords = v => (typeof v === 'string' && v.trim() !== '') || (isList(v) && v.length > 0)
 
 // Checks a card. Returns { ok: true } or { ok: false, why } naming every missing or empty part.
-export function checkCard(card) {
+// decisions = the project's decisions list: a question already answered there is refused (V38).
+export function checkCard(card, decisions = []) {
   if (!card || typeof card !== 'object' || Array.isArray(card)) return { ok: false, why: 'the result has no "card": give it as {"title", "done", "see", "try", "proof", "todos", "questions", "next"}' }
   const missing = []
   if (typeof card.title !== 'string' || !card.title.trim()) missing.push('title')
@@ -258,6 +259,8 @@ export function checkCard(card) {
     for (const [i, q] of (card.questions || []).entries()) {
       problems.push(...questionProblems(q, i + 1))
       if (q && q.key && keys.indexOf(q.key) !== i) problems.push(`question ${i + 1} has the same key "${q.key}" as an earlier one`)
+      const had = q && decisions.find(d => d.key === q.key)
+      if (had) problems.push(`question ${i + 1} ("${q.key}") was already answered on ${had.at}: ${had.answer} — use it, don't ask again`)
     }
   }
   return problems.length ? { ok: false, why: problems.join('; ') } : { ok: true }
@@ -370,6 +373,44 @@ export function questionsMd(oldText, addLines = [], list = null) {
   if (addLines.length) top += addLines.join('\n') + '\n'
   const tail = list ? parkedSection(list) : (at < 0 ? '' : text.slice(at))
   return tail ? top + (top.endsWith('\n\n') ? '' : '\n') + tail : top
+}
+
+// ---- The decisions list (.bmuz/decisions.json): an answered question is never asked again (V38) ----
+// Each entry: { key, q, answer, at }.
+
+// The creative's answers by number in a plain message, one per line: "1 yes", "1. blue", "2: the first one".
+// Only numbers of questions still waiting (open or parked) count. "1.5 seconds" is not an answer to 1.
+// Returns [{ n, key, q, answer }], the first answer to each number.
+export function matchAnswers(text, list) {
+  const out = []
+  for (const line of String(text).split(/\r?\n/)) {
+    const m = line.match(/^\s*(\d+)(?:\s*[:)]\s*|\s*\.(?!\d)\s*|\s+)(\S.*?)\s*$/)
+    if (!m) continue
+    const q = list.find(x => x.n === Number(m[1]) && (x.status === 'open' || x.status === 'parked'))
+    if (q && !out.some(a => a.n === q.n)) out.push({ n: q.n, key: q.key, q: q.q, answer: m[2] })
+  }
+  return out
+}
+
+// Records answers: each question is marked answered and joins the decisions. Returns { list, decisions }.
+export function recordAnswers(list, decisions, answers, at) {
+  const byN = new Map(answers.map(a => [a.n, a]))
+  const newList = list.map(x => (byN.has(x.n) ? { ...x, status: 'answered' } : x))
+  const kept = decisions.filter(d => !answers.some(a => a.key === d.key))
+  return { list: newList, decisions: [...kept, ...answers.map(a => ({ key: a.key, q: a.q, answer: a.answer, at }))] }
+}
+
+export function decisionsMd(decisions) {
+  return ['# Decisions', 'Answered once; BMUZ checks here before asking, and never asks these again.', '', ...decisions.map(d => `- ${d.at} · ${d.q} — **${d.answer}** (\`${d.key}\`)`)].join('\n') + '\n'
+}
+
+// The short note the engine adds to the creative's message after recording answers.
+export function answersNote(answers) {
+  const nums = answers.map(a => a.n).join(', ')
+  const yours = answers.filter(a => /^you pick\b/i.test(a.answer)).map(a => a.n)
+  const lines = [`BMUZ engine: answers recorded for ${nums} (in .bmuz/decisions.md). Use them; don't ask them again.`]
+  if (yours.length) lines.push(`For ${yours.join(', ')} the creative said "you pick": pick it yourself and say why in one line.`)
+  return lines.join(' ')
 }
 
 // Fills {name}-style holes from the step results and extra values.

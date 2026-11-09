@@ -102,3 +102,30 @@ test('a card question needs a key, and a key once per card', () => {
   assert.match(E.checkCard({ ...CARD, questions: [{ q: 'Which?', kind: 'choice' }] }).why, /question 1 needs a "key"/)
   assert.match(E.checkCard({ ...CARD, questions: [Q('a'), Q('a')] }).why, /question 2 has the same key "a"/)
 })
+
+test('answers by number: "1 yes", "1. blue", "2: the first one"; only waiting questions; not "1.5 seconds"', () => {
+  const list = [
+    { n: 1, key: 'a', q: 'A?', status: 'open' }, { n: 2, key: 'b', q: 'B?', status: 'parked' },
+    { n: 3, key: 'c', q: 'C?', status: 'answered' },
+  ]
+  const ans = t => E.matchAnswers(t, list).map(a => [a.n, a.answer])
+  assert.deepEqual(ans('1 yes'), [[1, 'yes']])
+  assert.deepEqual(ans('1. blue\n2: the first one'), [[1, 'blue'], [2, 'the first one']])
+  assert.deepEqual(ans('ok then\n 2) bigger  '), [[2, 'bigger']])
+  assert.deepEqual(ans('3 again'), []) // answered already
+  assert.deepEqual(ans('9 what'), []) // no such question
+  assert.deepEqual(ans('1.5 seconds feels right'), [])
+  assert.deepEqual(ans('looks good to me'), [])
+})
+
+test('recorded answers join the decisions; a later card asking the same key is refused with the answer', () => {
+  const list = [{ n: 1, key: 'orientation', q: 'Portrait or landscape?', status: 'open' }]
+  const out = E.recordAnswers(list, [], E.matchAnswers('1 portrait', list), '2026-11-09')
+  assert.equal(out.list[0].status, 'answered')
+  assert.deepEqual(out.decisions, [{ key: 'orientation', q: 'Portrait or landscape?', answer: 'portrait', at: '2026-11-09' }])
+  assert.match(E.decisionsMd(out.decisions), /- 2026-11-09 · Portrait or landscape\? — \*\*portrait\*\* \(`orientation`\)/)
+  const again = E.checkCard({ ...CARD, questions: [Q('orientation')] }, out.decisions)
+  assert.equal(again.ok, false)
+  assert.match(again.why, /already answered on 2026-11-09: portrait — use it, don't ask again/)
+  assert.match(E.answersNote([{ n: 1, answer: 'yes' }, { n: 2, answer: 'you pick' }]), /answers recorded for 1, 2.*For 2 the creative said "you pick"/)
+})

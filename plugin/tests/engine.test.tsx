@@ -523,3 +523,28 @@ test('F213: every card lists the open questions with their numbers; one shown in
   expect(list.map((q: any) => [q.n, q.status, q.askedIn])).toEqual([[1, 'parked', 2], [2, 'open', 2], [3, 'open', 1]])
   expect(w.files['/proj/.bmuz/questions.md']).toMatch(/## Parked — decide when the feature that needs it is planned\n.*\n- 1\. Which heading font\?/)
 })
+
+test('F213: "1 yes" records a decision and passes the message on with the engine\'s note; other messages pass untouched', async ($, on) => {
+  const open = [{ n: 1, key: 'greeting', q: 'Should it say welcome?', kind: 'want', options: ['yes', 'no'], askedIn: 1, status: 'open', addedAt: '2026-11-09' }]
+  const { w, prompts } = atReview(on, { '/proj/.bmuz/questions.json': JSON.stringify(open) })
+  await start($, true)
+  await $.prompt.submit({ text: 'looks fine' } as any)
+  expect(prompts[0]).toBe('looks fine')
+  await $.prompt.submit({ text: '1 yes' } as any)
+  expect(prompts[1]).toMatch(/^1 yes\n\(BMUZ engine: answers recorded for 1 \(in .bmuz\/decisions.md\)/)
+  expect(JSON.parse(w.files['/proj/.bmuz/decisions.json'])).toEqual([{ key: 'greeting', q: 'Should it say welcome?', answer: 'yes', at: '2026-11-09' }])
+  expect(w.files['/proj/.bmuz/decisions.md']).toMatch(/Should it say welcome\? — \*\*yes\*\*/)
+  expect(JSON.parse(w.files['/proj/.bmuz/questions.json'])[0].status).toBe('answered')
+  await $.prompt.submit({ text: '1 no' } as any) // answered now: not taken again
+  expect(prompts[2]).toBe('1 no')
+})
+
+test('F213: a card asking a question already decided is refused with the earlier answer', async ($, on) => {
+  const decided = [{ key: 'orientation', q: 'Portrait or landscape?', answer: 'portrait', at: '2026-11-03' }]
+  const { w } = atReview(on, { '/proj/.bmuz/decisions.json': JSON.stringify(decided) })
+  await start($, false)
+  const card = { ...CARD, questions: [{ key: 'orientation', q: 'Portrait or landscape?', kind: 'choice', options: ['portrait', 'landscape'] }] }
+  const r: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { verdict: 'ok', card } } as any)
+  expect(String(r.result ?? r.text ?? JSON.stringify(r))).toMatch(/already answered on 2026-11-03: portrait — use it, don't ask again/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).retries.review).toBe(1)
+})

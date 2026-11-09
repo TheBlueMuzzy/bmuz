@@ -235,7 +235,24 @@ async function settle($: any, step: any, verdict: any, result: any) {
 
 async function startTalk($: any, step: any, why: string) {
   const craft = await craftOf($, step)
-  await $.prompt.submit({ text: E.talkPrompt(step, craft, why, ctx.auto) })
+  // A hand-off step is told what is already decided, so it doesn't ask it again.
+  const decided = step.handoff ? await readList($, 'decisions.json') : []
+  await $.prompt.submit({ text: E.talkPrompt(step, craft, why, ctx.auto, decided) })
+}
+
+// The creative's answers by number ("1 yes"): recorded in the decisions list and marked answered.
+// Returns the engine's note for the message, or null when the message answers nothing.
+async function recordAnswerLines($: any, text: string) {
+  const questions = await readList($, 'questions.json')
+  const answers = E.matchAnswers(text, questions)
+  if (!answers.length) return null
+  const day = new Date(await $.clock.now()).toISOString().slice(0, 10)
+  const out = E.recordAnswers(questions, await readList($, 'decisions.json'), answers, day)
+  await $.fs.write(`${ctx.dir}/.bmuz/decisions.json`, JSON.stringify(out.decisions, null, 2))
+  await $.fs.write(`${ctx.dir}/.bmuz/decisions.md`, E.decisionsMd(out.decisions))
+  await saveQuestions($, out.list)
+  await journal($, { ev: 'answers', answered: answers.map((a: any) => ({ n: a.n, key: a.key, answer: a.answer })) })
+  return E.answersNote(answers)
 }
 
 async function startFlow($: any, step: any) {
@@ -381,7 +398,8 @@ async function stepDone($: any, e: any) {
   // A hand-off step without a good card is not done, the same as a failed done-check (retries, then BLOCKED).
   // The lists are read before anything is settled, so a damaged one refuses the call with nothing half done.
   const questions = step.handoff ? await readList($, 'questions.json') : []
-  const cardVerdict = step.handoff ? E.checkCard(card) : { ok: true }
+  const decisions = step.handoff ? await readList($, 'decisions.json') : []
+  const cardVerdict = step.handoff ? E.checkCard(card, decisions) : { ok: true }
   const verdict = cardVerdict.ok ? E.doneCheck(step, vars(), await look($, step, result)) : cardVerdict
   const next = await settle($, step, verdict, result)
   if (next === 'next' && step.handoff) {
@@ -649,6 +667,9 @@ export const register: Register = on => {
       pending = 'resume'
       return next({ ...(e as any), text: `${text}\n(BMUZ engine: starting. Reply with one short line; the engine runs the step itself.)` })
     }
+    // Answers to the card's numbered questions ("1 yes", "2: the first one"); any other message passes untouched.
+    const noted = ctx.broken ? null : await recordAnswerLines($, text)
+    if (noted) return next({ ...(e as any), text: `${text}\n(${noted})` })
     return next(e)
     // Without this, an error here let the prompt through unread (proof check 6), so a flow's result could
     // be lost. Now the prompt is dropped (it goes back to the input with the reason) and every tool is
