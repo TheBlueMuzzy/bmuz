@@ -267,6 +267,13 @@ async function startTalk($: any, step: any, why: string) {
   const answers = ctx.cfg.testAnswers ? ctx.cfg.testAnswers[step.id] : undefined
   hiddenNotes = E.talkPrompt(step, craft, why, ctx.auto, decided, { recap, wrap: wrapWords(step), answers })
   await $.prompt.submit({ text: E.talkHeadline(step) })
+  // The prompt hook takes the notes as it attaches them. Still here = they never went out: say so in the journal
+  // rather than let Claude guess the step from its headline.
+  if (hiddenNotes !== null) {
+    hiddenNotes = null
+    await journal($, { ev: 'deviation', step: step.id, why: 'the step\'s instructions were not attached to its message (the prompt hook did not run)' })
+    $.ui.toast(`BMUZ: step ${step.id} started without its instructions; type "bmuz retry" if Claude seems lost`)
+  }
 }
 
 // The wrap-up question's words: what comes next if they keep going, and where wrapping up goes.
@@ -364,7 +371,12 @@ async function applyGate($: any, step: any, answer: string) {
 }
 
 // Runs steps until one has to wait (a talk turn, a gate, a flow, a block).
-async function advance($: any, resume: boolean) {
+// opts.timer: called from a timer (a window opening mid-run, /bmuz-go, /bmuz-approve, /bmuz-retry). A message the
+// plugin sends from a timer skips the plugin's own prompt hook (Claude Code runs every hook "but the calling one"),
+// so a talk step's hidden instructions would never be attached: Muzzy's live look 2026-11-09, a window that picked
+// up a run mid-way got the one-line headline only, and Claude guessed the step. From a timer, a talk step is only
+// kicked: a short engine line, and the step itself starts at that turn's end (turn.complete), where the hook runs.
+async function advance($: any, resume: boolean, opts: { timer?: boolean } = {}) {
   for (let guard = 0; guard < 20; guard++) {
     const s = ctx.state
     if (s.status === 'blocked' || s.status === 'done') return
@@ -392,6 +404,11 @@ async function advance($: any, resume: boolean) {
     await save($)
     resume = false
 
+    if (step.kind === 'talk' && opts.timer) {
+      pending = 'resume'
+      await $.prompt.submit({ text: E.kickLine(step) })
+      return
+    }
     if (step.kind === 'talk') return startTalk($, step, '')
     if (step.kind === 'flow') {
       flowAskedHere = `${step.id}#${ctx.state.retries[step.id] || 0}`
@@ -614,7 +631,7 @@ export const register: Register = on => {
     if (ctx.baseline) await journal($, { ev: 'baseline', why: 'the journal was empty; this state file is the starting point', state: ctx.state })
     await save($)
     if (ctx.interactive && ctx.state.status !== 'done' && ctx.state.finished.length + (ctx.state.current ? 1 : 0) > 0) {
-      $.clock.after(1500, () => { advance($, true) })
+      $.clock.after(1500, () => { advance($, true, { timer: true }) })
     }
     return r
   })
@@ -790,7 +807,7 @@ export const register: Register = on => {
   on('command.run', { command: 'bmuz-go' }, async $ => {
     if (!ctx) return { text: 'No bmuz.json here: BMUZ is off in this folder.' }
     if (ctx.broken) return { text: `BMUZ engine: ${ctx.broken}` }
-    $.clock.after(50, () => { advance($, true) })
+    $.clock.after(50, () => { advance($, true, { timer: true }) })
     return { text: 'BMUZ engine: starting.' }
   })
 
@@ -801,7 +818,7 @@ export const register: Register = on => {
     const answer = String((e as any).args || '').trim()
     if (!step.options.includes(answer)) return { text: `The gate is still open. Pick one of: ${step.options.join(' / ')}` }
     await applyGate($, step, answer)
-    $.clock.after(50, () => { advance($, false) })
+    $.clock.after(50, () => { advance($, false, { timer: true }) })
     return { text: `BMUZ engine: gate answered "${answer}".` }
   })
 
@@ -826,7 +843,7 @@ export const register: Register = on => {
     if (!ctx) return { text: 'No bmuz.json here.' }
     if (ctx.broken) return { text: `BMUZ engine: ${ctx.broken}` }
     const out = await doRetry($)
-    if (out.ok) $.clock.after(50, () => { advance($, false) })
+    if (out.ok) $.clock.after(50, () => { advance($, false, { timer: true }) })
     return { text: out.text }
   })
 

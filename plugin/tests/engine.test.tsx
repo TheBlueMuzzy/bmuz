@@ -338,6 +338,23 @@ test('check 4: the watchdog stands down when the stopped helper had already fini
   expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('working')
 })
 
+test('F218: a window opening mid-run kicks a talk step from its timer; the step itself starts at turn end, with its instructions attached', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(String.fromCharCode(10))); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  world(on, base({ current: 'name', status: 'working' }))
+  await start($, true)
+  await clock.advance(2000) // the resume timer fires
+  // from the timer: only the short engine line, never the talk step's headline (its hook-attached notes would be lost)
+  expect(prompts.some(p => /^BMUZ engine: picking up the run at step "name"/.test(p))).toBe(true)
+  expect(prompts.some(p => /^BMUZ step "name"/.test(p))).toBe(false)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as any)
+  const talk = prompts.find(p => /^BMUZ step "name"/.test(p))!
+  const [, ...hidden] = talk.split('\n')
+  expect(hidden.join('\n')).toMatch(/Ask the name\./)
+})
+
 test('check 2: at a gate the engine asks with buttons and waits for the answer', async ($, on) => {
   const clock = mock.clock(on, { now: 1000 })
   let asked: any = null

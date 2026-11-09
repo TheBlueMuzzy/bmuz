@@ -317,6 +317,12 @@ export function testAnswersProblem(cfg, testEnv) {
 export function talkHeadline(step) {
   return `BMUZ step "${step.id}"${step.description ? ` — ${step.description}` : ''} (from the BMUZ engine; its instructions for this step are attached)`
 }
+// The engine's short line when a timer picks up a run at a talk step (register.tsx advance, opts.timer): the step
+// itself starts at that turn's end, where its instructions can be attached.
+export function kickLine(step) {
+  return `BMUZ engine: picking up the run at step "${step.id}"${step.description ? ` — ${step.description}` : ''}. Reply with one short line; the engine starts the step itself.`
+}
+
 export function isTalkHeadline(text) {
   return /^BMUZ step "[a-z0-9-]+".* \(from the BMUZ engine; its instructions for this step are attached\)$/.test(String(text))
 }
