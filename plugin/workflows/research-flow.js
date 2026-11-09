@@ -67,6 +67,15 @@ const found = await parallel(ANGLES.map(angle => () => agent(helperPrompt(angle)
 
 // Every page any helper cited, by URL; only http(s) links count as a source.
 const isLink = u => typeof u === 'string' && /^https?:\/\/[^\s]+$/i.test(u.trim())
+// An angle that came back with no sourced finding (or no answer) gets one more helper: a whole
+// section missing was the first headless run's gap (2026-11-09: "The players" came back empty).
+const sourced = r => r && Array.isArray(r.findings) && r.findings.some(f => (f.urls || []).some(isLink))
+const again = ANGLES.map((angle, i) => (sourced(found[i]) ? null : angle)).filter(Boolean)
+if (again.length) {
+  log(`no sourced findings yet for: ${again.map(x => x.id).join(', ')}; asking once more`)
+  const more = await parallel(again.map(angle => () => agent(`${helperPrompt(angle)}\nThe first try found nothing with a source: search more widely (reviews, forums, design articles, studies) and cite what you find.`, { label: `research again: ${angle.id}`, phase: 'Research', schema: FINDINGS })))
+  again.forEach((angle, k) => { if (sourced(more[k])) found[ANGLES.indexOf(angle)] = more[k] })
+}
 const titles = new Map()
 found.forEach(r => (r && Array.isArray(r.sources) ? r.sources : []).forEach(s => {
   if (s && isLink(s.url) && !titles.has(s.url.trim())) titles.set(s.url.trim(), String(s.title || '').trim())
@@ -108,10 +117,14 @@ const keep = list => (Array.isArray(list) ? list : [])
 const sections = {}
 let dropped = 0
 for (const angle of ANGLES) {
-  const all = keep(merged ? merged[angle.id] : raw[angle.id])
+  let all = keep(merged ? merged[angle.id] : raw[angle.id])
+  // The merge left an angle empty that its helper had sourced findings for: keep the helper's own.
+  if (!all.some(f => f.urls.length) && raw[angle.id].some(f => f.urls.length)) all = keep(raw[angle.id])
   sections[angle.id] = all.filter(f => f.urls.length)
   dropped += all.length - sections[angle.id].length
 }
+const empty = ANGLES.filter(x => !sections[x.id].length).map(x => x.id)
+if (empty.length) log(`no sourced findings for: ${empty.join(', ')} (that section is left out)`)
 // No merge (the helper died): the summary is each angle's first finding.
 let summaryAll = keep(merged ? merged.summary : ANGLES.map(x => sections[x.id][0]).filter(Boolean))
 const summary = summaryAll.filter(f => f.urls.length)
@@ -135,7 +148,7 @@ const md = [
   '## Summary',
   ...summary.map(line),
 ]
-for (const angle of ANGLES) md.push('', `## ${angle.heading}`, ...sections[angle.id].map(line))
+for (const angle of ANGLES) if (sections[angle.id].length) md.push('', `## ${angle.heading}`, ...sections[angle.id].map(line))
 md.push('', '## Sources', ...[...numbers.entries()].map(([u, n]) => `${n}. ${(titles.get(u) || u).replace(/[\[\]]/g, '')} — ${u}`), '')
 const report = md.join('\n')
 
@@ -148,4 +161,4 @@ const said = await agent([
   'Then reply with just the word written.',
 ].join('\n'), { label: 'write the report', phase: 'Write', model: 'haiku' })
 
-return { wrote: out, topic, findings: total, summary: summary.length, sources: numbers.size, dropped, helpersFailed, said }
+return { wrote: out, topic, findings: total, summary: summary.length, sources: numbers.size, dropped, helpersFailed, askedAgain: again.map(x => x.id), empty, said }

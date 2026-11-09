@@ -28,3 +28,5 @@ From ARCHITECTURE.md "How we get sure" (framework repo, `.planning/research/bmuz
 The engine-written hand-off card (F213, docs/handoff-card.md): `tests/handoff-card.node.test.mjs`, the "F213:" plugin tests, and headless `card` (the review step ends with the engine's card; "1 blue" is recorded as a decision).
 
 Memory and safety beyond the 16 (doctor, undo, retry after BLOCKED, pipeline file check): `tests/memory-safety.node.test.mjs`, `tests/pipeline-format.node.test.mjs`, and the undo/doctor plugin tests.
+
+The discover pipeline (F217): the source check and its "script-ok" done-check in `tests/check-sources.node.test.mjs`, the research flow run with fake helpers in `tests/research-flow.node.test.mjs`, the "F217:" plugin tests (a flow's source check finishes, retries, BLOCKS and rolls back), and headless `discover` (a scratch project in `dev/.scratch/bmuz-discover-test`, or `BMUZ_DISCOVER_PROJECT`; ~2 min on haiku with real web research; ends with the engine's card and a report whose every link answers).

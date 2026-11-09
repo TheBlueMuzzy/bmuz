@@ -74,3 +74,33 @@ test('research flow: nothing sourced at all fails the flow instead of writing an
   const empty = () => ({ findings: [{ text: 'a claim', urls: [] }], sources: [], summary: [], games: [], players: [], fun: [] })
   await assert.rejects(runFlow({ topic: 'seeds' }, empty), /no sourced findings/)
 })
+
+test('research flow: an angle with nothing sourced is asked once more; one the merge emptied keeps its helper\'s findings', async () => {
+  let playersAsked = 0
+  const flaky = (prompt, opts) => {
+    if (opts.label === 'research: players' || opts.label === 'research again: players') {
+      playersAsked++
+      return playersAsked === 1 ? { findings: [{ text: 'players claim with no link', urls: [] }], sources: [] } : helper('players')
+    }
+    if (opts.label === 'merge') {
+      const m = answer(prompt, opts)
+      return { ...m, fun: [] } // the merge "forgot" the fun angle
+    }
+    return answer(prompt, opts)
+  }
+  const { result, written, prompts } = await runFlow({ topic: 'seeds' }, flaky)
+  assert.equal(playersAsked, 2)
+  assert.ok(prompts.some(p => p.opts.label === 'research again: players' && /search more widely/.test(p.prompt)))
+  assert.deepEqual(result.askedAgain, ['players'])
+  assert.match(written, /## The players — who and why\n- players finding one \[\d\]/)
+  assert.match(written, /## What's fun — the core feeling and loops\n- fun finding one \[1\]/)
+  assert.deepEqual(result.empty, [])
+})
+
+test('research flow: an angle still empty after the second ask is left out, not written as an empty section', async () => {
+  const none = (prompt, opts) => (/players/.test(opts.label || '') ? { findings: [], sources: [] } : answer(prompt, opts))
+  const { result, written } = await runFlow({ topic: 'seeds' }, none)
+  assert.deepEqual(result.empty, ['players'])
+  assert.doesNotMatch(written, /## The players/)
+  assert.deepEqual(checkReport(written).problems, [])
+})

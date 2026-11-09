@@ -3,7 +3,7 @@
 // node tests/headless.mjs [scenario ...]   (no names = all; ~10 min; uses haiku)
 // Runs one at a time in project/. Prints PASS/FAIL per check; exits 1 on any FAIL.
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -109,6 +109,40 @@ const scenarios = {
     check('F213: the run ended with the engine\'s card, the open question numbered in it', /^## .* — ready for you to check\n/.test(card) && /\n1\. What colour should the heading be\?\n {3}What's your view\?/.test(card) && out.includes(card.trim()) && evs('pipeline.done').length === 1, out.slice(-600))
     claude('1 blue')
     check('F213: "1 blue" was recorded as a decision', /heading be\? — \*\*blue\*\*/.test(file('.bmuz/decisions.md') || ''), file('.bmuz/decisions.md'))
+  },
+
+  // F217: the discover pipeline end to end in its own scratch project, on a tiny topic: an auto run (-p)
+  // takes the idea from the "bmuz go" line, runs the research flow on the real web, and ends with the
+  // engine's card. Every source in the report must answer; nothing is written outside .planning/research.
+  async discover() {
+    const dir = process.env.BMUZ_DISCOVER_PROJECT || join(here, '..', '..', '.scratch', 'bmuz-discover-test')
+    rmSync(join(dir, '.bmuz'), { recursive: true, force: true })
+    rmSync(join(dir, '.planning'), { recursive: true, force: true })
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'discover' }, null, 2))
+    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
+    const all = () => (read('.bmuz/journal.jsonl') || '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l) } catch (e) { return {} } })
+    const took = Date.now()
+    const r = spawnSync('claude', ['-p', 'bmuz go a cosy two-player card game about trading seeds', ...base, '--allowedTools', `${TOOLS} Edit ToolSearch WebSearch WebFetch`], { cwd: dir, env, encoding: 'utf8', input: "", timeout: 570_000 })
+    const out = (r.stdout || '') + (r.stderr || '')
+    console.log(`      (${Math.round((Date.now() - took) / 1000)} s; last lines: ${out.trim().split('\n').slice(-4).join(' / ').slice(0, 400)})`)
+    const starts = [...new Set(all().filter(j => j.ev === 'step.start').map(j => j.step))]
+    check('F217: the engine ran what → research → shape → handoff, then finished', JSON.stringify(starts) === JSON.stringify(['what', 'research', 'shape', 'handoff']) && all().some(j => j.ev === 'pipeline.done'), `${all().map(j => j.ev + (j.step ? ':' + j.step : '') + (j.why ? ` (${String(j.why).slice(0, 120)})` : '')).join(' ')}`)
+    const topic = (all().find(j => j.ev === 'step.done' && j.step === 'what') || {}).result?.topic || ''
+    check('F217: the topic came from the creative\'s words after "bmuz go"', /seed/i.test(topic) && /card/i.test(topic), topic)
+    const report = '.planning/research/discover.md'
+    const sources = spawnSync('node', [join(plugin, 'scripts', 'check-sources.mjs'), report], { cwd: dir, encoding: 'utf8' })
+    check('F217: the research file has its sources, every claim cites one and every link answers', sources.status === 0 && /## Sources\n1\. /.test(read(report) || ''), sources.stdout)
+    check('F217: the notes file has rough experience targets', /## Experience targets\n/.test(read('.planning/research/discover-notes.md') || ''))
+    const card = read('.bmuz/last-card.md') || ''
+    check('F217: it ended with the engine\'s card, Next = /define', /^## .* — ready for you to check\n/.test(card) && /\*\*Next:\*\* .*\/define/.test(card) && out.includes(card.trim().split('\n')[0]), card.slice(0, 400))
+    const files = []
+    const walk = d => { for (const e of readdirSync(join(dir, d), { withFileTypes: true })) e.isDirectory() ? walk(join(d, e.name)) : files.push(join(d, e.name).split('\\').join('/')) }
+    walk('.')
+    // (join drops the leading "./": paths come out as ".bmuz/journal.jsonl")
+    const outside = files.filter(f => !/^(\.bmuz\/|\.planning\/research\/|bmuz\.json$)/.test(f))
+    check('F217: nothing was written outside .planning/research (and the engine\'s .bmuz)', outside.length === 0, outside.join(', '))
+    if (existsSync(join(dir, report))) console.log(`      Sources:\n${(read(report).split('## Sources')[1] || '').trim().split('\n').map(l => `        ${l}`).join('\n')}`)
   },
 
   // Check 16: motor B — "bmuz next" from a shell reads the same pipeline and state.
