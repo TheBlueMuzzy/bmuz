@@ -1,7 +1,7 @@
 {
   "id": "discover",
   "version": 1,
-  "description": "Discover a game idea (framework .planning/research/bmuz-vision/discover-creative-research.md section 6): experience first — spark, experience and fantasy, theme dig, simulation breakdown, mechanism shelf, prior art and twists — collecting bricks into .planning/DISCOVER.md, then the brick board. Collects, never chooses: choosing is /define's. Wrap up after any step.",
+  "description": "Discover a game idea (framework .planning/research/bmuz-vision/discover-creative-research.md section 6): experience first — spark, experience and fantasy, theme dig, simulation breakdown, mechanism shelf, prior art and twists — collecting the material for the game's building blocks into .planning/DISCOVER.md, then the material board. Collects, never chooses: Define makes the blocks. Wrap up after any step.",
   "watchdogMs": 1200000,
   "next": {"pipeline": "define"},
   "steps": [
@@ -166,7 +166,7 @@
       "kind": "script",
       "needs": ["twists"],
       "always": true,
-      "description": "Save: every brick of this run into .planning/DISCOVER.md (shelves only grow) and the run's section",
+      "description": "Save: all the material of this run into .planning/DISCOVER.md (shelves only grow) and the run's section",
       "run": ["node", "{plugin}/scripts/discover-doc.mjs", ".planning/DISCOVER.md"],
       "writes": [".planning/DISCOVER.md"],
       "done": { "type": "file-contains", "path": ".planning/DISCOVER.md", "text": "## Shelves" }
@@ -175,7 +175,7 @@
       "id": "bricks",
       "kind": "talk",
       "needs": ["save"],
-      "description": "the brick board: what this run collected, and every open question",
+      "description": "the material board: what this run collected, and every open question",
       "tools": ["Read", "Glob", "Grep"],
       "craft": "craft/discover-bricks.md",
       "handoff": true,

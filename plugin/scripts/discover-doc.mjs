@@ -25,7 +25,7 @@ export const SHELVES = [
   ['Verb × noun grid', 'what each verb does to each noun; empty/surprising cells flagged'],
   ['Decisions', 'candidate choices and their tradeoffs'],
   ['Mechanism shelf', 'outcome verb → candidate mechanisms → example games → skill it teaches'],
-  ['Prior art', 'game · shares which bricks · praised for · complaints/missed · its hook/anchor'],
+  ['Prior art', 'game · shares which material · praised for · complaints/missed · its hook/anchor'],
   ['Hooks & anchors', 'candidates only'],
   ['Twists', 'constraints, SCAMPER moves, strip-downs, mashups, extremes'],
   ['On ice', 'ready-made solutions and ideas held for Define (credited, dated)'],
@@ -233,7 +233,7 @@ const newDoc = () => [
   '# Discover',
   'Seed: (none yet)',
   '',
-  'BMUZ collects the bricks here; nothing in this file is chosen. Choosing which bricks to build with is /define\'s. Lines are only ever added or annotated, never removed: edit anything you like, your edits are kept.',
+  'BMUZ collects the material for the game\'s building blocks here; nothing in this file is chosen. Define makes the blocks from it. Lines are only ever added or annotated, never removed: edit anything you like, your edits are kept.',
   '',
   '## Shelves (cumulative — every run adds; nothing is chosen here)',
   ...SHELVES.flatMap(([n, d]) => [`### ${n} — ${d}`, '']),
@@ -287,7 +287,7 @@ export function mergeDoc(oldText, run, { reportLink = p => p } = {}) {
     // (F225: a run made from what the creative shared at the start: where it came from)
     ...(run.material && run.material.length ? [`- From your material: ${run.material.join(' · ')}`] : []),
     ...(run.questions.length ? ['- Research questions:', ...run.questions.map((q, i) => `  ${i + 1}. ${q}`)] : []),
-    `- Bricks added: ${Object.keys(added).length ? Object.entries(added).map(([s, c]) => `[${s}](${anchor(s)}) ${c}`).join(' · ') : 'none new'}${again ? ` · ${again} already on the shelves, marked "again in run ${n}"` : ''}`,
+    `- Material added: ${Object.keys(added).length ? Object.entries(added).map(([s, c]) => `[${s}](${anchor(s)}) ${c}`).join(' · ') : 'none new'}${again ? ` · ${again} already on the shelves, marked "again in run ${n}"` : ''}`,
   ]
   for (const r of run.reports) {
     section.push(`- ${r.label} research: [the full report](${reportLink(r.path)}) · ${r.findings} findings, ${r.strong.length} backed by several sources`)
@@ -361,7 +361,7 @@ function main() {
   mkdirSync(dirname(join(project, out)), { recursive: true })
   writeFileSync(join(project, out), merged.text)
   const total = Object.values(merged.added).reduce((a, b) => a + b, 0)
-  console.log(`✔ ${out}: run ${merged.n} saved — ${total} new bricks on ${Object.keys(merged.added).length} shelves, ${merged.again} marked again, ${run.reports.length} reports linked`)
+  console.log(`✔ ${out}: run ${merged.n} saved — ${total} new pieces of material on ${Object.keys(merged.added).length} shelves, ${merged.again} marked again, ${run.reports.length} reports linked`)
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main()

@@ -10,7 +10,7 @@ How Define asks (every talk step):
 - A revision run (the digest's "Define run:" line says "a revision"): show this step's part from the digest's "Already locked" first, with "Keep" first and "Change". Keep = hand that key back as [] (the GDD keeps it exactly as it is). Show the "New since the last Define run" bricks that belong to this step.
 - Auto run (nobody to answer): choosing is taste, so choose nothing. Hand back every key as [] (the GDD marks it "open — not chosen yet") and put each question you would have asked in "asks" with "picked": "nothing: the creative chooses". A test run's answers, when given above, are the creative's own: use them instead.
 
-Start with one short line: Define chooses which of Discover's bricks to build with; nothing on the shelves is thrown away.
+Define makes the game's building blocks from Discover's material (the shelf items, each with an id like [EX3]); nothing on the shelves is thrown away. The engine opens Define with its own short intro, so don't add one: go straight to the first question.
 
 The questions (the bank's numbers; one to three per call):
 1. Of the moments on the Experience goals shelf (Situation, Story a player tells), which one or two ARE this game? Pick up to 2, or say another.

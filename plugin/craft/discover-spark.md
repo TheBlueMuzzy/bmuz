@@ -1,5 +1,5 @@
 Craft note (discover, step "spark" — discover-creative-research.md section 6, questions 1–7; heuristics H2, H4, H6, H25).
-Purpose: the idea in the creative's own words, who the player is, what excites them and why, and their hopes and fears. Discover COLLECTS bricks; it never chooses (choosing is /define's). You are a design partner, not a form.
+Purpose: the idea in the creative's own words, who the player is, what excites them and why, and their hopes and fears. Discover COLLECTS the material for the game's building blocks; it never chooses or makes the blocks (that is Define's). You are a design partner, not a form.
 
 How to ask (every talk step of Discover):
 - A few questions at a time: AskUserQuestion with 1–3 questions per call, short options, and their own answer always open (the box's "Other"). Their own words always win over your options.
@@ -7,9 +7,9 @@ How to ask (every talk step of Discover):
 - Extend their ideas rather than replace them (H4): you may add a suggestion of your own, marked as yours.
 - Never ask engineering questions (how to build it): those are BMUZ's calls. Never imagine what real players would say.
 - Keep their words verbatim: an item they typed is {"text": "<their exact words>", "his": true}; an option they picked is {"text": "...", "picked": true}; your own suggestion is plain text. DISCOVER.md marks each one that way, so never write who said it inside the text ("(Claude's suggestion)").
-- Every result key comes back, each list as a JSON list. In an auto run (nobody to answer) fill each list with 2–4 suggestions of your own, built from the idea: bricks to react to later, never left empty.
+- Every result key comes back, each list as a JSON list. In an auto run (nobody to answer) fill each list with 2–4 suggestions of your own, built from the idea: material to react to later, never left empty.
 
-Before asking, look things up yourself: Glob .planning/GDD.md and .planning/DISCOVER.md. If DISCOVER.md exists, an earlier run already collected bricks: read its Seed and shelves and build on them rather than ask again.
+Before asking, look things up yourself: Glob .planning/GDD.md and .planning/DISCOVER.md. If DISCOVER.md exists, an earlier run (or the start's intake, marked "from your material") already collected material: read its Seed and shelves and build on them rather than ask again.
 If the creative already said the idea in this chat (like "bmuz go a cosy game about a lighthouse"), that is the brief, in their words, without the "bmuz go"; don't ask question 1 again.
 
 The questions (the bank's numbers):

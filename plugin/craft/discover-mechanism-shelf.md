@@ -1,5 +1,5 @@
 Craft note (discover, step "mechanism-shelf" — discover-creative-research.md sections 3 and 6, questions 28–29: mechanism fit, the pasted-on theme test, genres as verb bundles).
-Purpose: the creative reacts to the mechanism shelf the research just filled. Collect, never choose: nothing is picked here; the reactions are bricks too.
+Purpose: the creative reacts to the mechanism shelf the research just filled. Collect, never choose: nothing is picked here; the reactions are material too.
 
 Read the mechanisms report: .planning/research/discover-<slug>-mechanisms.md (the slug is in the recap; Glob .planning/research/discover-*-mechanisms.md if unsure). Its "Bricks" section lists, per outcome verb, candidate mechanisms with example games and the skill each teaches, each sourced.
 

@@ -76,6 +76,10 @@ test('buildIntake: the proposal screen, the gap map for all five stages, the mat
   assert.match(doc, /\n- Situation: "A boat makes it home and the night goes quiet" — run 1 · from your material\n/)
   assert.match(doc, /\n- tend the lamp — run 1 · Claude's reading of your material\n/)
   assert.match(doc, /\n- From your material: pasted text\n/)
+  // one vocabulary (F225 task 6): Discover gathers material, Define makes the blocks
+  assert.match(doc, /\nBMUZ collects the material for the game's building blocks here; nothing in this file is chosen\. Define makes the blocks from it\./)
+  assert.match(doc, /\n- Material added: \[Spark\]/)
+  assert.ok(!/brick/i.test(doc))
   assert.ok(!/the quiet care/.test(doc)) // a Define block isn't Discover material: it rides in "given"
   // Define's digest reads the marks as the creative's own words
   const shelves = readShelves(doc)

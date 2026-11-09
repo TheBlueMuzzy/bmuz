@@ -202,7 +202,9 @@ const scenarios = {
     const filled = ['Spark', 'Experience goals', 'Theme', 'Nouns', 'Verbs', 'Mechanism shelf', 'Prior art']
     check('F217: DISCOVER.md has its shelves filled and a run section linking the three reports', filled.every(n => shelf(n) > 0) && /\n### Run 1 — /.test(doc) && reports.every(p => doc.includes(p.replace('.planning/', ''))), filled.map(n => `${n}: ${shelf(n)}`).join(', '))
     const card = read('.bmuz/last-card.md') || ''
-    check('F217: it ended with the engine\'s brick board card: DISCOVER.md linked, the two numbered questions, Next /define', /^## Brick board.* — ready for you to check\n/.test(card) && /DISCOVER\.md/.test(card) && /Anything surprising or missing on the shelves\?/.test(card) && /On to \/define, or another discover pass/.test(card) && /\*\*Next:\*\* .*\/define/.test(card) && out.includes(card.trim().split('\n')[0]), card.slice(0, 600))
+    // (F225: the card says "material"; whether to move on to Define is the engine's own question after it, which an
+    // auto run notes in questions.md)
+    check('F217: it ended with the engine\'s material board card: DISCOVER.md linked, the numbered question, Next Define; the engine noted the move on', /^## Material board.* — ready for you to check\n/.test(card) && /DISCOVER\.md/.test(card) && /Anything surprising or missing on the shelves\?/.test(card) && /\*\*Next:\*\* .*Define/.test(card) && out.includes(card.trim().split('\n')[0]) && /Discover is done\. On to Define\?/.test(read('.bmuz/questions.md') || ''), card.slice(0, 600))
     const files = []
     const walk = d => { for (const e of readdirSync(join(dir, d), { withFileTypes: true })) e.isDirectory() ? walk(join(d, e.name)) : files.push(join(d, e.name).split('\\').join('/')) }
     walk('.')

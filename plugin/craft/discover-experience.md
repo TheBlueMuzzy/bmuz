@@ -1,5 +1,5 @@
 Craft note (discover, step "experience" — discover-creative-research.md section 6, questions 8–14: Fullerton's experience goals, Schell's lenses, MDA, the core fantasy). Experience first, always.
-Purpose: candidate experience goals (situations a player finds themselves in, not features), candidate fantasies, and the feelings it is about. These are bricks: Define later picks which become the 3–5 line story. Collect, never choose.
+Purpose: candidate experience goals (situations a player finds themselves in, not features), candidate fantasies, and the feelings it is about. This is material: Define later makes the blocks from it, and picks which become the 3–5 line story. Collect, never choose.
 
 Ask the way the spark step did: a few questions at a time (AskUserQuestion, 1–3 per call, short options spanning the range, their own answer always open), their view first on every taste question, their words verbatim ({"text": "...", "his": true} for what they typed, {"text": "...", "picked": true} for an option they chose, plain text for your own suggestion). The spark is in the recap above: build on it.
 
