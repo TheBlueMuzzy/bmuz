@@ -38,7 +38,11 @@ test('the gap map: covered / partly / not yet per stage, by fixed rules', () => 
   assert.deepEqual([concept.gaps.discover, concept.gaps.define], ['partly', 'partly'])
   assert.match(concept.why.define, /has the primary feelings; still open: the 3–5 line story, the pillars, the first-release musts/)
   const rulebook = gapMap({ youAre: [q('a')], spark: [q('b')], experiences: [q('c')], tone: [q('t')], verbs: [q('v')], primaries: [q('d')], story: [q('s')], pillars: [q('p')], musts: [q('m')], rules: [q('r')], playtests: [q('x')] })
-  assert.deepEqual(rulebook.gaps, { discover: 'covered', define: 'covered', design: 'covered', develop: 'not yet', release: 'not yet' })
+  // a line in each of four groups is breadth without depth: still "partly"
+  assert.deepEqual(rulebook.gaps, { discover: 'partly', define: 'covered', design: 'covered', develop: 'not yet', release: 'not yet' })
+  const many = n => Array.from({ length: n }, (_, i) => q(`item ${i}`))
+  assert.equal(gapMap({ youAre: many(5), experiences: many(5), tone: many(5), verbs: many(5) }).gaps.discover, 'covered')
+  assert.equal(gapMap({ youAre: many(5), experiences: many(5), tone: many(9) }).gaps.discover, 'partly') // deep, but 3 groups
 })
 
 test('the proposal: nothing or a spark → Discover\'s spark; a later goal than the material supports catches up first', () => {
@@ -117,7 +121,7 @@ test('the script: reads the files named, says plainly what it can\'t read, write
     const md = readFileSync(join(dir, '.planning', 'research', 'intake.md'), 'utf8')
     assert.match(md, /not readable yet: deck\.pdf \(not a text file yet: paste its text instead\), https:\/\/docs\.google\.com\/x \(a link: paste its text instead\)/)
     assert.match(md, /Design needs the primary feelings, the 3–5 line story, the first-release musts; I'll start you in Define/)
-    assert.match(md, /- Discover \(the material\): partly — material for spark/)
+    assert.match(md, /- Discover \(the material\): partly — 1 piece of material, touching spark \(1 of 6\)/)
     assert.match(readFileSync(join(dir, '.planning', 'DISCOVER.md'), 'utf8'), /\n- "You are the keeper of a lighthouse\." — run 1 · from your material\n/)
     assert.ok(existsSync(join(dir, '.planning', 'research', 'intake.md')))
   } finally {

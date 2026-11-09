@@ -39,6 +39,7 @@ export const DISCOVER_GROUPS = [
   ['mechanisms', ['feelsRight', 'pastedOn', 'genres'], 'any'],
   ['prior art', ['reminds', 'missed', 'hooks', 'anchors', 'twists', 'extremes'], 'any'],
 ]
+export const DISCOVER_COVERED_ITEMS = 20
 // Define's must-haves before Design (define-doc.mjs CORE, by result key) and their plain words.
 export const DEFINE_CORE = [['primaries', 'the primary feelings'], ['story', 'the 3–5 line story'], ['pillars', 'the pillars'], ['musts', 'the first-release musts']]
 
@@ -93,15 +94,18 @@ export function gapMap(items) {
   const entryGot = DISCOVER_GROUPS.filter(([, keys, need]) => (need === 'all' ? keys.every(k => has(items, k)) : keys.some(k => has(items, k)))).map(([n]) => n)
   const core = DEFINE_CORE.filter(([k]) => has(items, k))
   const anyDefine = core.length > 0 || ['pitch', 'coreVerbs', 'mechanisms', 'wont', 'notThis', 'fantasy'].some(k => has(items, k))
+  // Discover is "covered" only with real breadth AND depth: one paragraph touches many groups with a line each
+  // (headless entry-concept 2026-11-09: a six-sentence concept read as "covered"), a Discover run leaves dozens.
+  const discoverItems = DISCOVER_GROUPS.flatMap(([, keys]) => keys).reduce((n, k) => n + listOf(items[k]).length, 0)
   const g = {
-    discover: got.length >= 4 ? 'covered' : got.length ? 'partly' : 'not yet',
+    discover: got.length >= 4 && discoverItems >= DISCOVER_COVERED_ITEMS ? 'covered' : got.length ? 'partly' : 'not yet',
     define: core.length === DEFINE_CORE.length ? 'covered' : anyDefine ? 'partly' : 'not yet',
     design: has(items, 'rules') && has(items, 'playtests') ? 'covered' : has(items, 'rules') || has(items, 'playtests') ? 'partly' : 'not yet',
     develop: has(items, 'released') ? 'covered' : has(items, 'built') ? 'partly' : 'not yet',
     release: has(items, 'released') ? 'partly' : 'not yet',
   }
   const why = {
-    discover: got.length ? `material for ${got.join(', ')} (${got.length} of ${DISCOVER_GROUPS.length})` : 'no material yet',
+    discover: got.length ? `${discoverItems} piece${discoverItems === 1 ? '' : 's'} of material, touching ${got.join(', ')} (${got.length} of ${DISCOVER_GROUPS.length})` : 'no material yet',
     define: core.length ? `has ${core.map(([, w]) => w).join(', ')}${core.length < DEFINE_CORE.length ? `; still open: ${DEFINE_CORE.filter(c => !core.includes(c)).map(([, w]) => w).join(', ')}` : ''}` : anyDefine ? `some blocks, none of ${DEFINE_CORE.map(([, w]) => w).join(', ')}` : 'no blocks chosen yet',
     design: g.design === 'not yet' ? 'no rules or playtests yet' : [has(items, 'rules') && 'rules written', has(items, 'playtests') && 'playtested'].filter(Boolean).join(', '),
     develop: has(items, 'built') ? 'a prototype exists' : 'nothing built yet',
