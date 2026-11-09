@@ -184,6 +184,7 @@
       "kind": "script",
       "needs": ["lock"],
       "description": "Stage: the GDD moves to Design (refused, in plain words, while the story, feelings, pillars or first-release musts are open)",
+      "retries": 0,
       "run": ["node", "{plugin}/scripts/define-stage.mjs"],
       "writes": [".planning/GDD.md"],
       "done": { "type": "file-contains", "path": ".planning/GDD.md", "text": "Current phase: Design" }

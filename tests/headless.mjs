@@ -212,17 +212,15 @@ const scenarios = {
     console.log(`      DISCOVER.md shelves: ${filled.concat(['Verb × noun grid', 'Decisions', 'Hooks & anchors', 'Twists', 'On ice', 'Open questions', 'Hopes & fears']).map(n => `${n} ${shelf(n)}`).join(' · ')}`)
   },
 
-  // F218: the define pipeline end to end in its own scratch project, from the lighthouse DISCOVER.md the discover
-  // scenario leaves behind. Define's choices are taste, which an auto run never makes, so bmuz.json "testAnswers"
+  // F218: the define pipeline end to end in its own scratch project, from a committed lighthouse DISCOVER.md
+  // (tests/fixtures/lighthouse-discover: a headless discover run's .planning/, 2026-11-09, kept whole so the shelves
+  // are as big as a real run's). A fixture, not another scenario's leftovers: the define check runs alone, the same
+  // every time. Define's choices are taste, which an auto run never makes, so bmuz.json "testAnswers"
   // stands in for the creative (allowed only with BMUZ_TEST=1, set here). The run goes digest → … → the concept card →
   // the lock gate (an auto run stops there); "bmuz approve Lock it: on to Design" in a second session runs stage.
   async define() {
     const dir = process.env.BMUZ_DEFINE_PROJECT || join(here, '..', '..', '.scratch', 'bmuz-define-headless')
-    const seed = join(here, '..', '..', '.scratch', 'bmuz-discover-headless', '.planning')
-    if (!existsSync(join(seed, 'DISCOVER.md'))) {
-      check('F218: the lighthouse DISCOVER.md is there to start from', false, `run the discover scenario first (it leaves ${seed})`)
-      return
-    }
+    const seed = join(here, 'fixtures', 'lighthouse-discover')
     rmSync(join(dir, '.bmuz'), { recursive: true, force: true })
     rmSync(join(dir, '.planning'), { recursive: true, force: true })
     mkdirSync(dir, { recursive: true })

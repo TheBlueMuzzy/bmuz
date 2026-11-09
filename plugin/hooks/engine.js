@@ -12,7 +12,9 @@ export const NAME_RE = /^[a-z][a-z0-9-]*$/
 const TOP_KEYS = ['id', 'version', 'description', 'watchdogMs', 'steps']
 const STEP_KEYS = {
   // always: the step still runs when the creative wraps up early (a talk step's "wrapTo")
-  common: ['id', 'kind', 'needs', 'description', 'timeoutMs', 'always'],
+  // retries: how many times a failed step runs again before it BLOCKS (0..MAX_RETRIES, default MAX_RETRIES);
+  // 0 for a step whose refusal is a verdict, not a flake (Define's stage: running it again says the same)
+  common: ['id', 'kind', 'needs', 'description', 'timeoutMs', 'always', 'retries'],
   talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results', 'wrapTo', 'recap'],
   gate: ['question', 'options', 'approve', 'backTo'],
   script: ['run', 'writes', 'done'],
@@ -105,6 +107,7 @@ export function checkPipeline(p) {
       }
     }
     if (s.always !== undefined && typeof s.always !== 'boolean') problems.push(`${at}: "always" must be true or false`)
+    if (s.retries !== undefined && !(Number.isInteger(s.retries) && s.retries >= 0 && s.retries <= MAX_RETRIES)) problems.push(`${at}: "retries" must be a whole number from 0 to ${MAX_RETRIES}`)
     if (s.kind === 'talk') {
       if (s.handoff !== undefined && typeof s.handoff !== 'boolean') problems.push(`${at}: "handoff" must be true or false`)
       // (wrapTo must name a LATER step: checked once every step is known, below)
@@ -703,11 +706,16 @@ export function checkFiles(step, vars) {
   return d && d.path ? [fill(d.path, vars)].filter(isSafePath) : []
 }
 
-// After a failed done-check: retry (up to MAX_RETRIES) or block.
+// How many retries a step gets: its own "retries", else MAX_RETRIES.
+export function retriesOf(step) {
+  return step && Number.isInteger(step.retries) ? step.retries : MAX_RETRIES
+}
+
+// After a failed done-check: retry (up to the step's retries) or block.
 export function onFail(state, step, why) {
   const n = (state.retries[step.id] || 0) + 1
   const retries = { ...state.retries, [step.id]: n }
-  if (n > MAX_RETRIES) {
+  if (n > retriesOf(step)) {
     return { state: { ...state, retries, status: 'blocked', blocked: { step: step.id, why } }, action: 'block' }
   }
   return { state: { ...state, retries }, action: 'retry', attempt: n + 1 }

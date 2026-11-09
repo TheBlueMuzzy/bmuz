@@ -255,7 +255,7 @@ async function settle($: any, step: any, verdict: any, result: any) {
   const undone = await rollback($, step)
   await journal($, { ev: 'blocked', step: step.id, why: verdict.why, rolledBack: undone })
   await save($)
-  $.ui.toast(`BMUZ: step ${step.id} is BLOCKED after ${E.MAX_RETRIES} retries: ${verdict.why}`)
+  $.ui.toast(`BMUZ: step ${step.id} is BLOCKED${E.retriesOf(step) ? ` after ${E.retriesOf(step)} retries` : ``}: ${verdict.why}`)
   return 'stop'
 }
 
@@ -481,7 +481,7 @@ async function stepDone($: any, e: any) {
   if (next === 'retry') {
     ctx.state = { ...ctx.state, current: step.id }
     await save($)
-    return { result: `Not done: ${verdict.why}. Fix it and call ${E.ENGINE_TOOL} again (retry ${ctx.state.retries[step.id]} of ${E.MAX_RETRIES}).` }
+    return { result: `Not done: ${verdict.why}. Fix it and call ${E.ENGINE_TOOL} again (retry ${ctx.state.retries[step.id]} of ${E.retriesOf(step)}).` }
   }
   return { result: `BLOCKED: ${verdict.why}. Stop and tell the creative in one line.` }
 }

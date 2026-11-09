@@ -27,6 +27,7 @@ Any other setting is refused (a typo like `stpes` would otherwise be ignored sil
 | `needs` | no | earlier step ids that must be finished first |
 | `description` | no | one line, for people |
 | `timeoutMs` | no | this step's own watchdog limit |
+| `retries` | no | how many times the step runs again after a failed check before it BLOCKS: 0 to 2 (default 2). Use 0 for a step whose refusal is a verdict, not a flake — running it again would only say the same (Define's `stage`) |
 | `always` | no | `true` = the step still runs when the creative wraps up early (below) |
 
 A step runs when everything it `needs` is finished. A step can only need steps **above** it.

@@ -72,6 +72,22 @@ test('check 13: a failed done-check retries twice, then BLOCKS', () => {
   assert.equal(E.judgeTool(P, r3.state, { tool: 'Read' }).allow, false)
 })
 
+test('F218: a step with "retries": 0 BLOCKS on its first failure (a refusal that is a verdict); a bad value is refused', () => {
+  const step = { ...E.stepById(P, 'plan'), retries: 0 }
+  const s = E.begin(at(['name', 'approve']), step, 1)
+  const r = E.onFail(s, step, 'Not ready for Design: the pillars are still open')
+  assert.equal(r.action, 'block')
+  assert.equal(r.state.blocked.why, 'Not ready for Design: the pillars are still open')
+  assert.equal(E.retriesOf(step), 0)
+  assert.equal(E.retriesOf(E.stepById(P, 'plan')), E.MAX_RETRIES)
+  for (const bad of [-1, 1.5, E.MAX_RETRIES + 1, 'none']) {
+    const p = JSON.parse(JSON.stringify(P))
+    p.steps.find(x => x.id === 'plan').retries = bad
+    assert.ok(E.checkPipeline(p).some(m => /"retries" must be a whole number/.test(m)), String(bad))
+  }
+  assert.equal(E.stepById(JSON.parse(readFileSync(new URL('../plugin/pipelines/define.json', import.meta.url), 'utf8')), 'stage').retries, 0)
+})
+
 test('done-checks read results and files', () => {
   const v = { name: 'Moon Goat' }
   assert.equal(E.doneCheck(E.stepById(P, 'name'), v, { result: { name: 'Moon Goat' } }).ok, true)
