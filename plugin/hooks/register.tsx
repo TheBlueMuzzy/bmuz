@@ -394,7 +394,8 @@ async function offerNext($: any, go: boolean) {
   const nx = E.nextOf(ctx.pipeline, ctx.state.results)
   if (!nx) return false
   const stage = E.stageOf(nx.pipeline)
-  const from = E.stageOf(ctx.pipeline.id)?.name ?? ctx.pipeline.id
+  // (a pipeline that isn't a stage — Discover since F228 — still reads as a name: "Discover is done. On to Define?")
+  const from = E.stageOf(ctx.pipeline.id)?.name ?? ctx.pipeline.id.charAt(0).toUpperCase() + ctx.pipeline.id.slice(1)
   const to = stage?.name ?? nx.pipeline
   if (!(await $.fs.exists(`${ctx.root}/pipelines/${nx.pipeline}.json`)) || !stage) {
     await journal($, { ev: 'stage.not-on-engine', to: nx.pipeline })
