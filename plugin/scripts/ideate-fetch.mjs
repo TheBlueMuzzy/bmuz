@@ -150,9 +150,142 @@ export function sharedMd({ date, sources, listed, unread }) {
   return out.join('\n') + '\n'
 }
 
-// ---- Google Drive (F228 task 2): filled in below ----
-export function readLink(link, c) {
-  c.fail(link, 'a web link: paste its text instead')
+// ---- Google Drive (F228 task 2): through the gws CLI, read-only ----
+// Only three calls are ever made: drive files get (metadata, or a file's own bytes), drive files list (a folder's
+// files) and drive files export (a Google Doc / Sheet / Slides as text). Nothing is written to Drive; no Gmail.
+const ID_RE = /^[A-Za-z0-9_-]{10,200}$/
+export const GOOGLE_TYPES = {
+  'application/vnd.google-apps.document': ['text/plain', 'a Google Doc'],
+  'application/vnd.google-apps.spreadsheet': ['text/csv', 'a Google Sheet (its first sheet)'],
+  'application/vnd.google-apps.presentation': ['text/plain', 'Google Slides'],
+}
+const FOLDER = 'application/vnd.google-apps.folder'
+
+// The Drive id in a link (a folder, a file, a Doc / Sheet / Slides), or null for any other link.
+export function driveId(link) {
+  let u
+  try { u = new URL(String(link).trim()) } catch (e) { return null }
+  if (!/(^|\.)(drive|docs)\.google\.com$/i.test(u.hostname)) return null
+  const m = u.pathname.match(/\/folders\/([A-Za-z0-9_-]+)/) || u.pathname.match(/\/d\/([A-Za-z0-9_-]+)/) || [null, u.searchParams.get('id')]
+  return m[1] && ID_RE.test(m[1]) ? m[1] : null
+}
+
+// How to run gws from node: no shell (a Drive id travels inside a JSON argument). On Windows the npm shim is a .cmd
+// file, so its own launcher script is run with node. Tests may stand in a fake (BMUZ_GWS, only with BMUZ_TEST=1).
+export function gwsCommand(env = process.env) {
+  if (env.BMUZ_TEST === '1' && env.BMUZ_GWS) return [process.execPath, env.BMUZ_GWS]
+  if (process.platform === 'win32') {
+    for (const dir of String(env.PATH || env.Path || '').split(delimiter)) {
+      const launcher = join(dir, 'node_modules', '@googleworkspace', 'cli', 'run-gws.js')
+      if (dir && existsSync(join(dir, 'gws.cmd')) && existsSync(launcher)) return [process.execPath, launcher]
+    }
+  }
+  return ['gws']
+}
+
+// The accounts to try, in order (~/.claude/references/gws.md): personal (gws's default), then muzzymade.
+export function gwsAccounts(home = homedir()) {
+  const out = [{ name: 'personal', env: {} }]
+  const muzzy = join(home, '.config', 'gws-muzzy')
+  if (existsSync(muzzy)) out.push({ name: 'muzzymade', env: { GOOGLE_WORKSPACE_CLI_CONFIG_DIR: muzzy } })
+  return out
+}
+
+export function gwsRunner(cmd = gwsCommand(), accounts = gwsAccounts()) {
+  let account = accounts[0]
+  const run = (args, { cwd } = {}) => {
+    const r = spawnSync(cmd[0], [...cmd.slice(1), ...args], { cwd, encoding: 'utf8', env: { ...process.env, ...account.env }, timeout: 120_000, maxBuffer: 32 * 1024 * 1024, windowsHide: true })
+    if (r.error) return { ok: false, missing: r.error.code === 'ENOENT', why: String(r.error.message || r.error) }
+    const out = String(r.stdout || '')
+    let json = null
+    try { json = JSON.parse(out.slice(out.indexOf('{'))) } catch (e) { json = null }
+    const said = clean(`${(json && json.error && (json.error.message || json.error)) || ''} ${String(r.stderr || '').replace(/Using keyring backend: \w+/g, '')}`).slice(0, 200)
+    return r.status === 0 && !(json && json.error) ? { ok: true, json } : { ok: false, why: said || `gws exited ${r.status}` }
+  }
+  return {
+    // The first account that can see the file; it stays the account for everything under it.
+    meta(id) {
+      let last = null
+      for (const a of accounts) {
+        account = a
+        const r = run(['drive', 'files', 'get', '--params', JSON.stringify({ fileId: id, fields: 'id,name,mimeType,size', supportsAllDrives: true })])
+        if (r.ok && r.json && r.json.id) return { ok: true, file: r.json, account: a.name }
+        last = r
+        if (r.missing) break
+      }
+      return { ok: false, missing: !!(last && last.missing), why: last ? last.why : 'no account to try' }
+    },
+    list(folderId) {
+      const files = []
+      let pageToken
+      for (let page = 0; page < 10; page++) {
+        const params = { q: `'${folderId}' in parents and trashed = false`, fields: 'files(id,name,mimeType,size),nextPageToken', pageSize: 200, supportsAllDrives: true, includeItemsFromAllDrives: true, ...(pageToken ? { pageToken } : {}) }
+        const r = run(['drive', 'files', 'list', '--params', JSON.stringify(params)])
+        if (!r.ok) return { ok: false, why: r.why, files }
+        files.push(...((r.json && r.json.files) || []))
+        pageToken = r.json && r.json.nextPageToken
+        if (!pageToken) break
+      }
+      return { ok: true, files }
+    },
+    // A file's text: a Google Doc / Sheet / Slides exported, anything else downloaded as it is. Into a temp folder.
+    text(file) {
+      const tmp = mkdtempSync(join(tmpdir(), 'bmuz-drive-'))
+      try {
+        const g = GOOGLE_TYPES[file.mimeType]
+        const r = g
+          ? run(['drive', 'files', 'export', '--params', JSON.stringify({ fileId: file.id, mimeType: g[0] }), '-o', 'out.txt'], { cwd: tmp })
+          : run(['drive', 'files', 'get', '--params', JSON.stringify({ fileId: file.id, alt: 'media', supportsAllDrives: true }), '-o', 'out.txt'], { cwd: tmp })
+        if (!r.ok) return { ok: false, why: r.why }
+        const out = join(tmp, 'out.txt')
+        if (!existsSync(out)) return { ok: false, why: 'nothing came back' }
+        const buf = readFileSync(out)
+        if (buf.includes(0)) return { ok: false, binary: true }
+        return { ok: true, text: buf.toString('utf8').replace(/^﻿/, '') }
+      } finally {
+        rmSync(tmp, { recursive: true, force: true })
+      }
+    },
+  }
+}
+
+// One link: a Drive folder (walked, its folders too), a Drive file or Doc; any other link is named, not fetched.
+export function readLink(link, c, gws = null) {
+  const id = driveId(link)
+  if (!id) { c.fail(link, 'a web link, not Google Drive: paste its text instead'); return }
+  const g = gws || gwsRunner()
+  const m = g.meta(id)
+  if (!m.ok) {
+    c.fail(link, m.missing ? "Google Drive can't be reached from here (the gws tool isn't installed): paste the text instead" : `Google Drive said no (${m.why}): is it shared with one of your two accounts?`)
+    return
+  }
+  const where = `Google Drive, ${m.account} account`
+  let seen = 0
+  const one = (file, path) => {
+    if (/\.meta$/i.test(file.name)) return // Unity's bookkeeping beside every asset
+    const name = `Drive · ${path}`
+    const g2 = GOOGLE_TYPES[file.mimeType]
+    const textLike = g2 || /^text\//.test(file.mimeType || '') || file.mimeType === 'application/json' || isText(file.name)
+    if (!textLike) { c.list(name, file.mimeType && file.mimeType.startsWith('application/vnd.google-apps.') ? 'a Google file that has no text form' : kindOf(file.name), where); return }
+    if (!g2 && Number(file.size || 0) > 2_000_000) { c.list(name, 'a text file too big to read in one pass', where); return }
+    const t = g.text(file)
+    if (t.ok) c.add(name, t.text)
+    else if (t.binary) c.list(name, kindOf(file.name), where)
+    else c.fail(name, `Google Drive said no (${t.why})`)
+  }
+  const walk = (folderId, path, depth) => {
+    const l = g.list(folderId)
+    if (!l.ok) { c.fail(`Drive · ${path}`, `couldn't list the folder (${l.why})`); return }
+    for (const f of l.files.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)))) {
+      if (seen >= MAX_FILES) { c.fail(`Drive · ${path}/…`, `more than ${MAX_FILES} files: the rest weren't looked at`); return }
+      if (!f || !ID_RE.test(String(f.id || ''))) continue // (an id from Drive is re-checked before it goes into a command)
+      if (f.mimeType === FOLDER) { if (depth < 3) walk(f.id, `${path}/${f.name}`, depth + 1); continue }
+      seen++
+      one(f, `${path}/${f.name}`)
+    }
+  }
+  if (m.file.mimeType === FOLDER) walk(id, m.file.name, 0)
+  else one(m.file, m.file.name)
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main()

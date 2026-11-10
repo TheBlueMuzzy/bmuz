@@ -13,7 +13,7 @@ import { BY, NEED_KEYS, answersFrom, checkSoFar, freshIdeate, ideateRun, markAns
 import { mergeDoc } from '../plugin/scripts/discover-doc.mjs'
 import { readShelves, sourceDoc } from '../plugin/scripts/define-doc.mjs'
 import { digest } from '../plugin/scripts/define-digest.mjs'
-import { kindOf } from '../plugin/scripts/ideate-fetch.mjs'
+import { driveId, kindOf } from '../plugin/scripts/ideate-fetch.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const scripts = join(here, '..', 'plugin', 'scripts')
@@ -165,6 +165,53 @@ test('the reading script: text read, a folder walked, the rest listed by what it
     assert.match(md, /## Listed, not read \(2\) — what they appear to be\n- Assets\/art\.psd — a Photoshop file \(art\)\n- Assets\/ReversePong\.unity — a Unity scene\n/)
     assert.match(md, /## The text\n\n### your one-breath answer\n\nBasically, standard pong/)
     assert.equal(kindOf('x.blend'), 'a 3D model')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('Drive links: the id is read from any Drive or Docs link; other links are not Drive', () => {
+  assert.equal(driveId('https://drive.google.com/drive/folders/1mGTFuDLcFBOKxRrR2s9ylI7LeQxOFN74?usp=sharing'), '1mGTFuDLcFBOKxRrR2s9ylI7LeQxOFN74')
+  assert.equal(driveId('https://docs.google.com/document/d/1AbCdEfGhIjKlMnOp/edit'), '1AbCdEfGhIjKlMnOp')
+  assert.equal(driveId('https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp/view'), '1AbCdEfGhIjKlMnOp')
+  assert.equal(driveId('https://drive.google.com/open?id=1AbCdEfGhIjKlMnOp'), '1AbCdEfGhIjKlMnOp')
+  assert.equal(driveId('https://evil.example.com/drive/folders/1AbCdEfGhIjKlMnOp'), null)
+  assert.equal(driveId('https://drive.google.com/drive/folders/x\'y'), null)
+  assert.equal(driveId('not a link'), null)
+})
+
+test('Drive end to end (a fake gws): a folder walked, Docs exported, code read, the rest listed; the second account tried; read-only', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bmuz-drive-'))
+  try {
+    mkdirSync(join(dir, '.bmuz'))
+    const data = join(dir, 'world.json')
+    const log = join(dir, 'calls.jsonl')
+    writeFileSync(data, JSON.stringify({ files: {
+      FOLDER0000001: { name: 'Xong', mimeType: 'application/vnd.google-apps.folder' },
+      DOC000000001: { name: 'Xong ideas', mimeType: 'application/vnd.google-apps.document', parent: 'FOLDER0000001', text: '3s make the ball curve.' },
+      SUB000000001: { name: 'Assets', mimeType: 'application/vnd.google-apps.folder', parent: 'FOLDER0000001' },
+      CS0000000001: { name: 'Ball.cs', mimeType: 'text/x-csharp', size: '30', parent: 'SUB000000001', text: 'public int speed = 10;' },
+      META00000001: { name: 'Ball.cs.meta', mimeType: 'application/octet-stream', parent: 'SUB000000001', text: 'guid' },
+      UNITY0000001: { name: 'ReversePong.unity', mimeType: 'application/octet-stream', size: '22360', parent: 'SUB000000001' },
+      PNG000000001: { name: 'paddle.png', mimeType: 'image/png', parent: 'SUB000000001' },
+      WORK00000001: { name: 'Client pitch', mimeType: 'application/vnd.google-apps.document', owner: 'muzzymade', text: 'A work pitch.' },
+    } }))
+    mkdirSync(join(dir, 'home', '.config', 'gws-muzzy'), { recursive: true })
+    const show = { links: ['https://drive.google.com/drive/folders/FOLDER0000001', 'https://docs.google.com/document/d/WORK00000001/edit', 'https://drive.google.com/file/d/MISSING00001/view', 'https://example.com/x'] }
+    writeFileSync(join(dir, '.bmuz', 'state.json'), JSON.stringify({ pipeline: 'ideate', resultsBy: { show } }))
+    const env = { ...process.env, BMUZ_TEST: '1', BMUZ_GWS: join(here, 'fixtures', 'fake-gws.mjs'), FAKE_GWS_DATA: data, FAKE_GWS_LOG: log, HOME: join(dir, 'home'), USERPROFILE: join(dir, 'home') }
+    const r = spawnSync('node', [join(scripts, 'ideate-fetch.mjs')], { cwd: dir, encoding: 'utf8', env })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    const j = JSON.parse(readFileSync(join(dir, '.planning', 'research', 'shared.json'), 'utf8'))
+    assert.deepEqual(j.sources.map(s => [s.name, s.text]), [['Drive · Xong/Assets/Ball.cs', 'public int speed = 10;'], ['Drive · Xong/Xong ideas', '3s make the ball curve.'], ['Drive · Client pitch', 'A work pitch.']])
+    assert.deepEqual(j.listed.map(l => [l.name, l.kind, l.where]), [['Drive · Xong/Assets/paddle.png', 'an image', 'Google Drive, personal account'], ['Drive · Xong/Assets/ReversePong.unity', 'a Unity scene', 'Google Drive, personal account']])
+    assert.equal(j.unread.length, 2)
+    assert.match(j.unread[0].why, /^Google Drive said no \(File not found: MISSING00001\): is it shared with one of your two accounts\?$/)
+    assert.equal(j.unread[1].what, 'https://example.com/x')
+    const calls = readFileSync(log, 'utf8').trim().split('\n').map(l => JSON.parse(l))
+    assert.ok(calls.every(c => c.args[0] === 'drive' && c.args[1] === 'files' && ['get', 'list', 'export'].includes(c.args[2])), 'only drive files get / list / export')
+    assert.ok(calls.some(c => c.account === 'muzzymade' && c.args[2] === 'export')) // the work doc came through the second account
+    assert.ok(!calls.some(c => c.args.join(' ').includes('Ball.cs.meta'))) // .meta never fetched
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
