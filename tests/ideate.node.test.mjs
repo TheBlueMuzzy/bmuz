@@ -252,3 +252,25 @@ test('the ideate pipeline: show → fetch → read → so-far (shown) → gaps �
   assert.equal(p.next.pipeline, 'define')
   assert.ok(existsSync(join(here, '..', 'plugin', 'pipelines', 'discover.json'))) // kept on disk, no longer a stage
 })
+
+test('task 3: a plain-text question is found; the nudge names it, twice at most; text before a box is measured', () => {
+  const step = { id: 'gaps' }
+  assert.equal(E.plainQuestion('Here is the game so far.\n\nWhat do 2-10 do?'), 'What do 2-10 do?')
+  assert.equal(E.plainQuestion('1. **How does a match end?**'), 'How does a match end?**')
+  assert.equal(E.plainQuestion('All saved. Nothing to ask.'), null)
+  assert.match(E.nudgeFor(step, 'Tell me the concept in your own words?', 0), /asked "Tell me the concept in your own words\?" in plain text[^\n]*Ask it again with AskUserQuestion/)
+  assert.match(E.nudgeFor(step, 'Thanks, noted.', 1), /ended without the question box or step_done/)
+  assert.equal(E.nudgeFor(step, 'What now?', E.MAX_NUDGES), null)
+  const rows = [
+    { role: 'user', text: 'BMUZ step "gaps"', toolUses: [] },
+    { role: 'assistant', text: 'Let me read it.', toolUses: [{ tool: 'Read' }] },
+    { role: 'user', text: '', toolUses: [], toolResults: [{ text: 'file' }] },
+    { role: 'assistant', text: 'Research questions:\n1. a\n2. b\n3. c\n4. d', toolUses: [{ tool: 'AskUserQuestion' }] },
+  ]
+  assert.equal(E.turnText(rows), 'Let me read it.\nResearch questions:\n1. a\n2. b\n3. c\n4. d')
+  assert.match(E.hiddenTextProblem(E.turnText(rows)), /6 lines of plain text .* came before this question box/)
+  assert.equal(E.hiddenTextProblem('Two quick gaps, frame first.'), null)
+  // every live talk step is told; an auto run gets its own never-ask rule instead
+  assert.match(E.talkPrompt({ id: 'x', results: [] }, 'craft', '', false), /every question to the creative goes through AskUserQuestion/)
+  assert.ok(!/every question to the creative goes through AskUserQuestion/.test(E.talkPrompt({ id: 'x', results: [] }, 'craft', '', true)))
+})

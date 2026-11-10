@@ -365,6 +365,7 @@ export function talkPrompt(step, craft, why, auto, decided = [], more = {}) {
   const lines = [`BMUZ step "${step.id}" — this message comes from the BMUZ engine, not the creative; do the step without commenting on the engine.`]
   if (why) lines.push(`The last try did not pass: ${why}.`)
   if (auto) lines.push(`Auto run: the creative is away. Never ask and never wait for an answer, with AskUserQuestion or in plain text. Where you would ask, pick the sensible default, list it in the result's "asks" as {"question": "...", "picked": "..."}, and carry on.`)
+  else lines.push(ASK_RULE)
   // The recap carries what earlier steps collected, so the step works the same after a new session or a
   // compacted chat (the conversation alone would forget it).
   const recap = Object.fromEntries(Object.entries(more.recap || {}).filter(([, v]) => v !== undefined && v !== null))
@@ -753,6 +754,51 @@ export function isPersonDeclining(res) {
   // (the whole result is read: which field carries the words isn't in the mod docs)
   const text = JSON.stringify(res ?? '')
   return /doesn't want to proceed|tool use was rejected/i.test(text)
+}
+
+// ---- Asking only through the question box (F228 task 3; discover-live-review-2026-11-09.md S3 and #20b) ----
+// Every live talk step is told this, whatever its craft note says.
+export const ASK_RULE = 'Asking: every question to the creative goes through AskUserQuestion (their own words go in its "Other"). Never ask anything in plain text: the creative doesn\'t see it as a question and the run waits (a live run stalled 18 minutes on one). Nothing they must read goes in plain text in the same turn as the question box: the box covers it. Put it inside the question or the options\' descriptions, with at most one short line before the box. A turn of a talk step ends only with the box answered and more to do, or with step_done.'
+export const MAX_NUDGES = 2
+
+// The question a message asks in plain text (one of its last lines ending in "?"), or null.
+export function plainQuestion(text) {
+  const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).slice(-8)
+  for (let i = lines.length - 1; i >= 0; i--) if (/\?\s*["'”’)*_]*\s*$/.test(lines[i])) return lines[i].replace(/^[-*>\d.)\s]+/, '').slice(0, 200)
+  return null
+}
+
+// What the engine says when a live talk step's turn ends with neither the box nor step_done (the run would wait for a
+// message the creative doesn't know to type). n = nudges already sent for this try; null once MAX_NUDGES are used
+// (the watchdog then covers it, as before).
+export function nudgeFor(step, answer, n = 0) {
+  if (n >= MAX_NUDGES) return null
+  const q = plainQuestion(answer)
+  const head = `BMUZ engine — this message comes from the BMUZ engine, not the creative (step "${step.id}").`
+  return q
+    ? `${head} The last message asked "${q}" in plain text, where the creative can miss it and the run waits. Ask it again with AskUserQuestion (their own words go in "Other"), with nothing else written outside the box.`
+    : `${head} The turn ended without the question box or step_done, so the run would wait. Carry on with the step: ask with AskUserQuestion, or call ${ENGINE_TOOL} if it's finished.`
+}
+
+// The assistant's plain text in the current turn so far: every assistant message after the last real prompt (a user
+// message that isn't only tool results). rows = $.session.messages()'s rows.
+export function turnText(rows) {
+  const out = []
+  for (let i = (Array.isArray(rows) ? rows.length : 0) - 1; i >= 0; i--) {
+    const m = rows[i]
+    if (!m) continue
+    if (m.role === 'user' && !(Array.isArray(m.toolResults) && m.toolResults.length)) break
+    if (m.role === 'assistant' && typeof m.text === 'string' && m.text.trim()) out.unshift(m.text.trim())
+  }
+  return out.join('\n')
+}
+
+// Is there more plain text before a question box than one short line? Returns the refusal's words, or null.
+export function hiddenTextProblem(text) {
+  const t = String(text || '').trim()
+  const lines = t.split(/\r?\n/).filter(l => l.trim()).length
+  if (t.length <= 300 && lines <= 3) return null
+  return `BMUZ engine: ${lines} line${lines === 1 ? '' : 's'} of plain text (${t.length} characters) came before this question box in the same turn, and the box covers them: the creative can't read them (live run: "i don't see 5 research questions that you're referring to"). Ask again with everything they need to read inside the question or the options' descriptions, and at most one short line before the box.`
 }
 
 // The text of a question box's answer, whatever field carries it (the mod docs don't fix the result's shape).

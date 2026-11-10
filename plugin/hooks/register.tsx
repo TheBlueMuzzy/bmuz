@@ -23,6 +23,11 @@ let hiddenNotes: string | null = null
 // The flow try this session already asked Claude to launch ("hello#2"). A "bmuz go" while it is on its
 // way must not ask again (live check 2026-11-08: the second ask made Claude refuse the next real try).
 let flowAskedHere = ''
+// F228 task 3: a live talk step's turn that ends with neither the question box nor step_done gets the engine's nudge
+// (a plain-text question stalled a live run 18.6 minutes, until the watchdog). Counted per step try; an answered
+// box starts the count over. quietTurn: the creative's own "bmuz doctor / undo / …" turn, which ends open on purpose.
+let nudges = { key: '', n: 0 }
+let quietTurn = false
 
 const SAFE_DENY = 'BMUZ engine hit an error in its own code, so it refused this action to be safe. Run /bmuz-doctor.'
 
@@ -872,7 +877,24 @@ export const register: Register = on => {
       // can answer, so from here this session is an auto run and the turn-end rule keeps it moving.
       // A person pressing Esc on the question is someone saying no, not nobody being there (live check
       // 2026-11-08: Esc turned a live window into an auto run, which then blocked plan mode's hand-in).
+      // F228 task 3 (b): plain text written before the box in the same turn is covered by it (live run #20b). The
+      // transcript is read to find it; when it can't be read the box goes ahead (a soft check: the step's own tool
+      // limits still hold) and the journal says it went unchecked.
+      const cur = E.stepById(ctx.pipeline, ctx.state.current)
+      if (cur && cur.kind === 'talk' && ctx.state.status === 'working') {
+        let rows: any = null
+        try { rows = await $.session.messages() } catch (err) { rows = null }
+        if (!Array.isArray(rows)) await journal($, { ev: 'ask.unchecked', step: cur.id, why: 'the transcript could not be read' })
+        else {
+          const hidden = E.hiddenTextProblem(E.turnText(rows))
+          if (hidden) {
+            await journal($, { ev: 'deviation', step: cur.id, tool: 'AskUserQuestion', agentId: null, why: hidden })
+            return { deny: hidden }
+          }
+        }
+      }
       const res: any = await next(e)
+      if (!res?.deny && !res?.isError) nudges = { key: '', n: 0 }
       if ((res?.deny || res?.isError) && !E.isPersonDeclining(res)) {
         ctx.auto = true
         await journal($, { ev: 'auto.detected', why: 'the question tool was refused: nobody can answer in this session' })
@@ -952,7 +974,11 @@ export const register: Register = on => {
       return next({ ...(e as any), context: [...((e as any).context ?? []), notes] })
     }
     if (kind === 'plugin' || kind === 'peer') return next(e)
-    const say = (words: string) => next({ ...(e as any), text: `${text}\n(${words}\nShow the creative these lines as they are, then end your turn.)` })
+    quietTurn = false
+    const say = (words: string) => {
+      quietTurn = true
+      return next({ ...(e as any), text: `${text}\n(${words}\nShow the creative these lines as they are, then end your turn.)` })
+    }
     if (/^\s*bmuz new\s*$/i.test(text)) return say(`BMUZ engine: this folder is already a BMUZ project (bmuz.json says "${ctx.cfg?.pipeline ?? '?'}"). "bmuz go" carries on; "bmuz stage <stage>" moves to another stage.`)
     // "bmuz stage <stage> [step]": move to any stage (the current one's record is kept in .bmuz/stages/). Works while a
     // half-finished run of another pipeline holds the folder (bmuz.json changed by hand), which refuses all else.
@@ -1038,9 +1064,22 @@ export const register: Register = on => {
             await save($)
             await startTalk($, step, 'the turn ended without step_done; in an auto run nobody will answer, so take the default and finish')
           }
+        } else if (!quietTurn && (e as any).reason === 'answer' && !(e as any).isAborted) {
+          // A live window: nobody types into a plain-text question they didn't notice. The engine says so at once
+          // (at most MAX_NUDGES times per try) instead of waiting for the watchdog. Not after the creative's own
+          // "bmuz doctor / undo" (those turns end open on purpose) or an Esc.
+          const key = `${step.id}#${ctx.state.retries[step.id] || 0}`
+          if (nudges.key !== key) nudges = { key, n: 0 }
+          const text = E.nudgeFor(step, String((e as any).answer ?? ''), nudges.n)
+          if (text) {
+            nudges.n += 1
+            await journal($, { ev: 'nudge', step: step.id, n: nudges.n, question: E.plainQuestion(String((e as any).answer ?? '')) })
+            await $.prompt.submit({ text })
+          }
         }
       }
     }
+    quietTurn = false
     return r
   })
 

@@ -1021,3 +1021,44 @@ test('F228: the creative\'s answer to the question box is journaled, so a script
   await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'How does it end?' }] } as any)
   expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"answer","step":"ask","text":"User has answered your questions: \\"How does it end\?\\"=\\"first to 11\\""/)
 })
+
+// ---- F228 task 3: asking only through the question box ----
+test('F228: a live talk step whose turn ends with a plain-text question is nudged at once (twice at most), not left to the watchdog', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = shown(on)
+  await start($, true)
+  const done = (id: string, answer: string, more: any = {}) => $.turn.complete({ answer, durationMs: 1, isAborted: false, turnId: id, reason: 'answer', ...more } as any)
+  await done('t1', 'Here is what I read.\n\nTell me the concept in your own words?')
+  expect(prompts[prompts.length - 1]).toMatch(/^BMUZ engine — this message comes from the BMUZ engine, not the creative \(step "ask"\)\. The last message asked "Tell me the concept in your own words\?" in plain text/)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"nudge","step":"ask","n":1,"question":"Tell me the concept in your own words\?"/)
+  await done('t2', 'Fine.')
+  expect(prompts[prompts.length - 1]).toMatch(/ended without the question box or step_done/)
+  const before = prompts.length
+  await done('t3', 'Still here?')
+  expect(prompts.length).toBe(before) // two nudges used: the watchdog covers it from here
+  // an Esc, or the creative's own "bmuz doctor" turn, is never nudged
+  await done('t4', 'What next?', { isAborted: true, reason: 'aborted' })
+  await $.prompt.submit({ text: 'bmuz doctor' } as any)
+  await done('t5', 'BMUZ doctor · all good. Anything else?')
+  expect(prompts.filter(p => /^BMUZ engine — this message comes from the BMUZ engine, not the creative \(step "ask"\)/.test(p)).length).toBe(2)
+})
+
+test('F228: a question box with a wall of plain text before it in the same turn is refused (the box would cover it); one short line is fine', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  let rows: any[] = []
+  on('session.messages', () => ({ value: rows }))
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: 'User has answered your questions: "Q?"="A"' }))
+  const { w } = shown(on)
+  await start($, true)
+  rows = [
+    { role: 'user', text: 'BMUZ step "ask"', toolUses: [] },
+    { role: 'assistant', text: 'Those 5 research questions:\n1. What made Pong feel good?\n2. Readability?\n3. Comebacks?\n4. Online?\n5. Portals?', toolUses: [{ tool_use_id: 'tu1', tool: 'AskUserQuestion', input: {} }] },
+  ]
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Keep them?' }] } as any)
+  expect(refused(r)).toBe(true)
+  expect(why(r)).toMatch(/came before this question box in the same turn, and the box covers them/)
+  rows = [rows[0], { role: 'assistant', text: 'Two quick gaps, frame first.', toolUses: [{ tool_use_id: 'tu2', tool: 'AskUserQuestion', input: {} }] }]
+  const ok: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Q?' }] } as any)
+  expect(refused(ok)).toBe(false)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"answer","step":"ask"/)
+})
