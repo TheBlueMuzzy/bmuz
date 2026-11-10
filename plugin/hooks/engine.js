@@ -756,12 +756,12 @@ export function fillDeep(v, vars) {
 export function isPersonDeclining(res) {
   // (the whole result is read: which field carries the words isn't in the mod docs)
   const text = JSON.stringify(res ?? '')
-  return /doesn't want to proceed|tool use was rejected/i.test(text)
+  return /doesn't want to proceed|tool use was rejected|user rejected tool use|interrupted by user/i.test(text)
 }
 
 // ---- Asking only through the question box (F228 task 3; discover-live-review-2026-11-09.md S3 and #20b) ----
 // Every live talk step is told this, whatever its craft note says.
-export const ASK_RULE = 'Asking: every question to the creative goes through AskUserQuestion (their own words go in its "Other"). Never ask anything in plain text: the creative doesn\'t see it as a question and the run waits (a live run stalled 18 minutes on one). Nothing they must read goes in plain text in the same turn as the question box: the box covers it. Put it inside the question or the options\' descriptions, with at most one short line before the box. A turn of a talk step ends only with the box answered and more to do, or with step_done. Options: only real answers, two is fine, never filler. Never an option that means "I\'ll type or paste it" (picking an option ends the question with nothing typed): when you want their words, a link or links, say in the question itself "type or paste it in \'Type something\' below" — one or more links are fine, one item per link.'
+export const ASK_RULE = 'Asking: every question to the creative goes through AskUserQuestion (their own words go in its "Other"). Never ask anything in plain text: the creative doesn\'t see it as a question and the run waits (a live run stalled 18 minutes on one). Nothing they must read goes in plain text in the same turn as the question box: the box covers it. Put it inside the question or the options\' descriptions, with at most one short line before the box. A turn of a talk step ends only with the box answered and more to do, or with step_done. Options: only real answers, two is fine, never filler. Never an option that means "I\'ll type or paste it" (picking an option ends the question with nothing typed): when you want their words, a link or links, say in the question itself "paste it in \'Type something.\' below" — one or more links are fine, one item per link. ("Type something." is Claude Code\'s own label for the box\'s field; it can\'t be renamed, so name it exactly.) Anything that asks them to put files in this folder gives the folder\'s full path, so they can find it. If the creative closes the box without an answer (Esc, or "Type something." sent empty — the same thing to you), write ONE short line: "Nothing came through. Paste it as your next message, or say carry on." and end your turn; their next message is the answer. Never repeat it.'
 export const MAX_NUDGES = 2
 
 // The question a message asks in plain text (one of its last lines ending in "?"), or null.

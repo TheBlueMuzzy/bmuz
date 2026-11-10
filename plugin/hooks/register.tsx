@@ -27,6 +27,7 @@ let flowAskedHere = ''
 // (a plain-text question stalled a live run 18.6 minutes, until the watchdog). Counted per step try; an answered
 // box starts the count over. quietTurn: the creative's own "bmuz doctor / undo / …" turn, which ends open on purpose.
 let nudges = { key: '', n: 0 }
+let declinedBox = false // the creative closed the last question box without answering (no nudge after it)
 let quietTurn = false
 // creativeTurn: the turn began with the creative's own typed message (not the engine's, not a bmuz command)
 let creativeTurn = false
@@ -903,7 +904,8 @@ export const register: Register = on => {
         }
       }
       const res: any = await next(e)
-      if (!res?.deny && !res?.isError) nudges = { key: '', n: 0 }
+      if (!res?.deny && !res?.isError) { nudges = { key: '', n: 0 }; declinedBox = false }
+      if ((res?.deny || res?.isError) && E.isPersonDeclining(res)) declinedBox = true
       if ((res?.deny || res?.isError) && !E.isPersonDeclining(res)) {
         ctx.auto = true
         await journal($, { ev: 'auto.detected', why: 'the question tool was refused: nobody can answer in this session' })
@@ -1074,6 +1076,12 @@ export const register: Register = on => {
             await save($)
             await startTalk($, step, 'the turn ended without step_done; in an auto run nobody will answer, so take the default and finish')
           }
+        } else if (declinedBox) {
+          // The creative closed the question box (Esc, or "Type something" sent empty — Claude Code can't tell them
+          // apart). Their next message is the answer: no nudge (live look 2026-11-10: two nudges made Claude repeat
+          // "still paused" while the creative looked for a paste field).
+          declinedBox = false
+          await journal($, { ev: 'ask.declined', step: step.id })
         } else if (!quietTurn && (e as any).reason === 'answer' && !(e as any).isAborted && (!creativeTurn || E.plainQuestion(String((e as any).answer ?? '')))) {
           // (a turn the creative started — "what do you mean?" — answered in plain text is a conversation, not a stall:
           // nudged only when the reply itself asks them something in plain text)

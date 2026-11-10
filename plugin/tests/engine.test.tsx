@@ -141,6 +141,23 @@ test('live check 2026-11-08: a person pressing Esc on the question does not make
   expect(refused(exit)).toBe(false)
 })
 
+test('live look 2026-11-10: a question box closed without an answer (an empty "Type something.") is not nudged; the next open turn is', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  let reply: any = { result: 'User rejected tool use', isError: true }
+  on('tool.call', { tool: 'AskUserQuestion' }, () => reply)
+  const { w, prompts } = shown(on)
+  await start($, true)
+  const nudged = () => prompts.filter(p => /^BMUZ engine — this message comes from the BMUZ engine, not the creative \(step "ask"\)/.test(p)).length
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Your material?' }] } as any)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).not.toMatch(/"ev":"auto.detected"/)
+  await $.turn.complete({ answer: 'Nothing came through. Paste it as your next message, or say carry on.', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(nudged()).toBe(0)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"ask.declined"/)
+  // a later turn that stalls without the box is nudged as before
+  await $.turn.complete({ answer: 'Some thoughts.', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' } as any)
+  expect(nudged()).toBe(1)
+})
+
 test('live check 2026-11-08: "bmuz go" while this try\'s flow launch is on its way does not ask again', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const prompts: string[] = []
