@@ -9,7 +9,7 @@
       "kind": "talk",
       "needs": [],
       "description": "Where's your game right now? (and, when something exists, what you want from this pass)",
-      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "tools": ["AskUserQuestion", "mcp__bmuz__ask_paste", "ToolSearch", "Read", "Glob", "Grep"],
       "craft": "craft/start-opening.md",
       "results": ["where", "goal", "material"]
     },

@@ -10,7 +10,7 @@
       "kind": "talk",
       "needs": [],
       "description": "Show me what you have: the idea in one breath, and every file, folder or Drive link",
-      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "tools": ["AskUserQuestion", "mcp__bmuz__ask_paste", "ToolSearch", "Read", "Glob", "Grep"],
       "craft": "craft/ideate-show.md",
       "results": ["breath", "pasted", "files", "links"]
     },

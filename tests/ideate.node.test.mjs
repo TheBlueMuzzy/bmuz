@@ -286,12 +286,53 @@ test('live look 2026-11-10: an option that stands in for typing ("I\'ll paste th
   for (const ok of ['Read rules.md and notes.txt', 'Look in this folder again', "That's everything", 'No link — ask me the idea instead', 'Keep going', 'Send it to Define', 'Open it up', 'Nothing yet — help me find one'])
     assert.equal(E.fakeTypeOptionProblem(box(ok, 'drop your files here first, then pick this')), null, ok)
   assert.equal(E.fakeTypeOptionProblem(undefined), null)
-  // the engine's own paste option is the one honest one: it hands them the chat box
-  assert.equal(E.fakeTypeOptionProblem(box(E.PASTE_OPTION, 'next, into the chat — Ctrl+V works there')), null)
-  assert.ok(E.picksPaste(`Your questions have been answered: "Your material"="${E.PASTE_OPTION}".`))
-  assert.ok(!E.picksPaste('Your questions have been answered: "Your material"="Nothing to share yet".'))
-  // every live talk step is told the rule
-  assert.match(E.talkPrompt({ id: 'x', results: [] }, 'craft', '', false), /except the one engine option "Paste links or text"/)
+  // the refusal points at the paste panel; the old "Paste links or text" option is gone
+  assert.match(E.fakeTypeOptionProblem(box("I'll paste it")) || '', /mcp__bmuz__ask_paste/)
+  assert.equal(E.PASTE_OPTION, undefined)
+  // every live talk step is told: links or long text go to ask_paste, never the box
+  const notes = E.talkPrompt({ id: 'x', results: [] }, 'craft', '', false)
+  assert.match(notes, /Links, notes or any long text: never the box — call mcp__bmuz__ask_paste/)
+  assert.ok(!/Paste links or text/.test(notes))
+})
+
+test('live look 2026-11-10: the paste panel — its words, the folder as Windows writes it, the answer message, no stall', () => {
+  assert.equal(E.windowsPath('C:/Users/Muzzy/Documents/dev/.scratch/game'), 'C:\\Users\\Muzzy\\Documents\\dev\\.scratch\\game')
+  assert.equal(E.windowsPath('/c/Users/Muzzy/game'), 'C:\\Users\\Muzzy\\game')
+  assert.equal(E.windowsPath('C:\\Users\\x'), 'C:\\Users\\x')
+  assert.equal(E.windowsPath('/proj'), '/proj')
+  const paste = E.pasteRequest('opening', { question: 'What can I read?', folder: 'ignored: the engine knows' }, 'C:/games/lamp')
+  assert.deepEqual(paste, { step: 'opening', question: 'What can I read?', folder: 'C:\\games\\lamp' })
+  assert.equal(E.pasteRequest('opening', {}, 'C:/g').question, 'What can I read?')
+  const words = E.pasteLabels(paste)
+  assert.equal(words.placeholder, 'Paste your links here (Alt+V) — as many as you like, then Enter')
+  assert.equal(words.look, 'Look in this folder: C:\\games\\lamp')
+  assert.equal(words.never, "Never mind — let's take another approach")
+  // the answer, as the engine's own labelled message; pasted text verbatim, newlines kept
+  const links = 'https://drive.google.com/a\nhttps://drive.google.com/b\n\n  notes too  '
+  const head = 'BMUZ engine — this message comes from the BMUZ engine, not the creative (step "opening").'
+  assert.equal(E.pasteMessage(paste, { pasted: links }), `${head} The creative pasted:\n${links}`)
+  assert.equal(E.pasteAnswerText({ pasted: links }), links)
+  assert.match(E.pasteMessage(paste, { choice: 'look' }), /chose: look in the folder \(C:\\games\\lamp\).*"Nothing in C:\\games\\lamp yet\."/)
+  assert.match(E.pasteMessage(paste, { choice: 'never' }), /chose: never mind — another approach/)
+  assert.match(E.pasteMessage(paste, { choice: 'closed' }), /closed the paste panel/)
+  // open only while its own step runs
+  const working = { status: 'working', current: 'opening', startedAt: 1, paste }
+  assert.deepEqual(E.pasteOpen(working), paste)
+  assert.equal(E.pasteOpen({ ...working, current: 'intake' }), null)
+  assert.equal(E.pasteOpen({ ...working, status: 'idle' }), null)
+  assert.equal(E.pasteOpen({ status: 'working', current: 'opening' }), null)
+  // a step waiting on the panel is not stalled; finishing the step closes it
+  const P = { id: 't', steps: [{ id: 'opening', kind: 'talk' }] }
+  assert.equal(E.isStalled(P, working, 10_000_000, 1000), false)
+  assert.equal(E.isStalled(P, { ...working, paste: null }, 10_000_000, 1000), true)
+  assert.equal(E.finish({ ...working, finished: [], retries: {}, results: {} }, P.steps[0], { where: 'concept' }).paste, null)
+  // auto runs refuse it like the question box; a live step that lists it allows it
+  const S = { id: 't', steps: [{ id: 'opening', kind: 'talk', tools: ['AskUserQuestion', E.PASTE_TOOL] }] }
+  const st = { ...E.freshState('t'), status: 'working', current: 'opening', startedAt: 1 }
+  assert.equal(E.judgeTool(S, st, { tool: E.PASTE_TOOL }, { auto: true }).allow, false)
+  assert.equal(E.judgeTool(S, st, { tool: E.PASTE_TOOL }, { auto: false }).allow, true)
+  assert.equal(E.judgeTool({ id: 't', steps: [{ id: 'opening', kind: 'talk', tools: ['Read'] }] }, st, { tool: E.PASTE_TOOL }).allow, false)
+  assert.match(E.pasteResumeLine(paste), /still open above the prompt, asking "What can I read\?"/)
 })
 
 test('F218 task 8: Define on the needs spine — the frame chosen in direction survives scope\'s one-tap keep; new Part 1 fields; prior art only on a yes', async () => {

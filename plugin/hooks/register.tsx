@@ -27,8 +27,8 @@ let flowAskedHere = ''
 // (a plain-text question stalled a live run 18.6 minutes, until the watchdog). Counted per step try; an answered
 // box starts the count over. quietTurn: the creative's own "bmuz doctor / undo / …" turn, which ends open on purpose.
 let nudges = { key: '', n: 0 }
-// '' | 'declined' (the creative closed the last question box without answering) | 'paste' (they picked "Paste links
-// or text"): either way their next chat message is the answer, so the turn's open end isn't nudged.
+// '' | 'declined' (the creative closed the last question box without answering): their next chat message is the
+// answer, so the turn's open end isn't nudged. (An open paste panel, state.paste, isn't nudged either.)
 let quietWait = ''
 let quietTurn = false
 // creativeTurn: the turn began with the creative's own typed message (not the engine's, not a bmuz command)
@@ -68,13 +68,17 @@ async function save($: any) {
 // Called after every state save, and every second by a timer (live check L3: the band stayed on
 // "working" after BLOCKED until the turn ended). Only a changed text is sent on.
 let lastBand = ''
+let lastStatus = ''
 async function showBand($: any) {
   if (!ctx) return
   const text = E.bandText(ctx.pipeline, ctx.state, await $.clock.now())
-  if (text === lastBand) return
-  lastBand = text
-  await update($, band, () => ({ text, status: ctx.state.status }))
-  $.ui.status(text)
+  const paste = E.pasteOpen(ctx.state)
+  const key = JSON.stringify([text, paste])
+  if (key === lastBand) return
+  lastBand = key
+  await update($, band, () => ({ text, status: ctx.state.status, paste }))
+  if (text !== lastStatus) $.ui.status(text)
+  lastStatus = text
 }
 
 function vars() {
@@ -254,6 +258,12 @@ async function registerAll($: any) {
     name: 'step_done',
     description: 'BMUZ engine: call this when the current talk step is finished, with its result object (for example {"name": "Moon Goat"}).',
     inputSchema: { type: 'object', properties: { result: { type: 'object' } }, required: ['result'] },
+    isDeferred: false,
+  })
+  await $.tool.register({
+    name: 'ask_paste',
+    description: 'BMUZ engine: ask the creative for links or long text (Google Drive links, notes, a rulebook) in the engine\'s own paste panel above the prompt — a real text field, "look in this folder" and "never mind" — instead of the question box. Returns at once; end your turn with no text: their answer comes as the engine\'s next message. Only in talk steps that list it.',
+    inputSchema: { type: 'object', properties: { question: { type: 'string', description: 'one line shown above the field' }, folder: { type: 'string', description: 'this project folder\'s full path' } }, required: ['question'] },
     isDeferred: false,
   })
   await $.command.register({ name: 'bmuz-go', description: 'BMUZ: start or resume the pipeline' })
@@ -444,6 +454,9 @@ async function startTalk($: any, step: any, why: string) {
   }
   const given = E.givenFor(step, ctx.state.given)
   hiddenNotes = E.talkPrompt(step, craft, why, ctx.auto, decided, { recap, wrap: wrapWords(step), answers, intro: !!intro, given })
+  // A resume (a new window, "bmuz go") while the paste panel is open: the panel is drawn again; Claude waits for it.
+  const open = E.pasteOpen(ctx.state)
+  if (open) hiddenNotes += `\n${E.pasteResumeLine(open)}`
   await $.prompt.submit({ text: E.talkHeadline(step, intro) })
   // The prompt hook takes the notes as it attaches them. Still here = they never went out: say so in the journal
   // rather than let Claude guess the step from its headline.
@@ -773,6 +786,44 @@ async function flowFinished($: any, n: any) {
   return next // the caller lets turn.complete run the next step
 }
 
+// ---- The paste panel (F228, live look 2026-11-10): ask_paste opens it; the answer comes as the engine's message ----
+// The band's site id, as its render saw it (for $.ui.focus).
+let bandSite = ''
+
+async function askPaste($: any, e: any) {
+  const step = E.stepById(ctx.pipeline, ctx.state.current)
+  if (!step || step.kind !== 'talk' || ctx.state.status !== 'working') {
+    return { deny: 'BMUZ engine: no talk step is open, so there is nothing to ask for. End your turn.' }
+  }
+  ctx.state = { ...ctx.state, paste: E.pasteRequest(step.id, e, ctx.dir) }
+  await journal($, { ev: 'paste.open', step: step.id, question: ctx.state.paste.question })
+  await save($)
+  focusPaste($)
+  return { result: JSON.stringify(E.PASTE_RETURNED) }
+}
+
+// Puts the keys on the field when the band can take them (a refusal is fine: a click or Ctrl+X Tab gets there).
+function focusPaste($: any) {
+  $.clock.after(100, async () => {
+    try {
+      const r: any = await $.ui.focus({ requestId: bandSite || 'AbovePrompt', key: 'paste' })
+      if (r?.deny) await journal($, { ev: 'paste.focus', deny: String(r.deny).slice(0, 160) })
+    } catch (err) { /* no surface: nothing to focus */ }
+  })
+}
+
+// The creative answered in the panel: their words go in the journal (ideate-doc's quote check reads them), the panel
+// closes, and the engine's own message carries the answer to Claude from a timer (no turn starts inside a ui hook).
+async function pasteAnswer($: any, answer: any) {
+  const paste = ctx && E.pasteOpen(ctx.state)
+  if (!paste) return
+  await journal($, { ev: 'answer', step: paste.step, via: 'paste', text: E.pasteAnswerText(answer) })
+  ctx.state = { ...ctx.state, paste: null }
+  await save($)
+  const text = E.pasteMessage(paste, answer)
+  $.clock.after(50, () => { $.prompt.submit({ text }) })
+}
+
 async function watchdog($: any) {
   if (!ctx || ctx.broken || watchdogBusy) return
   watchdogBusy = true
@@ -878,6 +929,7 @@ export const register: Register = on => {
       return { deny: verdict.why }
     }
     if (call.tool === E.ENGINE_TOOL) return stepDone($, e)
+    if (call.tool === E.PASTE_TOOL) return askPaste($, e)
     if (call.tool === 'AskUserQuestion' && !ctx.auto) {
       // A background session lists the question tool but refuses it (headless check 15): then nobody
       // can answer, so from here this session is an auto run and the turn-end rule keeps it moving.
@@ -915,8 +967,6 @@ export const register: Register = on => {
         // F228: the creative's answer, as the box returned it: a script checks the creative's "own words" against
         // these (ideate-doc.mjs), so a quote Claude hands back as theirs is checked, not trusted.
         await journal($, { ev: 'answer', step: ctx.state.current, text: E.answerText(res).slice(0, 6000) })
-        // "Paste links or text": the creative's next chat message is the material, so this turn ends open on purpose.
-        if (E.picksPaste(E.answerText(res))) quietWait = 'paste'
       }
       return res
     }
@@ -991,6 +1041,14 @@ export const register: Register = on => {
     if (kind === 'plugin' || kind === 'peer') return next(e)
     quietTurn = false
     creativeTurn = true
+    // Typed into the chat while the paste panel is open: that message is their answer; the panel closes.
+    const openPaste = !ctx.broken && E.pasteOpen(ctx.state)
+    if (openPaste && !/^\s*bmuz\b/i.test(text)) {
+      await journal($, { ev: 'answer', step: openPaste.step, via: 'typed', text })
+      ctx.state = { ...ctx.state, paste: null }
+      await journal($, { ev: 'paste.closed', step: openPaste.step, why: 'the creative typed in the chat instead' })
+      await save($)
+    }
     const say = (words: string) => {
       quietTurn = true
       return next({ ...(e as any), text: `${text}\n(${words}\nShow the creative these lines as they are, then end your turn.)` })
@@ -1080,11 +1138,11 @@ export const register: Register = on => {
             await save($)
             await startTalk($, step, 'the turn ended without step_done; in an auto run nobody will answer, so take the default and finish')
           }
-        } else if (quietWait) {
+        } else if (quietWait || E.pasteOpen(ctx.state)) {
           // The creative closed the question box (Esc, or "Type something" sent empty — Claude Code can't tell them
-          // apart), or picked "Paste links or text". Their next message is the answer: no nudge (live look 2026-11-10:
-          // two nudges made Claude repeat "still paused" while the creative looked for a paste field).
-          await journal($, { ev: quietWait === 'paste' ? 'ask.paste' : 'ask.declined', step: step.id })
+          // apart), or the paste panel is open. Their answer comes next: no nudge (live look 2026-11-10: two nudges
+          // made Claude repeat "still paused" while the creative looked for a paste field).
+          await journal($, { ev: E.pasteOpen(ctx.state) ? 'ask.paste' : 'ask.declined', step: step.id })
           quietWait = ''
         } else if (!quietTurn && (e as any).reason === 'answer' && !(e as any).isAborted && (!creativeTurn || E.plainQuestion(String((e as any).answer ?? '')))) {
           // (a turn the creative started — "what do you mean?" — answered in plain text is a conversation, not a stall:
@@ -1167,8 +1225,29 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const b = (await read($, band)) as BmuzBand | null
     if (!b) return next(e)
-    const { Box, Text } = $.ui.resolve(e)
+    bandSite = (e as any).requestId ?? bandSite
+    const { Box, Text, Input, Button } = $.ui.resolve(e) as any
     const color = b.status === 'blocked' ? 'red' : b.status === 'waiting' ? 'yellow' : b.status === 'done' ? 'green' : 'cyan'
+    // The paste panel (ask_paste): a real field, the folder to look in, and a way out. A survey holds the band first.
+    if (b.paste && !(e as any).props?.hasSurvey) {
+      const words = E.pasteLabels(b.paste)
+      return (
+        <Box flexDirection="column">
+          <Text color={color}>{b.text}</Text>
+          <Text bold>{words.question}</Text>
+          <Input
+            key="paste"
+            placeholder={words.placeholder}
+            rows={3}
+            autoFocus
+            submitLabel="send"
+            onSubmit={(value: string) => (value.trim() ? pasteAnswer($, { pasted: value }) : undefined)}
+          />
+          <Button key="look" hotkey="1" label={words.look} onPress={() => pasteAnswer($, { choice: 'look' })} />
+          <Button key="never" hotkey="2" label={words.never} onPress={() => pasteAnswer($, { choice: 'never' })} />
+        </Box>
+      )
+    }
     return (
       <Box>
         <Text color={color}>{b.text}</Text>

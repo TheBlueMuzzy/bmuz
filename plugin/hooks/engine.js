@@ -278,7 +278,7 @@ function dropSteps(state, drop) {
   const finished = state.finished.filter(id => !drop.has(id))
   const resultsBy = Object.fromEntries(Object.entries(state.resultsBy || {}).filter(([id]) => !drop.has(id)))
   const retries = Object.fromEntries(Object.entries(state.retries || {}).filter(([id]) => !drop.has(id)))
-  const out = { ...state, finished, resultsBy, retries, results: state.resultsBy ? mergeResults(finished, resultsBy) : state.results }
+  const out = { ...state, finished, resultsBy, retries, paste: null, results: state.resultsBy ? mergeResults(finished, resultsBy) : state.results }
   // A skipped step taken off the finished list runs for real next time.
   if (state.skipped) out.skipped = state.skipped.filter(id => !drop.has(id))
   return out
@@ -761,7 +761,7 @@ export function isPersonDeclining(res) {
 
 // ---- Asking only through the question box (F228 task 3; discover-live-review-2026-11-09.md S3 and #20b) ----
 // Every live talk step is told this, whatever its craft note says.
-export const ASK_RULE = 'Asking: every question to the creative goes through AskUserQuestion (their own words go in its "Other"). Never ask anything in plain text: the creative doesn\'t see it as a question and the run waits (a live run stalled 18 minutes on one). Nothing they must read goes in plain text in the same turn as the question box: the box covers it. Put it inside the question or the options\' descriptions, with at most one short line before the box. A turn of a talk step ends only with the box answered and more to do, or with step_done. Options: only real answers, two is fine, never filler. Never an option that only means "I\'ll type or paste it" (picking an option ends the question with nothing typed) — except the one engine option "Paste links or text": when you want links, notes or any long text, make it the FIRST option, description "next, into the chat — Ctrl+V works there". When it is picked, write ONE line — "Paste your links or text now (Ctrl+V), then press Enter." — and end your turn: their next message is the material (one or more links, one item per link), and the engine waits without nudging. (The box\'s own "Type something." field is easy to miss and Ctrl+V doesn\'t reach it until it\'s selected — live look 2026-11-10.) Anything that asks them to put files in this folder gives the folder\'s full path, so they can find it. If the creative closes the box without an answer (Esc, or "Type something." sent empty — the same thing to you), write ONE short line: "Nothing came through. Paste it as your next message, or say carry on." and end your turn; their next message is the answer. Never repeat it.'
+export const ASK_RULE = 'Asking: every question to the creative goes through AskUserQuestion (their own words go in its "Other"). Never ask anything in plain text: the creative doesn\'t see it as a question and the run waits (a live run stalled 18 minutes on one). Nothing they must read goes in plain text in the same turn as the question box: the box covers it. Put it inside the question or the options\' descriptions, with at most one short line before the box. A turn of a talk step ends only with the box answered and more to do, or with step_done. Options: only real answers, two is fine, never filler. Never an option that only means "I\'ll type or paste it" (picking an option ends the question with nothing typed). Links, notes or any long text: never the box — call mcp__bmuz__ask_paste with { question, folder: this folder\'s full path } (where the step lists it). It opens the engine\'s own paste panel (a real field, "look in this folder", "never mind") and returns at once: then end your turn with no text. The creative\'s answer comes as the engine\'s next message: what they pasted (one or more links or text, newlines kept), or that they chose to look in the folder, never mind, or closed it. (The box\'s own "Type something." field is easy to miss and paste doesn\'t reach it until it\'s selected — live look 2026-11-10.) Anything that asks them to put files in this folder gives the folder\'s full path, so they can find it. If the creative closes the box without an answer (Esc, or "Type something." sent empty — the same thing to you), write ONE short line: "Nothing came through. Paste it as your next message, or say carry on." and end your turn; their next message is the answer. Never repeat it.'
 export const MAX_NUDGES = 2
 
 // The question a message asks in plain text (one of its last lines ending in "?"), or null.
@@ -815,25 +815,69 @@ const FAKE_LABEL = [
   new RegExp(`\\b${TYPE_WORD}\\s+(it|them|that|the\\s+\\w+|a\\s+\\w+|my\\s+\\w+)\\s+(here|in|instead)\\b`, 'i'),
 ]
 const FAKE_DESC = /\b(paste|type|write|enter)\b[^.]*\b(in|into)\s+["'“‘]?(other|type something)\b/i
-// The one honest paste option: picking it hands the creative the normal chat box (Ctrl+V works there), and the
-// engine waits for their next message without nudging (live look 2026-11-10: the box's "Type something." was missed,
-// and Ctrl+V didn't reach it).
-export const PASTE_OPTION = 'Paste links or text'
-export function picksPaste(answer) {
-  return String(answer || '').includes(`"${PASTE_OPTION}"`)
-}
 export function fakeTypeOptionProblem(questions) {
   for (const q of Array.isArray(questions) ? questions : []) {
     for (const o of Array.isArray(q && q.options) ? q.options : []) {
       const label = String((o && o.label) || '')
-      if (label.trim() === PASTE_OPTION) continue
       const desc = String((o && o.description) || '')
       if (FAKE_LABEL.some(r => r.test(label)) || FAKE_DESC.test(desc)) {
-        return `BMUZ engine: the option "${label}" stands in for typing, but picking an option ends the question with nothing typed — the creative gets asked again and never gets a field to paste into (live look: four screens of "I'll paste it"). Drop that option. For links or long text use the engine's own first option "${PASTE_OPTION}" (it hands them the chat box); keep only options that are real answers — two is fine, no filler.`
+        return `BMUZ engine: the option "${label}" stands in for typing, but picking an option ends the question with nothing typed — the creative gets asked again and never gets a field to paste into (live look: four screens of "I'll paste it"). Drop that option. For links or long text call ${PASTE_TOOL} instead of the box (it gives them a real field); keep only options that are real answers — two is fine, no filler.`
       }
     }
   }
   return null
+}
+
+// ---- The paste panel (F228, live look 2026-11-10) ----
+// The question box's only text field is its last row, "Type something.": easy to miss, and paste doesn't reach it
+// until it's selected. For links and long text a talk step calls PASTE_TOOL instead: the engine draws its own panel
+// above the prompt (a real field, "look in this folder", "never mind"). A tool call can't wait on the panel (a hook
+// has 10 s of its own time: probe 2026-11-10), so the tool returns at once, the open panel is kept in state.paste
+// (a new window or a "bmuz go" draws it again), and the creative's answer arrives as the engine's own next message.
+export const PASTE_TOOL = 'mcp__bmuz__ask_paste'
+export const PASTE_PLACEHOLDER = 'Paste your links here (Alt+V) — as many as you like, then Enter'
+export const PASTE_NEVER = 'Never mind — let\'s take another approach'
+export const PASTE_RETURNED = { open: true, note: 'The paste panel is open above the prompt. End your turn now, with no text: the creative\'s answer comes as the engine\'s next message.' }
+
+// A folder as Windows writes it (the creative's own spelling): C:/Users/x or /c/Users/x → C:\Users\x. Other paths as given.
+export function windowsPath(dir) {
+  const d = String(dir || '')
+  const m = d.match(/^\/([a-zA-Z])(\/.*|$)/) || d.match(/^([a-zA-Z]):(.*)$/)
+  if (!m) return d
+  return `${m[1].toUpperCase()}:${(m[2] || '\\').replace(/\//g, '\\')}`
+}
+
+// The panel's words. input = the tool's { question, folder }; dir = the project folder (the engine's own).
+export function pasteRequest(stepId, input, dir) {
+  const q = String((input && input.question) || '').trim()
+  return { step: stepId, question: q || 'What can I read?', folder: windowsPath(dir) }
+}
+export function pasteLabels(paste) {
+  return { question: paste.question, placeholder: PASTE_PLACEHOLDER, look: `Look in this folder: ${paste.folder}`, never: PASTE_NEVER }
+}
+
+// The open panel, when it belongs to the step that is running now; else null (a finished or undone step's is stale).
+export function pasteOpen(state) {
+  const p = state && state.paste
+  return p && state.status === 'working' && p.step === state.current ? p : null
+}
+
+// The engine's message carrying the creative's answer. answer = { pasted } | { choice: 'look' | 'never' | 'closed' }.
+export function pasteMessage(paste, answer) {
+  const head = `BMUZ engine — this message comes from the BMUZ engine, not the creative (step "${paste.step}").`
+  if (answer && typeof answer.pasted === 'string') return `${head} The creative pasted:\n${answer.pasted}`
+  if (answer && answer.choice === 'look') return `${head} The creative chose: look in the folder (${paste.folder}). Look there again; if nothing new is there, call ${PASTE_TOOL} again with the question "Nothing in ${paste.folder} yet." and end your turn.`
+  if (answer && answer.choice === 'never') return `${head} The creative chose: never mind — another approach. Carry on with the step without that material.`
+  return `${head} The creative closed the paste panel without an answer. Carry on with the step without that material (they can still type it in the chat).`
+}
+// The line a talk step's notes get when it starts again (a new window, "bmuz go") with its paste panel still open.
+export function pasteResumeLine(paste) {
+  return `The engine's paste panel is still open above the prompt, asking "${paste.question}". Don't ask it again: end your turn with no text; the creative's answer comes as the engine's next message.`
+}
+// What the journal keeps as the creative's answer (ideate-doc's quote check reads "answer" lines): pasted text verbatim.
+export function pasteAnswerText(answer) {
+  if (answer && typeof answer.pasted === 'string') return answer.pasted
+  return { look: 'look in the folder', never: 'never mind — another approach', closed: 'closed' }[answer && answer.choice] || 'closed'
 }
 
 // The text of a question box's answer, whatever field carries it (the mod docs don't fix the result's shape).
@@ -872,7 +916,7 @@ export function judgeTool(p, state, call, opts = {}) {
   // Reading the saved hand-off card (cardPrompt) or a script step's shown file (showPrompt) is always allowed: the
   // engine asks for them between steps.
   if (!call.agentId && call.tool === 'Read' && /[\\/]\.bmuz[\\/]last-(card|shown)\.md$/.test(String((call.input || {}).file_path || ''))) return { allow: true }
-  if (opts.auto && call.tool === 'AskUserQuestion') {
+  if (opts.auto && (call.tool === 'AskUserQuestion' || call.tool === PASTE_TOOL)) {
     return { allow: false, why: `BMUZ engine: auto run, nobody is here to answer. Don't ask: pick the sensible default, add {"question": "...", "picked": "..."} to the "asks" list in ${ENGINE_TOOL}'s result, and carry on.` }
   }
   // step_done only closes an open talk step; called between steps, it has nothing to finish.
@@ -978,6 +1022,7 @@ export function finish(state, step, result) {
     resultsBy: result ? { ...(state.resultsBy || {}), [step.id]: result } : (state.resultsBy || {}),
     retries,
     flow: null, // a finished flow's launch record (and a "late" mark) must not follow the next step
+    paste: null, // nor a talk step's open paste panel
     current: null,
     status: 'idle',
     startedAt: null,
@@ -1053,6 +1098,8 @@ export function taskAlreadyEnded(text) {
 // Watchdog: is the current step past its time limit?
 export function isStalled(p, state, now, defaultMs) {
   if (state.status !== 'working' || !state.startedAt) return false
+  // (a talk step with the paste panel open is waiting on the creative, not stalled)
+  if (pasteOpen(state)) return false
   const step = stepById(p, state.current)
   const limit = (step && step.timeoutMs) || defaultMs
   return now - state.startedAt > limit
@@ -1135,7 +1182,7 @@ export function doctor(p, stateText, journalLines, lock, sessionId, now) {
     lines.push(`The state file disagreed with the journal (state: ${kept.status} at ${kept.current || 'no step'}, ${kept.finished.length} finished; journal: ${rebuilt.status} at ${rebuilt.current || 'no step'}, ${rebuilt.finished.length} finished): went with the journal.`)
     fixed = true
   }
-  const state = fixed ? { ...rebuilt, flow: kept && kept.flow } : kept
+  const state = fixed ? { ...rebuilt, flow: kept && kept.flow, paste: kept && kept.paste } : kept
   if (lock && lock.step && !lock.closed && lock.session !== sessionId) lines.push(`The last session (${String(lock.session).slice(0, 8)}) ended without closing, during step "${lock.step}" (${lock.status}).`)
   if (state.status === 'blocked' && state.blocked) lines.push(`Step "${state.blocked.step}" is BLOCKED: ${state.blocked.why}. Say "bmuz retry" to give it 2 more tries, or "bmuz undo" to go back further.`)
   for (const [id, n] of Object.entries(state.retries || {})) if (n && !(state.blocked && state.blocked.step === id)) lines.push(`Step "${id}" has used ${n} of its ${MAX_RETRIES} retries.`)
