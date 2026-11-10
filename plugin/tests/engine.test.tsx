@@ -158,6 +158,19 @@ test('live look 2026-11-10: a question box closed without an answer (an empty "T
   expect(nudged()).toBe(1)
 })
 
+test('live look 2026-11-10: "Paste links or text" picked → the turn that says "paste now" is not nudged; the paste arrives as the next message', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: 'Your questions have been answered: "Your material"="Paste links or text". You can now continue with these answers in mind.' }))
+  const { w, prompts } = shown(on)
+  await start($, true)
+  const nudged = () => prompts.filter(p => /^BMUZ engine — this message comes from the BMUZ engine, not the creative \(step "ask"\)/.test(p)).length
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'What can I read?', options: [{ label: 'Paste links or text', description: 'next, into the chat — Ctrl+V works there' }, { label: 'Nothing to share yet' }] }] } as any)
+  expect(refused(r)).toBe(false)
+  await $.turn.complete({ answer: 'Paste your links or text now (Ctrl+V), then press Enter.', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(nudged()).toBe(0)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"ask.paste"/)
+})
+
 test('live check 2026-11-08: "bmuz go" while this try\'s flow launch is on its way does not ask again', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const prompts: string[] = []

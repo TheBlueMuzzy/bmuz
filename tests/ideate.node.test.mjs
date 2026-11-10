@@ -286,8 +286,12 @@ test('live look 2026-11-10: an option that stands in for typing ("I\'ll paste th
   for (const ok of ['Read rules.md and notes.txt', 'Look in this folder again', "That's everything", 'No link — ask me the idea instead', 'Keep going', 'Send it to Define', 'Open it up', 'Nothing yet — help me find one'])
     assert.equal(E.fakeTypeOptionProblem(box(ok, 'drop your files here first, then pick this')), null, ok)
   assert.equal(E.fakeTypeOptionProblem(undefined), null)
+  // the engine's own paste option is the one honest one: it hands them the chat box
+  assert.equal(E.fakeTypeOptionProblem(box(E.PASTE_OPTION, 'next, into the chat — Ctrl+V works there')), null)
+  assert.ok(E.picksPaste(`Your questions have been answered: "Your material"="${E.PASTE_OPTION}".`))
+  assert.ok(!E.picksPaste('Your questions have been answered: "Your material"="Nothing to share yet".'))
   // every live talk step is told the rule
-  assert.match(E.talkPrompt({ id: 'x', results: [] }, 'craft', '', false), /Never an option that means "I'll type or paste it"/)
+  assert.match(E.talkPrompt({ id: 'x', results: [] }, 'craft', '', false), /except the one engine option "Paste links or text"/)
 })
 
 test('F218 task 8: Define on the needs spine — the frame chosen in direction survives scope\'s one-tap keep; new Part 1 fields; prior art only on a yes', async () => {

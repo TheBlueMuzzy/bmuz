@@ -761,7 +761,7 @@ export function isPersonDeclining(res) {
 
 // ---- Asking only through the question box (F228 task 3; discover-live-review-2026-11-09.md S3 and #20b) ----
 // Every live talk step is told this, whatever its craft note says.
-export const ASK_RULE = 'Asking: every question to the creative goes through AskUserQuestion (their own words go in its "Other"). Never ask anything in plain text: the creative doesn\'t see it as a question and the run waits (a live run stalled 18 minutes on one). Nothing they must read goes in plain text in the same turn as the question box: the box covers it. Put it inside the question or the options\' descriptions, with at most one short line before the box. A turn of a talk step ends only with the box answered and more to do, or with step_done. Options: only real answers, two is fine, never filler. Never an option that means "I\'ll type or paste it" (picking an option ends the question with nothing typed): when you want their words, a link or links, say in the question itself "paste it in \'Type something.\' below" — one or more links are fine, one item per link. ("Type something." is Claude Code\'s own label for the box\'s field; it can\'t be renamed, so name it exactly.) Anything that asks them to put files in this folder gives the folder\'s full path, so they can find it. If the creative closes the box without an answer (Esc, or "Type something." sent empty — the same thing to you), write ONE short line: "Nothing came through. Paste it as your next message, or say carry on." and end your turn; their next message is the answer. Never repeat it.'
+export const ASK_RULE = 'Asking: every question to the creative goes through AskUserQuestion (their own words go in its "Other"). Never ask anything in plain text: the creative doesn\'t see it as a question and the run waits (a live run stalled 18 minutes on one). Nothing they must read goes in plain text in the same turn as the question box: the box covers it. Put it inside the question or the options\' descriptions, with at most one short line before the box. A turn of a talk step ends only with the box answered and more to do, or with step_done. Options: only real answers, two is fine, never filler. Never an option that only means "I\'ll type or paste it" (picking an option ends the question with nothing typed) — except the one engine option "Paste links or text": when you want links, notes or any long text, make it the FIRST option, description "next, into the chat — Ctrl+V works there". When it is picked, write ONE line — "Paste your links or text now (Ctrl+V), then press Enter." — and end your turn: their next message is the material (one or more links, one item per link), and the engine waits without nudging. (The box\'s own "Type something." field is easy to miss and Ctrl+V doesn\'t reach it until it\'s selected — live look 2026-11-10.) Anything that asks them to put files in this folder gives the folder\'s full path, so they can find it. If the creative closes the box without an answer (Esc, or "Type something." sent empty — the same thing to you), write ONE short line: "Nothing came through. Paste it as your next message, or say carry on." and end your turn; their next message is the answer. Never repeat it.'
 export const MAX_NUDGES = 2
 
 // The question a message asks in plain text (one of its last lines ending in "?"), or null.
@@ -815,13 +815,21 @@ const FAKE_LABEL = [
   new RegExp(`\\b${TYPE_WORD}\\s+(it|them|that|the\\s+\\w+|a\\s+\\w+|my\\s+\\w+)\\s+(here|in|instead)\\b`, 'i'),
 ]
 const FAKE_DESC = /\b(paste|type|write|enter)\b[^.]*\b(in|into)\s+["'“‘]?(other|type something)\b/i
+// The one honest paste option: picking it hands the creative the normal chat box (Ctrl+V works there), and the
+// engine waits for their next message without nudging (live look 2026-11-10: the box's "Type something." was missed,
+// and Ctrl+V didn't reach it).
+export const PASTE_OPTION = 'Paste links or text'
+export function picksPaste(answer) {
+  return String(answer || '').includes(`"${PASTE_OPTION}"`)
+}
 export function fakeTypeOptionProblem(questions) {
   for (const q of Array.isArray(questions) ? questions : []) {
     for (const o of Array.isArray(q && q.options) ? q.options : []) {
       const label = String((o && o.label) || '')
+      if (label.trim() === PASTE_OPTION) continue
       const desc = String((o && o.description) || '')
       if (FAKE_LABEL.some(r => r.test(label)) || FAKE_DESC.test(desc)) {
-        return `BMUZ engine: the option "${label}" stands in for typing, but picking an option ends the question with nothing typed — the creative gets asked again and never gets a field to paste into (live look: four screens of "I'll paste it"). Drop that option. Say in the question itself "type or paste it in 'Type something' below" (one or more links are fine), and keep only options that are real answers — two is fine, no filler.`
+        return `BMUZ engine: the option "${label}" stands in for typing, but picking an option ends the question with nothing typed — the creative gets asked again and never gets a field to paste into (live look: four screens of "I'll paste it"). Drop that option. For links or long text use the engine's own first option "${PASTE_OPTION}" (it hands them the chat box); keep only options that are real answers — two is fine, no filler.`
       }
     }
   }
