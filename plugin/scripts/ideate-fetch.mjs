@@ -53,7 +53,8 @@ function collector() {
   c.add = (name, text) => {
     let t = String(text || '').replace(/\r\n/g, '\n')
     if (!clean(t)) return
-    if (c.sources.some(s => s.name === name)) return
+    // (the same text twice — the concept given at the start handed back again as the one-breath answer — is one source)
+    if (c.sources.some(s => s.name === name || clean(s.text) === clean(t))) return
     const room = Math.max(0, TOTAL - c.used)
     if (!room) { c.unread.push({ what: name, why: 'over the reading limit for one pass' }); return }
     const cut = t.length > Math.min(PER_SOURCE, room)

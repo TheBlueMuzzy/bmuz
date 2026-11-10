@@ -290,6 +290,14 @@ test('F218 task 8: Define on the needs spine — the frame chosen in direction s
   assert.equal(by.product, 'direction')
   assert.deepEqual(results.primaries, [{ text: 'surprise', his: true }]) // a later choice still wins over an earlier []
   assert.deepEqual(results.decisions, []) // an empty answer alone is still there (the field stays open)
+  // a list handed back as JSON text is read as the list
+  const asText = chosen([{ id: 'scope', kind: 'talk' }], { finished: ['scope'], resultsBy: { scope: { wont: '[{"what": "Combat", "why": "it breaks quiet care"}]' } } })
+  assert.deepEqual(asText.results.wont, [{ what: 'Combat', why: 'it breaks quiet care' }])
+  // a list field handed back as lines of text is one item per line
+  const lined = chosen([{ id: 'story', kind: 'talk' }], { finished: ['story'], resultsBy: { story: { story: 'You tend the lamp.\n- You guide the boats.\n3. You see dawn.', pitch: 'One line\nstays one item' } } })
+  assert.deepEqual(lined.results.story, ['You tend the lamp.', 'You guide the boats.', 'You see dawn.'])
+  assert.equal(lined.results.pitch, 'One line\nstays one item') // not a list field
+  assert.match(E.talkPrompt({ id: 'x', results: ['story'] }, 'craft', '', true), /only name the keys: give each value the shape the note above asks for/)
   const fields = PART1.flatMap(([, f]) => f.map(x => x[1]))
   for (const label of ['Rules (shape)', 'The real skill', 'Over time', 'Which way up', 'Online (leaving, joining)', 'Controls']) assert.ok(fields.includes(label), label)
   const p = JSON.parse(readFileSync(join(here, '..', 'plugin', 'pipelines', 'define.json'), 'utf8'))

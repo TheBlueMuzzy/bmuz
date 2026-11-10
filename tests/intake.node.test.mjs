@@ -135,3 +135,10 @@ test('the script: reads the files named, says plainly what it can\'t read, write
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('F228: brief, slug, pasted and files handed back inside "material" are lifted out, so a named file is still read', async () => {
+  const { liftKeys } = await import('../plugin/scripts/intake.mjs')
+  const r = liftKeys({ where: 'written', goal: 'open', material: { brief: 'Tidekeeper', slug: 'tidekeeper', pasted: [], files: ['rules.md'], youAre: [q('You are the keeper')] } })
+  assert.deepEqual([r.brief, r.slug, r.files, Object.keys(r.material)], ['Tidekeeper', 'tidekeeper', ['rules.md'], ['youAre']])
+  assert.deepEqual(liftKeys({ files: ['a.md'], material: { files: ['b.md'] } }).files, ['a.md']) // the top level wins
+})

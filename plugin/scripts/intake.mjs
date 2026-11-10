@@ -166,7 +166,25 @@ function readLines(brief, items) {
 
 // Everything the intake writes, from the opening's result. sources = [{ name, text }] (the pasted text and the
 // files read); unreadable = [{ path, why }]. Returns { json, md, run } (run = DISCOVER.md's new section, or null).
-export function buildIntake({ result, sources, unreadable = [], defineKeys, date, key }) {
+// The opening's result with its top-level keys where the script expects them: a model sometimes puts "brief", "slug",
+// "pasted" and "files" inside "material" (headless ideate-rulebook 2026-11-10: rules.md was named there, so it was
+// never read). They are lifted out; the material keeps only its shelf keys.
+export function liftKeys(result) {
+  const r = { ...(result || {}) }
+  const m = r.material && typeof r.material === 'object' && !Array.isArray(r.material) ? { ...r.material } : null
+  if (!m) return r
+  for (const k of ['brief', 'slug', 'pasted', 'files', 'where', 'goal']) {
+    if (m[k] === undefined) continue
+    const empty = r[k] === undefined || r[k] === null || r[k] === '' || (Array.isArray(r[k]) && !r[k].length)
+    if (empty) r[k] = m[k]
+    delete m[k]
+  }
+  r.material = m
+  return r
+}
+
+export function buildIntake({ result: raw, sources, unreadable = [], defineKeys, date, key }) {
+  const result = liftKeys(raw)
   const where = ['nothing', 'spark', 'concept', 'written', 'prototype'].includes(result.where) ? result.where : 'concept'
   const goal = where === 'nothing' || where === 'spark' ? 'open' : GOALS[result.goal] ? result.goal : 'open'
   const { items, unknown, notVerbatim } = checkMaterial(result.material, sources.map(s => s.text).join('\n\n'), defineKeys)
@@ -235,7 +253,7 @@ function main() {
   const project = process.cwd()
   const root = join(dirname(fileURLToPath(import.meta.url)), '..')
   const state = JSON.parse(readFileSync(join(project, '.bmuz/state.json'), 'utf8'))
-  const result = (state.resultsBy && state.resultsBy.opening) || state.results || {}
+  const result = liftKeys((state.resultsBy && state.resultsBy.opening) || state.results || {})
   const define = JSON.parse(readFileSync(join(root, 'pipelines', 'define.json'), 'utf8'))
   const defineKeys = define.steps.filter(s => s.kind === 'talk').flatMap(s => s.results || [])
   // The material: what they pasted (their exact text), and the files they pointed at (read here, inside the

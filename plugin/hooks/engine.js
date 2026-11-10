@@ -391,6 +391,9 @@ export function talkPrompt(step, craft, why, auto, decided = [], more = {}) {
       ? `Wrap-up: in an auto run keep going (leave "wrap" out of the result).`
       : `Wrap-up: the creative may wrap up at any point. When this step's own questions are done, ask one more with AskUserQuestion: "Keep going (next: ${more.wrap.next}), or wrap up now (what's collected is saved, then ${more.wrap.to})?" with the options "Keep going" first and "Wrap up". If they wrap up, here or earlier in their own words, finish the step with what you have and add "wrap": true to the result.`)
   }
+  // (headless define 2026-11-10: haiku copied the "..." placeholders' shape and handed every list back as one string —
+  // a 5-line story as one line, pillars without their "settles")
+  if ((step.results || []).length) lines.push('The "..." values below only name the keys: give each value the shape the note above asks for — a JSON list where it says list, an object where it says object — never a list or an object written out as text.')
   lines.push(`When it is done, call ${ENGINE_TOOL} with result ${JSON.stringify(result)} and end your turn.`)
   return lines.join('\n')
 }

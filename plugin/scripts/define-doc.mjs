@@ -112,6 +112,8 @@ export const PART1 = [
   ['Risks & probes', [['risks', 'Risks', true]]],
   ['Not this game, for now', [['parked', 'Parked ideas', true]]],
 ]
+// The result keys written as lists (one "- " line each).
+const LIST_KEYS = new Set(PART1.flatMap(([, fields]) => fields.filter(f => f[2]).map(f => f[0])))
 export const PART1_HEADING = '## Part 1 — The concept'
 export const SHELVES_LABEL = 'From the shelves'
 // The parts that must be chosen before Design starts (stage refuses while they are open), with the step that chooses each.
@@ -216,7 +218,13 @@ export function chosen(steps, state) {
   const by = {}
   for (const s of steps) {
     if (s.kind !== 'talk' || !state.finished.includes(s.id) || skipped.includes(s.id)) continue
-    for (const [k, v] of Object.entries((state.resultsBy || {})[s.id] || {})) {
+    for (const [k, raw] of Object.entries((state.resultsBy || {})[s.id] || {})) {
+      // (a list or an object handed back as JSON text — headless entry-concept 2026-11-10: scope's won'ts came back
+      // as the string '[{"what": "Combat", …}]' and the lint read it as one won't without a reason — is read as JSON)
+      let v = raw
+      if (typeof raw === 'string' && /^\s*[[{]/.test(raw)) { try { v = JSON.parse(raw) } catch (e) { v = raw } }
+      // (a list field handed back as lines of text — the story's five lines in one string — is one item per line)
+      else if (typeof raw === 'string' && LIST_KEYS.has(k) && /\n/.test(raw.trim())) v = raw.split(/\r?\n/).map(l => l.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '').trim()).filter(Boolean)
       if (v === null || v === undefined) continue
       // (F218 task 8: an empty answer is "keep", never "erase": the frame chosen in direction stays when scope hands
       // product back as {} after one tap)
