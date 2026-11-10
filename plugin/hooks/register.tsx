@@ -28,6 +28,8 @@ let flowAskedHere = ''
 // box starts the count over. quietTurn: the creative's own "bmuz doctor / undo / …" turn, which ends open on purpose.
 let nudges = { key: '', n: 0 }
 let quietTurn = false
+// creativeTurn: the turn began with the creative's own typed message (not the engine's, not a bmuz command)
+let creativeTurn = false
 
 const SAFE_DENY = 'BMUZ engine hit an error in its own code, so it refused this action to be safe. Run /bmuz-doctor.'
 
@@ -976,6 +978,7 @@ export const register: Register = on => {
     }
     if (kind === 'plugin' || kind === 'peer') return next(e)
     quietTurn = false
+    creativeTurn = true
     const say = (words: string) => {
       quietTurn = true
       return next({ ...(e as any), text: `${text}\n(${words}\nShow the creative these lines as they are, then end your turn.)` })
@@ -1065,7 +1068,9 @@ export const register: Register = on => {
             await save($)
             await startTalk($, step, 'the turn ended without step_done; in an auto run nobody will answer, so take the default and finish')
           }
-        } else if (!quietTurn && (e as any).reason === 'answer' && !(e as any).isAborted) {
+        } else if (!quietTurn && (e as any).reason === 'answer' && !(e as any).isAborted && (!creativeTurn || E.plainQuestion(String((e as any).answer ?? '')))) {
+          // (a turn the creative started — "what do you mean?" — answered in plain text is a conversation, not a stall:
+          // nudged only when the reply itself asks them something in plain text)
           // A live window: nobody types into a plain-text question they didn't notice. The engine says so at once
           // (at most MAX_NUDGES times per try) instead of waiting for the watchdog. Not after the creative's own
           // "bmuz doctor / undo" (those turns end open on purpose) or an Esc.
@@ -1081,6 +1086,7 @@ export const register: Register = on => {
       }
     }
     quietTurn = false
+    creativeTurn = false
     return r
   })
 

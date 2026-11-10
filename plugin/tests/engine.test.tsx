@@ -1062,3 +1062,39 @@ test('F228: a question box with a wall of plain text before it in the same turn 
   expect(refused(ok)).toBe(false)
   expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"answer","step":"ask"/)
 })
+
+test('F228 review: the creative\'s clarifying question answered in plain text is not nudged; a reply that asks them something is', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { prompts } = shown(on)
+  await start($, true)
+  const done = (id: string, answer: string) => $.turn.complete({ answer, durationMs: 1, isAborted: false, turnId: id, reason: 'answer' } as any)
+  const nudged = () => prompts.filter(p => /^BMUZ engine — this message comes from the BMUZ engine, not the creative \(step "ask"\)/.test(p)).length
+  await $.prompt.submit({ text: 'what do you mean by frame?' } as any)
+  await done('t1', 'The frame is how the game is held and played: phone or desktop, which way up, who plays.')
+  expect(nudged()).toBe(0)
+  await $.prompt.submit({ text: 'ok, and smallest version?' } as any)
+  await done('t2', 'The smallest version you would still enjoy playing. Want to answer that now?')
+  expect(nudged()).toBe(1)
+  expect(prompts[prompts.length - 1]).toMatch(/asked "The smallest version you would still enjoy playing\. Want to answer that now\?" in plain text/)
+})
+
+test('F228 review: "the game so far" shown in its own turn, then the next step\'s box with one short line, is not refused', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  let rows: any[] = []
+  on('session.messages', () => ({ value: rows }))
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: 'User has answered your questions: "Frame?"="desktop"' }))
+  const { w } = shown(on)
+  await start($, true)
+  const soFar = ['## The game so far — Xong (version 1: what you shared)', '', '**Frame** — platform …', '- Open: phone or desktop?', '', '**Core loop** — …', '- Fixed: “standard pong”', '- Ideas: “0s are portals”', '', '**Rules** — …', '- Open: how does a match end?'].join('\n')
+  rows = [
+    { role: 'user', text: 'BMUZ engine — … Read /proj/.bmuz/last-shown.md and show the creative its text exactly as written …', toolUses: [] },
+    { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'r1', tool: 'Read', input: {} }] },
+    { role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'r1', text: soFar }] },
+    { role: 'assistant', text: soFar, toolUses: [] },
+    { role: 'user', text: 'BMUZ step "ask" — The gaps (from the BMUZ engine; its instructions for this step are attached)', toolUses: [] },
+    { role: 'assistant', text: 'Two quick gaps, frame first.', toolUses: [{ tool_use_id: 'q1', tool: 'AskUserQuestion', input: {} }] },
+  ]
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Frame — phone or desktop?' }] } as any)
+  expect(refused(r)).toBe(false)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).not.toMatch(/came before this question box/)
+})
