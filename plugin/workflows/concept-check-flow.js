@@ -24,6 +24,8 @@ const safe = (p, ext) => typeof p === 'string' && p.endsWith(ext) && !/^[\/\\]|^
 const notEngine = p => p.split('/')[0].toLowerCase() !== '.bmuz'
 const gdd = safe(a.gdd, '.md') && notEngine(a.gdd) ? a.gdd : '.planning/GDD.md'
 const discover = safe(a.discover, '.md') && notEngine(a.discover) ? a.discover : '.planning/DISCOVER.md'
+// (F228: Ideate's game so far, read first when it exists; an older project has only DISCOVER.md)
+const ideate = safe(a.ideate, '.md') && notEngine(a.ideate) ? a.ideate : '.planning/IDEATE.md'
 const decisions = safe(a.decisions, '.md') ? a.decisions : '.bmuz/decisions.md'
 const out = safe(a.out, '.md') && notEngine(a.out) ? a.out : '.planning/research/define-check.md'
 if (a.out && out !== a.out) log(`"${a.out}" isn't a path inside the project; writing ${out} instead`)
@@ -71,7 +73,7 @@ const REVIEW = {
 
 const prompt = r => [
   'A creative (a game designer, not an engineer) has just written the concept of their game: Part 1 of the game design document. You review it; you did not write it.',
-  `Read ${gdd} ("## Part 1 — The concept"), ${discover} (the bricks it was chosen from) and ${decisions} if it exists, with the Read tool.`,
+  `Read ${gdd} ("## Part 1 — The concept"), the material it was chosen from (${ideate} if it exists, otherwise ${discover}) and ${decisions} if it exists, with the Read tool.`,
   `Your checks (the numbers are "check"):\n${r.checks.map((c, i) => `${i + 1}. ${c}`).join('\n')}`,
   'Rules:',
   '- You choose nothing and change no file. Every problem you find becomes one question for the creative, in their terms: "q" ends in "?"; "kind" is taste (how it looks, feels or plays), want (what they want) or choice (pick between "options", 2 or more). Never an engineering question. "key": a short slug in lower case letters, digits and dashes, starting "concept-".',

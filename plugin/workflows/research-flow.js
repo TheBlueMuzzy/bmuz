@@ -23,7 +23,8 @@ const text = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim()
 const list = v => (Array.isArray(v) ? v : v ? [v] : [])
 // A talk step's item is text or an object ({text, his} or a noun's / verb's own fields): as one line of text.
 const itemLine = x => (typeof x === 'string' ? text(x) : x && typeof x === 'object' ? text(x.text || Object.entries(x).filter(([k]) => k !== 'his' && k !== 'picked').map(([k, v]) => `${k}: ${list(v).map(text).join(' / ')}`).join(' · ')) : '')
-const brief = text(a.brief)
+// (F218: Define passes its pitch, a list of {text} items, where Discover passed a line of text)
+const brief = list(a.brief).map(itemLine).filter(Boolean).join(' ')
 if (!brief) throw new Error('research-flow needs a "brief": the idea in the creative\'s words')
 const youAre = list(a.youAre).map(itemLine).filter(Boolean)[0] || ''
 

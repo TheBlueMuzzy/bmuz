@@ -105,7 +105,7 @@ test('write: a new GDD gets the layout (Part 1 / Part 2 / Open questions / Chang
   assert.match(g, /\*\*Mechanisms:\*\*\n- trim — lead: a routine check of the lamp\n/) // no backup asked for, none shown
   assert.match(g, /\*\*Platform:\*\* phone browser/)
   assert.match(g, /## Open questions\n- tending becomes a chore: sketch: one night of tending \(1 hour\) \(a probe from Define run 1\) · status: open/)
-  assert.match(g, /- 2026-11-09 · Concept written \(Part 1\): \d+ fields chosen; still open: Should · /)
+  assert.match(g, /- 2026-11-09 · Concept written \(Part 1\): \d+ fields chosen; still open: Rules \(shape\), The real skill, Over time, Should, Which way up, Online \(leaving, joining\), Controls · /)
   assert.match(g, /Tension: boats ↔ no rush → keep both: boats wait/)
   assert.ok(neverTrimmed(DISCOVER, r.discover), 'every DISCOVER.md line is still there')
   assert.match(r.discover, /Waiting out a storm with tea while the lamp turns — run 1 · Claude's suggestion · → chosen \(Define run 1: direction\)/)
@@ -210,7 +210,7 @@ test('the commands: digest → write → lint → stage in a project folder; not
     const run = (s, args = []) => spawnSync('node', [join(scripts, s), ...args], { cwd: dir, encoding: 'utf8' })
     assert.match(run('define-digest.mjs').stdout, /✔ \.planning\/research\/define-digest\.md: Define run 1 — 11 bricks grouped/)
     writeFileSync(join(dir, '.bmuz', 'state.json'), JSON.stringify(stateOf(FULL)))
-    assert.match(run('define-doc.mjs').stdout, /✔ \.planning\/GDD\.md: Define run 1 — chosen now: \d+, changed: 0, still open: 1 · \.planning\/DISCOVER\.md: 6 bricks marked/)
+    assert.match(run('define-doc.mjs').stdout, /✔ \.planning\/GDD\.md: Define run 1 — chosen now: \d+, changed: 0, still open: 7 · \.planning\/DISCOVER\.md: 6 bricks marked/) // (F218 task 8: Should + 6 needs-spine fields)
     assert.equal(run('concept-lint.mjs', ['.planning/GDD.md']).status, 0)
     const st = run('define-stage.mjs')
     assert.equal(st.status, 0, st.stdout)

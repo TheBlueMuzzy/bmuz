@@ -27,6 +27,9 @@ const safe = (p, ext) => typeof p === 'string' && p.endsWith(ext) && !/^[\/\\]|^
   p.split('/').every(x => x && x !== '..' && x !== '.') && p.split('/')[0].toLowerCase() !== '.bmuz'
 const digest = safe(a.digest, '.md') ? a.digest : '.planning/research/define-digest.md'
 const discover = safe(a.discover, '.md') ? a.discover : '.planning/DISCOVER.md'
+// (F228: Ideate's game so far, read first when it exists; an older project has only DISCOVER.md)
+const ideate = safe(a.ideate, '.md') ? a.ideate : '.planning/IDEATE.md'
+const material = `${ideate} if it exists (Ideate's game so far: one shelf per need, each line Fixed / Idea / Open), otherwise ${discover}`
 const out = safe(a.out, '.md') ? a.out : '.planning/research/define-fit.md'
 if (a.out && out !== a.out) log(`"${a.out}" isn't a path inside the project; writing ${out} instead`)
 
@@ -52,7 +55,7 @@ const LENSES = [
   },
   {
     id: 'shelves', name: 'The shelves',
-    ask: `Read ${discover}: its On ice shelf (ideas held for Define) and its Prior art shelf. Which on-ice ideas now fit the pillars and the primary feelings (bring-in candidates, never decided by you)? Schell\'s Innovation filter: do the closest prior-art games already do exactly this, and what is new here? Gaps: a primary feeling no core verb delivers, a pillar no brick serves.`,
+    ask: `Read ${material}: its ideas not chosen yet (IDEATE.md's Idea lines, or DISCOVER.md's On ice shelf) and any prior art (DISCOVER.md's Prior art shelf, or .planning/research/define-prior-art.md if it exists). Which unchosen ideas now fit the pillars and the primary feelings (bring-in candidates, never decided by you)? Which open questions (IDEATE.md's Open lines) do the choices still leave open? Schell\'s Innovation filter: do the closest prior-art games already do exactly this, and what is new here? Gaps: a primary feeling no core verb delivers, a pillar no brick serves.`,
   },
 ]
 
@@ -72,7 +75,7 @@ const FIT = {
 const frame = [
   'A creative (a game designer, not an engineer) is in the Define stage of a game: choosing which of the bricks collected in Discover to build with. These are their choices so far:',
   ...chosenLines,
-  `The shelves they chose from: ${discover} (every brick collected) and ${digest} (the same bricks grouped, each with an id like [EX3]). Read them with the Read tool; Grep helps on long files.`,
+  `The material they chose from: ${material} (every piece collected) and ${digest} (the same pieces grouped, each with an id like [FR2] or [EX3]). Read them with the Read tool; Grep helps on long files.`,
 ].join('\n')
 
 const prompt = lens => [

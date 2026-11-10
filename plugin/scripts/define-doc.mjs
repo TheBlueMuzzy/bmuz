@@ -104,9 +104,11 @@ export const PART1 = [
   ['The story', [['story', 'Story', true], ['pitch', 'Pitch'], ['youAre', 'You are']]],
   ['Experience targets', [['primaries', 'Primary feelings', true], ['knowWhen', "We'll know when"], ['notThis', 'Not this game'], ['audience', "Who it's for"], ['fantasy', 'The dream']]],
   ['Pillars', [['pillars', 'Pillars', true]]],
-  ['Made of', [['coreVerbs', 'Core verbs', true], ['mechanisms', 'Mechanisms', true], ['interactables', 'Players act on'], ['theme', 'Theme'], ['tone', 'Tone'], ['hook', 'Hook'], ['anchor', 'Anchor']]],
+  // (F218 task 8, the needs spine: the rules' shape, the real skill and what changes over time are chosen here too;
+  // the frame's which-way-up, controls and online people problems join Product. Older GDDs get them as open.)
+  ['Made of', [['coreVerbs', 'Core verbs', true], ['mechanisms', 'Mechanisms', true], ['interactables', 'Players act on'], ['rules', 'Rules (shape)', true], ['decisions', 'The real skill', true], ['change', 'Over time', true], ['theme', 'Theme'], ['tone', 'Tone'], ['hook', 'Hook'], ['anchor', 'Anchor']]],
   ['Scope per release', [['musts', 'First release (musts)', true], ['later', 'Later releases', true], ['should', 'Should', true], ['could', 'Could', true], ['wont', "Won't", true], ['size', 'Size read (rough, from Claude)']]],
-  ['Product', [['platform', 'Platform'], ['played', 'Played'], ['session', 'Session length'], ['players', 'Players']]],
+  ['Product', [['platform', 'Platform'], ['orientation', 'Which way up'], ['played', 'Played'], ['players', 'Players'], ['online', 'Online (leaving, joining)'], ['session', 'Session length'], ['controls', 'Controls']]],
   ['Risks & probes', [['risks', 'Risks', true]]],
   ['Not this game, for now', [['parked', 'Parked ideas', true]]],
 ]
@@ -216,14 +218,20 @@ export function chosen(steps, state) {
     if (s.kind !== 'talk' || !state.finished.includes(s.id) || skipped.includes(s.id)) continue
     for (const [k, v] of Object.entries((state.resultsBy || {})[s.id] || {})) {
       if (v === null || v === undefined) continue
+      // (F218 task 8: an empty answer is "keep", never "erase": the frame chosen in direction stays when scope hands
+      // product back as {} after one tap)
+      if ((Array.isArray(v) && !v.length) || (typeof v === 'string' && !v.trim()) || (typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length)) {
+        if (results[k] === undefined) { results[k] = v; by[k] = s.id }
+        continue
+      }
       results[k] = v
       by[k] = s.id
     }
   }
-  // scope's product: one object, written as four fields
+  // product (direction asks the frame first; scope confirms it): one object, written as seven fields
   const p = results.product
   if (p && typeof p === 'object' && !Array.isArray(p)) {
-    for (const k of ['platform', 'played', 'session', 'players']) if (p[k] !== undefined && results[k] === undefined) { results[k] = p[k]; by[k] = by.product }
+    for (const k of ['platform', 'orientation', 'played', 'players', 'online', 'session', 'controls']) if (p[k] !== undefined && results[k] === undefined) { results[k] = p[k]; by[k] = by.product }
   }
   return { results, by }
 }

@@ -274,3 +274,34 @@ test('task 3: a plain-text question is found; the nudge names it, twice at most;
   assert.match(E.talkPrompt({ id: 'x', results: [] }, 'craft', '', false), /every question to the creative goes through AskUserQuestion/)
   assert.ok(!/every question to the creative goes through AskUserQuestion/.test(E.talkPrompt({ id: 'x', results: [] }, 'craft', '', true)))
 })
+
+test('F218 task 8: Define on the needs spine — the frame chosen in direction survives scope\'s one-tap keep; new Part 1 fields; prior art only on a yes', async () => {
+  const { chosen, PART1 } = await import('../plugin/scripts/define-doc.mjs')
+  const steps = [{ id: 'direction', kind: 'talk' }, { id: 'bricks', kind: 'talk' }, { id: 'scope', kind: 'talk' }]
+  const state = { finished: ['direction', 'bricks', 'scope'], skipped: [], resultsBy: {
+    direction: { product: { platform: 'desktop', orientation: 'sideways', online: 'a left player is replaced by the computer' }, primaries: [] },
+    bricks: { rules: [{ text: 'first to 11', his: true }], decisions: [], primaries: [{ text: 'surprise', his: true }] },
+    scope: { product: {}, musts: [{ text: 'one match vs the computer' }] },
+  } }
+  const { results, by } = chosen(steps, state)
+  assert.equal(results.platform, 'desktop')
+  assert.equal(results.orientation, 'sideways')
+  assert.equal(results.online, 'a left player is replaced by the computer')
+  assert.equal(by.product, 'direction')
+  assert.deepEqual(results.primaries, [{ text: 'surprise', his: true }]) // a later choice still wins over an earlier []
+  assert.deepEqual(results.decisions, []) // an empty answer alone is still there (the field stays open)
+  const fields = PART1.flatMap(([, f]) => f.map(x => x[1]))
+  for (const label of ['Rules (shape)', 'The real skill', 'Over time', 'Which way up', 'Online (leaving, joining)', 'Controls']) assert.ok(fields.includes(label), label)
+  const p = JSON.parse(readFileSync(join(here, '..', 'plugin', 'pipelines', 'define.json'), 'utf8'))
+  assert.deepEqual(E.checkPipeline(p), [])
+  const pa = E.stepById(p, 'prior-art')
+  assert.equal(pa.when, '{priorArt}')
+  assert.equal(pa.args.out, '.planning/research/define-prior-art.md')
+  assert.ok(E.stepById(p, 'story').results.includes('priorArt'))
+  assert.deepEqual(E.stepById(p, 'bricks').needs, ['prior-art'])
+  assert.ok(E.stepById(p, 'direction').results.includes('product'))
+  for (const id of ['digest', 'direction', 'story', 'bricks', 'pillars', 'fit-check', 'tensions', 'scope', 'risks', 'write', 'concept-lint', 'concept-review', 'review', 'lock', 'stage']) assert.ok(E.stepById(p, id), `step ${id} kept`)
+  const dir = readFileSync(join(here, '..', 'plugin', 'craft', 'define-direction.md'), 'utf8')
+  assert.ok(dir.indexOf('First the frame') < dir.indexOf('Then the heart of the game'))
+  assert.match(readFileSync(join(here, '..', 'plugin', 'craft', 'define-story.md'), 'utf8'), /"No, keep going" first/)
+})
