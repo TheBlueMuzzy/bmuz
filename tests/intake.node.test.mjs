@@ -125,7 +125,9 @@ test('the script: reads the files named, says plainly what it can\'t read, write
     assert.equal(json.proposal.stage, 'define') // "work it out" without a story or musts: Define first
     assert.deepEqual(json.given.pillars, [q('quiet care'), q('nobody loses')])
     const md = readFileSync(join(dir, '.planning', 'research', 'intake.md'), 'utf8')
-    assert.match(md, /not readable yet: deck\.pdf \(not a text file yet: paste its text instead\), https:\/\/docs\.google\.com\/x \(a link: Ideate reads it \(Google Drive folders and docs\), or paste its text\)/)
+    // links and paths elsewhere are Ideate's to read next, never "paste its text" (live look round 5)
+    assert.match(md, / · read next, in Ideate: https:\/\/docs\.google\.com\/x · not readable yet: deck\.pdf \(not a text file yet: paste its text instead\), \.\.\/secret\.md \(outside this folder\)\n/)
+    assert.deepEqual(json.unreadable.filter(u => u.later).map(u => u.path), ['https://docs.google.com/x'])
     assert.match(md, /Design needs the primary feelings, the 3–5 line story, the first-release musts; I'll start you in Define/)
     assert.match(md, /- Ideate \(the material\): partly — 1 piece of material, touching spark \(1 of 6\)/)
     assert.match(readFileSync(join(dir, '.planning', 'research', 'intake-proposal.md'), 'utf8'), /^## Where you're starting — Tidekeeper\n/)

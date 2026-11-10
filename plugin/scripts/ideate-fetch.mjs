@@ -18,6 +18,7 @@ import { homedir, tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as E from '../hooks/engine.js'
+import { driveId, expandHome, githubLink, githubName, githubOk, isOutsidePath, itemsOf, onlyPointers } from './material.mjs'
 
 export const SHARED_MD = '.planning/research/shared.md'
 export const SHARED_JSON = '.planning/research/shared.json'
@@ -72,26 +73,49 @@ export function readLocal(project, rel, c) {
   const path = String(rel).replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '')
   // (re-checked right before it is used: the path came from a hand-editable file)
   if (!E.isSafePath(path)) { c.fail(path, 'outside this folder'); return }
-  const full = join(project, path)
-  if (!existsSync(full)) { c.fail(path, 'not found'); return }
-  const st = statSync(full)
-  if (!st.isDirectory()) return readOneFile(full, path, c)
+  readTree(join(project, path), path, c)
+}
+
+// A path anywhere on the creative's computer they pointed at (C:\..., ~/..., a file:/// link): read the same way,
+// read-only — nothing there is ever written or deleted. `shown` is how the path was given (its name in shared.md).
+export function readOutside(shown, c, home = undefined) {
+  const given = String(shown).trim()
+  const full = expandHome(given, home)
+  readTree(full, given.replace(/\\/g, '/').replace(/\/+$/, ''), c)
+}
+
+// A secret is never read, even inside a folder they shared (their computer holds more than game notes).
+const SECRET_DIRS = new Set(['.ssh', '.gnupg', '.aws', '.azure', '.kube', '.docker'])
+const SECRET_FILE = /^(\.env(\..*)?|\.npmrc|\.netrc|\.git-credentials|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|.*\.(pem|key|p12|pfx|kdbx))$/i
+
+// Reads one file, or walks one folder (its folders too, to depth 4, up to MAX_FILES files), under the same caps.
+// full = where it is; name = how it is named in shared.md.
+export function readTree(full, name, c) {
+  if (!existsSync(full)) { c.fail(name, 'not found'); return }
+  let st
+  try { st = statSync(full) } catch (e) { c.fail(name, "couldn't be opened"); return }
+  if (!st.isDirectory()) return readOneFile(full, name, c)
   let seen = 0
   const walk = (dirAbs, dirRel, depth) => {
-    for (const e of readdirSync(dirAbs, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    let entries
+    try { entries = readdirSync(dirAbs, { withFileTypes: true }) } catch (e) { c.fail(dirRel, "couldn't be opened"); return }
+    for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       if (seen >= MAX_FILES) { c.fail(`${dirRel}/…`, `more than ${MAX_FILES} files: the rest weren't looked at`); return }
-      if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name) && depth < 4) walk(join(dirAbs, e.name), `${dirRel}/${e.name}`, depth + 1); continue }
+      if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name) && !SECRET_DIRS.has(e.name) && depth < 4) walk(join(dirAbs, e.name), `${dirRel}/${e.name}`, depth + 1); continue }
+      if (!e.isFile()) continue
       seen++
       readOneFile(join(dirAbs, e.name), `${dirRel}/${e.name}`, c)
     }
   }
-  walk(full, path, 0)
+  walk(full, name, 0)
 }
 
 function readOneFile(full, name, c) {
   if (/\.meta$/i.test(name)) return // Unity's bookkeeping beside every asset: noise, not material
+  if (SECRET_FILE.test(name.split('/').pop())) { c.list(name, 'looks like a password or key file: left unread'); return }
   const base = name.split('/').pop()
   if (isText(base) || (!/\.[^./]+$/.test(base) && statSync(full).size < 200_000)) {
+    if (statSync(full).size > 5_000_000) { c.list(name, 'a text file too big to read in one pass'); return }
     const buf = readFileSync(full)
     if (buf.includes(0)) { c.list(name, kindOf(base)); return }
     c.add(name, buf.toString('utf8').replace(/^﻿/, ''))
@@ -112,23 +136,38 @@ function main() {
   const c = collector()
   // 1. Their own words: the one-breath answer and anything pasted (here and at the start).
   listOf(show.breath).forEach((x, i, all) => c.add(all.length > 1 ? `your one-breath answer ${i + 1}` : 'your one-breath answer', typeof x === 'string' ? x : x && x.text))
-  const pasted = [...listOf(intake.pasted), ...listOf(show.pasted)].map(t => String(t || '')).filter(t => clean(t))
+  // (a "pasted" item that is only links and paths is a list of things to read, not text)
+  const allPasted = [...listOf(intake.pasted), ...listOf(show.pasted)].map(t => String(t || '')).filter(t => clean(t))
+  const pasted = allPasted.filter(t => !onlyPointers(t))
   pasted.forEach((t, i) => c.add(pasted.length > 1 ? `pasted text ${i + 1}` : 'pasted text', t))
-  // 2. Files and folders in this project (named now, or read at the start).
+  // 2. What they pointed at: files read at the start, files and links named now, what the start left for Ideate
+  // (links, paths outside the project), and the links in a pasted list — each item split into one link or path.
   const fromStart = listOf(intake.sources).map(s => s && s.name).filter(n => typeof n === 'string' && !/^pasted text/.test(n))
-  const links = []
-  for (const f of [...fromStart, ...listOf(show.files)]) {
-    if (/^https?:\/\//i.test(String(f))) { links.push(String(f)); continue }
-    readLocal(project, f, c)
-  }
-  // 3. Links: Google Drive through gws (read-only); any other web page is named, not fetched.
-  for (const u of [...listOf(intake.unreadable).map(x => x && x.path).filter(p => /^https?:\/\//i.test(String(p || ''))), ...listOf(show.links)]) links.push(String(u))
-  for (const link of [...new Set(links.map(l => l.trim()).filter(Boolean))]) readLink(link, c)
+  const later = listOf(intake.unreadable).filter(x => x && (x.later || /^https?:\/\//i.test(String(x.path || '')))).map(x => x.path)
+  const seen = new Set()
+  readPointers(project, [...fromStart, ...listOf(show.files), ...later], c, { files: true, seen })
+  readPointers(project, [...listOf(show.links), ...allPasted.filter(onlyPointers)], c, { seen })
   const date = new Date().toLocaleDateString('en-CA')
   mkdirSync(join(project, dirname(SHARED_MD)), { recursive: true })
   writeFileSync(join(project, SHARED_JSON), JSON.stringify({ version: 1, date, sources: c.sources, listed: c.listed, unread: c.unread }, null, 2) + '\n')
   writeFileSync(join(project, SHARED_MD), sharedMd({ date, ...c }))
   console.log(`✔ ${SHARED_MD}: ${c.sources.length} read, ${c.listed.length} listed by name, ${c.unread.length} couldn't be read`)
+}
+
+// Every item split (splitMaterial), each link or path read once: Drive and GitHub links, other links named, paths
+// in this project or anywhere on their computer. Words that are neither (a stray "and") are left out.
+// opts.files: the items are a "files" list Claude handed back (material.mjs itemsOf). opts.seen: shared between calls.
+export function readPointers(project, items, c, opts = {}) {
+  const seen = opts.seen || new Set()
+  for (const raw of items) {
+    for (const it of itemsOf(raw, { files: opts.files })) {
+      const key = it.value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+      if (it.kind === 'text' || seen.has(key)) continue
+      seen.add(key)
+      if (it.kind === 'path') isOutsidePath(it.value) ? readOutside(it.value, c, opts.home) : readLocal(project, it.value, c)
+      else readLink(it.value, c, opts.gws, opts.gh)
+    }
+  }
 }
 
 export function sharedMd({ date, sources, listed, unread }) {
@@ -162,14 +201,8 @@ export const GOOGLE_TYPES = {
 }
 const FOLDER = 'application/vnd.google-apps.folder'
 
-// The Drive id in a link (a folder, a file, a Doc / Sheet / Slides), or null for any other link.
-export function driveId(link) {
-  let u
-  try { u = new URL(String(link).trim()) } catch (e) { return null }
-  if (!/(^|\.)(drive|docs)\.google\.com$/i.test(u.hostname)) return null
-  const m = u.pathname.match(/\/folders\/([A-Za-z0-9_-]+)/) || u.pathname.match(/\/d\/([A-Za-z0-9_-]+)/) || [null, u.searchParams.get('id')]
-  return m[1] && ID_RE.test(m[1]) ? m[1] : null
-}
+// (driveId lives in material.mjs, beside the other link readers; kept here for its callers)
+export { driveId }
 
 // How to run gws from node: no shell (a Drive id travels inside a JSON argument). On Windows the npm shim is a .cmd
 // file, so its own launcher script is run with node. Tests may stand in a fake (BMUZ_GWS, only with BMUZ_TEST=1).
@@ -251,9 +284,11 @@ export function gwsRunner(cmd = gwsCommand(), accounts = gwsAccounts()) {
 }
 
 // One link: a Drive folder (walked, its folders too), a Drive file or Doc; any other link is named, not fetched.
-export function readLink(link, c, gws = null) {
+export function readLink(link, c, gws = null, gh = null) {
+  const hub = githubLink(link)
+  if (hub) return readGithub(hub, c, gh)
   const id = driveId(link)
-  if (!id) { c.fail(link, 'a web link, not Google Drive: paste its text instead'); return }
+  if (!id) { c.fail(link, 'a web link, not Google Drive or GitHub: paste its text instead'); return }
   const g = gws || gwsRunner()
   const m = g.meta(id)
   if (!m.ok) {
@@ -287,6 +322,62 @@ export function readLink(link, c, gws = null) {
   }
   if (m.file.mimeType === FOLDER) walk(id, m.file.name, 0)
   else one(m.file, m.file.name)
+}
+
+// ---- GitHub (live look round 5): through the gh CLI, read-only ----
+// Only two calls are ever made: `gh repo clone <owner>/<repo> <temp> -- --depth 1 [--branch <ref>]` (a repo or a
+// folder: a shallow copy into a fresh temp folder, read like a local folder, then deleted) and `gh api
+// repos/<o>/<r>/contents/<path>?ref=<ref>` with the raw accept header (one file). No shell; every part is
+// pattern-checked again right before it goes into a command. Tests may stand in a fake (BMUZ_GH, only with BMUZ_TEST=1).
+export function ghCommand(env = process.env) {
+  if (env.BMUZ_TEST === '1' && env.BMUZ_GH) return [process.execPath, env.BMUZ_GH]
+  return ['gh']
+}
+
+export function ghRunner(cmd = ghCommand()) {
+  const run = (args, { cwd } = {}) => {
+    const r = spawnSync(cmd[0], [...cmd.slice(1), ...args], { cwd, encoding: 'utf8', env: { ...process.env, GH_PROMPT_DISABLED: '1', GIT_TERMINAL_PROMPT: '0' }, timeout: 180_000, maxBuffer: 16 * 1024 * 1024, windowsHide: true })
+    if (r.error) return { ok: false, missing: r.error.code === 'ENOENT', why: String(r.error.message || r.error) }
+    return r.status === 0 ? { ok: true, out: String(r.stdout || '') } : { ok: false, why: clean(`${r.stderr || ''} ${r.stdout || ''}`).slice(0, 200) || `gh exited ${r.status}` }
+  }
+  return {
+    // A shallow copy into `dest` (a fresh temp folder's child).
+    clone(g, dest) {
+      if (!githubOk(g)) return { ok: false, why: 'the link has parts that aren\'t safe to use' }
+      return run(['repo', 'clone', `${g.owner}/${g.repo}`, dest, '--', '--depth', '1', ...(g.ref ? ['--branch', g.ref] : [])])
+    },
+    // One file's text.
+    file(g) {
+      if (!githubOk(g) || !g.path) return { ok: false, why: 'the link has parts that aren\'t safe to use' }
+      const path = g.path.split('/').map(encodeURIComponent).join('/')
+      return run(['api', '-H', 'Accept: application/vnd.github.raw', `repos/${g.owner}/${g.repo}/contents/${path}${g.ref ? `?ref=${encodeURIComponent(g.ref)}` : ''}`])
+    },
+  }
+}
+
+export function readGithub(g, c, gh = null) {
+  const r = gh || ghRunner()
+  const name = githubName(g)
+  const said = res => (res.missing ? "GitHub can't be reached from here (the gh tool isn't installed): paste the text instead" : `GitHub said no (${res.why}): is the repo public, or are you signed in to gh?`)
+  if (g.kind === 'blob') {
+    const base = g.path.split('/').pop()
+    if (!isText(base) && /\.[^./]+$/.test(base)) { c.list(name, kindOf(base), 'GitHub'); return }
+    const res = r.file(g)
+    if (!res.ok) { c.fail(name, said(res)); return }
+    if (res.out.includes('\u0000')) { c.list(name, kindOf(base), 'GitHub'); return }
+    c.add(name, res.out)
+    return
+  }
+  const tmp = mkdtempSync(join(tmpdir(), 'bmuz-github-'))
+  try {
+    const dest = join(tmp, 'repo')
+    const res = r.clone(g, dest)
+    if (!res.ok) { c.fail(name, said(res)); return }
+    const at = g.path ? join(dest, ...g.path.split('/')) : dest
+    readTree(at, name, c)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main()

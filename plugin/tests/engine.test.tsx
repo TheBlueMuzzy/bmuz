@@ -158,11 +158,12 @@ test('live look 2026-11-10: a question box closed without an answer (an empty "T
   expect(nudged()).toBe(1)
 })
 
-// ---- The paste panel (live look 2026-11-10): ask_paste draws a real field above the prompt ----
+// ---- Asking for links (live look round 5): ask_paste → Claude writes the creative's words; their next message answers ----
 const PASTE = 'mcp__bmuz__ask_paste'
+const ASK = 'Share your links — paste them with Alt+V. I can read Google Drive folder and/or doc links, GitHub links, and even folder and file links from your computer. If you don\'t want to share any links, just say "never mind".'
 const BAND = { component: 'AbovePrompt', props: { bodyColumns: 120, hasSurvey: false, isWorking: false, maxRows: 30 } }
 
-// The "shown" world with ask_paste in step "ask"'s tools; the project folder is C:/games/lamp (as Windows hands it).
+// The "shown" world with ask_paste in step "ask"'s tools; every prompt keeps its context lines (prompts[i]).
 function pasteWorld(on: any) {
   const s = shown(on)
   const p = JSON.parse(s.w.files.PIPELINE)
@@ -170,100 +171,83 @@ function pasteWorld(on: any) {
   s.w.files.PIPELINE = JSON.stringify(p)
   return s
 }
-const fromEngine = (prompts: string[]) => prompts.filter(p => /^BMUZ engine — this message comes from the BMUZ engine, not the creative \(step "ask"\)/.test(p))
+const nudges = (prompts: string[]) => prompts.filter(p => /^BMUZ engine — this message comes from the BMUZ engine, not the creative \(step "ask"\)/.test(p)).length
+const events = (w: any) => w.files['/proj/.bmuz/journal.jsonl'].split('\n').filter(Boolean).map((l: string) => JSON.parse(l))
 
-test('live look 2026-11-10: ask_paste draws the field (placeholder), the folder\'s full path and both buttons, and returns at once', async ($, on) => {
+test('live look round 5: ask_paste opens the ask and hands Claude the creative\'s exact words; nothing is drawn above the prompt but the band', async ($, on) => {
   mock.clock(on, { now: 1000 })
-  const { w } = pasteWorld(on)
+  const { w, prompts } = pasteWorld(on)
   await start($, true)
-  const r: any = await $.tool.call({ tool: PASTE, question: 'What can I read?', folder: '/proj' } as any)
+  const r: any = await $.tool.call({ tool: PASTE } as any)
   expect(refused(r)).toBe(false)
-  expect(String(r.result ?? JSON.stringify(r))).toMatch(/End your turn now, with no text/)
-  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste).toEqual({ step: 'ask', question: 'What can I read?', folder: '/proj' })
+  const said = JSON.parse(String(r.result))
+  expect(said.say).toBe(ASK)
+  expect(said.note).toMatch(/whole reply/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste).toEqual({ step: 'ask' })
   const ui = await $.ui.mount({ plugin: 'bmuz', surface: 'terminal', ...BAND } as any)
-  expect(await ui.find({ type: 'Text', text: 'What can I read?' })).toBeDefined()
-  const field: any = await ui.find({ key: 'paste' })
-  expect(field?.type).toBe('Input')
-  expect(field?.props?.placeholder).toBe('Paste your links here (Alt+V) — as many as you like, then Enter')
-  expect(field?.props?.rows).toBe(3)
-  expect((await ui.find({ key: 'look' }) as any)?.props?.label).toBe('Look in this folder: /proj')
-  expect((await ui.find({ key: 'never' }) as any)?.props?.label).toBe("Never mind — let's take another approach")
+  expect(await ui.find({ type: 'Text', text: /^BMUZ · / })).toBeDefined()
+  expect(await ui.findAll({ type: 'Input' })).toHaveLength(0)
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
   await ui.unmount()
+  // the turn that writes the ask ends open on purpose: no nudge
+  await $.turn.complete({ answer: ASK, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(nudges(prompts)).toBe(0)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"ask.paste"/)
 })
 
-test('live look 2026-11-10: pasted links come back as the engine\'s message, newlines kept, journaled as the answer; the panel closes', async ($, on) => {
-  const clock = mock.clock(on, { now: 1000 })
-  const { w, prompts } = pasteWorld(on)
-  await start($, true)
-  await $.tool.call({ tool: PASTE, question: 'What can I read?' } as any)
-  // their turn ends open on purpose: no nudge while the panel is open, and no stall for the watchdog
-  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
-  expect(fromEngine(prompts).length).toBe(0)
-  const ui = await $.ui.mount({ plugin: 'bmuz', surface: 'terminal', ...BAND } as any)
-  // an empty submit keeps the panel open, and sends nothing
-  await ui.input({ key: 'paste', text: '   ', kind: 'submit' })
-  await clock.advance(1000)
-  expect(fromEngine(prompts).length).toBe(0)
-  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste).toBeTruthy()
-  const links = 'https://drive.google.com/drive/folders/abc\nhttps://docs.google.com/document/d/xyz\n\nand my notes'
-  await ui.input({ key: 'paste', text: links, kind: 'submit' })
-  await clock.advance(1000)
-  const sent = fromEngine(prompts)
-  expect(sent.length).toBe(1)
-  expect(sent[0]).toBe(`BMUZ engine — this message comes from the BMUZ engine, not the creative (step "ask"). The creative pasted:\n${links}`)
-  const answer = w.files['/proj/.bmuz/journal.jsonl'].split('\n').filter(Boolean).map(l => JSON.parse(l)).find(j => j.ev === 'answer')
-  expect(answer).toMatchObject({ step: 'ask', via: 'paste', text: links })
-  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste).toBeNull()
-  expect(await ui.find({ key: 'paste' })).toBeUndefined()
-  await ui.unmount()
-})
-
-test('live look 2026-11-10: each paste-panel button sends its choice as the engine\'s message', async ($, on) => {
-  const clock = mock.clock(on, { now: 1000 })
-  const { prompts } = pasteWorld(on)
-  await start($, true)
-  for (const [key, said] of [['look', /chose: look in the folder \(\/proj\)/], ['never', /chose: never mind — another approach/]] as const) {
-    await $.tool.call({ tool: PASTE, question: 'What can I read?' } as any)
-    const ui = await $.ui.mount({ plugin: 'bmuz', surface: 'terminal', ...BAND } as any)
-    const before = fromEngine(prompts).length
-    await ui.press({ key })
-    await clock.advance(1000)
-    const sent = fromEngine(prompts)
-    expect(sent.length).toBe(before + 1)
-    expect(sent[sent.length - 1]).toMatch(said)
-    await ui.unmount()
-  }
-})
-
-test('live look 2026-11-10: an open paste panel survives a new window — drawn again, and a "bmuz go" resume tells Claude to wait for it', async ($, on) => {
+test('live look round 5: the creative\'s next message is the answer — journaled as their words, the ask closed, Claude told to take its links', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const { w, prompts } = pasteWorld(on)
-  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ ...JSON.parse(w.files['/proj/.bmuz/state.json']), paste: { step: 'ask', question: 'Anything else?', folder: 'C:\\games\\lamp' } })
   await start($, true)
-  const ui = await $.ui.mount({ plugin: 'bmuz', surface: 'terminal', ...BAND } as any)
-  expect(await ui.find({ key: 'paste' })).toBeDefined()
-  expect((await ui.find({ key: 'look' }) as any)?.props?.label).toBe('Look in this folder: C:\\games\\lamp')
-  await ui.unmount()
+  await $.tool.call({ tool: PASTE } as any)
+  const links = 'https://drive.google.com/drive/folders/abc1234567\nhttps://github.com/TheBlueMuzzy/lamp C:\\Users\\Muzzy\\notes'
+  await $.prompt.submit({ text: links } as any)
+  const answer = events(w).find((j: any) => j.ev === 'answer')
+  expect(answer).toMatchObject({ step: 'ask', via: 'typed', text: links })
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste).toBeNull()
+  const last = prompts[prompts.length - 1]
+  expect(last.startsWith(links)).toBe(true)
+  expect(last).toMatch(/this message answers your ask for links/)
+})
+
+test('live look round 5: "never mind" closes the ask as no material', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = pasteWorld(on)
+  await start($, true)
+  await $.tool.call({ tool: PASTE } as any)
+  await $.prompt.submit({ text: '"Never mind."' } as any)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste).toBeNull()
+  expect(prompts[prompts.length - 1]).toMatch(/said "never mind" to sharing links: carry on with the step with no material/)
+  expect(events(w).find((j: any) => j.ev === 'paste.closed')).toMatchObject({ never: true })
+})
+
+test('live look round 5: an open ask survives a new window, and a "bmuz go" resume sends the same words again', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = pasteWorld(on)
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ ...JSON.parse(w.files['/proj/.bmuz/state.json']), paste: { step: 'ask' } })
+  await start($, true)
   await $.prompt.submit({ text: 'bmuz go' } as any)
   await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as any)
-  expect(prompts.some(p => /paste panel is still open above the prompt, asking "Anything else\?"/.test(p))).toBe(true)
+  expect(prompts.some(p => p.includes(`Your ask for their links is still open: write exactly this as your whole reply and end your turn — ${ASK}`))).toBe(true)
+  // ("bmuz go" itself is not the answer)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste).toEqual({ step: 'ask' })
 })
 
-test('live look 2026-11-10: ask_paste is refused in an auto run, and in a step that doesn\'t list it', async ($, on) => {
+test('live look round 5: ask_paste is refused in an auto run', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const { w } = pasteWorld(on)
   await start($, true)
   await $.prompt.submit({ text: 'bmuz auto' } as any)
-  const r: any = await $.tool.call({ tool: PASTE, question: 'What can I read?' } as any)
+  const r: any = await $.tool.call({ tool: PASTE } as any)
   expect(why(r)).toMatch(/auto run, nobody is here to answer/)
   expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste ?? null).toBeNull()
 })
 
-test('live look 2026-11-10: ask_paste in a step without it in its tools is refused', async ($, on) => {
+test('live look round 5: ask_paste in a step without it in its tools is refused', async ($, on) => {
   mock.clock(on, { now: 1000 })
   shown(on)
   await start($, true)
-  const r: any = await $.tool.call({ tool: PASTE, question: 'What can I read?' } as any)
+  const r: any = await $.tool.call({ tool: PASTE } as any)
   expect(why(r)).toMatch(/may use only Read, AskUserQuestion/)
 })
 

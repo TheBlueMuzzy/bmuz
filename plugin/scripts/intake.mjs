@@ -20,6 +20,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as E from '../hooks/engine.js'
 import { TALK_KEYS, itemText, mergeDoc } from './discover-doc.mjs'
+import { isOutsidePath, onlyPointers, pointersOf } from './material.mjs'
 
 export const INTAKE_JSON = '.planning/research/intake.json'
 export const INTAKE_MD = '.planning/research/intake.md'
@@ -200,10 +201,13 @@ export function buildIntake({ result: raw, sources, unreadable = [], defineKeys,
   const pasted = listOf(result.pasted).map(t => String(t == null ? '' : t)).filter(t => clean(t))
   const json = { version: 1, date, where, goal, brief, slug, sources: sources.map(s => ({ name: s.name, chars: s.text.length })), pasted, unreadable, read, gaps, gapWhy: why, proposal, given, notVerbatim, unknownKeys: unknown }
 
+  // (links and paths elsewhere are read by Ideate's reading step: said as that, not as "paste its text")
+  const nextUp = unreadable.filter(u => u && u.later)
+  const notYet = unreadable.filter(u => u && !u.later)
   const stageLine = (s, at) => `${E.stageOf(s).name}${at && at !== 'first' ? ` · ${at}` : ''}`
   const md = [
     `# Where you're starting${brief ? ` — ${brief}` : ''}`,
-    `Read ${date}${sources.length ? ` from: ${sources.map(s => s.name).join(' · ')}` : ': nothing shared yet'}${unreadable.length ? ` · not readable yet: ${unreadable.map(u => `${u.path} (${u.why})`).join(', ')}` : ''}`,
+    `Read ${date}${sources.length ? ` from: ${sources.map(s => s.name).join(' · ')}` : ': nothing shared yet'}${nextUp.length ? ` · read next, in Ideate: ${nextUp.map(u => u.path).join(', ')}` : ''}${notYet.length ? ` · not readable yet: ${notYet.map(u => `${u.path} (${u.why})`).join(', ')}` : ''}`,
     '',
     '## Proposal',
     '**What I read:**',
@@ -260,10 +264,14 @@ function main() {
   // project only, text files only: PDFs and Drive links are out of scope for now and said so).
   const sources = []
   const unreadable = []
-  listOf(result.pasted).forEach((t, i, all) => { if (clean(t)) sources.push({ name: all.length > 1 ? `pasted text ${i + 1}` : 'pasted text', text: String(t) }) })
-  for (const f of listOf(result.files)) {
+  // (a pasted item that is only links and paths is a list of things to read, not text: material.mjs splits it)
+  const pastedText = listOf(result.pasted).filter(t => clean(t) && !onlyPointers(t))
+  pastedText.forEach((t, i, all) => sources.push({ name: all.length > 1 ? `pasted text ${i + 1}` : 'pasted text', text: String(t) }))
+  for (const f of pointersOf(result)) {
     const path = String(f).replace(/\\/g, '/').replace(/^\.\//, '')
-    if (/^https?:\/\//i.test(path)) { unreadable.push({ path, why: 'a link: Ideate reads it (Google Drive folders and docs), or paste its text' }); continue }
+    // Links (Google Drive, GitHub) and paths elsewhere on their computer: Ideate's reading step reads them next.
+    if (/^https?:\/\//i.test(path)) { unreadable.push({ path, why: 'a link: Ideate reads it next', later: true }); continue }
+    if (isOutsidePath(f)) { unreadable.push({ path: String(f), why: 'outside this folder: Ideate reads it next', later: true }); continue }
     if (!E.isSafePath(path)) { unreadable.push({ path, why: 'outside this folder' }); continue }
     if (/\.(pdf|docx?|pptx?|xlsx?|png|jpe?g|gif|zip)$/i.test(path)) { unreadable.push({ path, why: 'not a text file yet: paste its text instead' }); continue }
     if (!existsSync(join(project, path))) { unreadable.push({ path, why: 'not found' }); continue }
