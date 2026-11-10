@@ -356,7 +356,9 @@ const scenarios = {
     const all = journalOf(dir)
     const trail = () => all.map(j => j.ev + (j.step ? ':' + j.step : '') + (j.why ? ` (${String(j.why).slice(0, 140)})` : '')).join(' ')
     const intake = JSON.parse(read('.planning/research/intake.json') || '{}')
-    check('F225: the concept was read and the proposal said Define (pin it down), with the gap map for all five stages', intake.proposal?.stage === 'define' && /## Proposal\n[\s\S]*Define \(the blocks\): (partly|covered)[\s\S]*Release \(the public\): /.test(read('.planning/research/intake.md') || ''), JSON.stringify(intake.proposal))
+    // Every stage's line is there; how much Define it already covers is the model's reading of the concept ("the
+    // feeling I want most" went once to Define's picks, once to Discover's shelf — full check 2026-11-09), so not asserted.
+    check('F225: the concept was read and the proposal said Define (pin it down), with the gap map for all five stages', intake.proposal?.stage === 'define' && /## Proposal\n[\s\S]*Discover \(the material\): [\s\S]*Define \(the blocks\): [\s\S]*Design \(assembling them\): [\s\S]*Develop \(the production model\): [\s\S]*Release \(the public\): /.test(read('.planning/research/intake.md') || ''), JSON.stringify(intake.proposal))
     const discover = read('.planning/DISCOVER.md') || ''
     check('F225: the concept\'s material is on DISCOVER.md\'s shelves in the creative\'s own words, marked "from your material"', (discover.match(/ — run 1 · from your material$/gm) || []).length >= 2 && /\n- From your material: pasted text\n/.test(discover), discover.split('## Runs')[0].slice(-800))
     const UP_TO_LOCK = ['digest', 'direction', 'story', 'bricks', 'pillars', 'fit-check', 'tensions', 'scope', 'risks', 'write', 'concept-lint', 'concept-review', 'review', 'lock']
