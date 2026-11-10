@@ -1,7 +1,7 @@
 {
   "id": "discover",
   "version": 1,
-  "description": "Discover a game idea (framework .planning/research/bmuz-vision/discover-creative-research.md section 6): experience first — spark, experience and fantasy, theme dig, simulation breakdown, mechanism shelf, prior art and twists — collecting the material for the game's building blocks into .planning/DISCOVER.md, then the material board. Collects, never chooses: Define makes the blocks. Wrap up after any step.",
+  "description": "Discover a game idea (framework .planning/research/bmuz-vision/discover-creative-research.md section 6): experience first — spark, experience and fantasy, theme dig, simulation breakdown, mechanism shelf, prior art and twists — collecting the material for the game's building blocks into .planning/DISCOVER.md, then the material board. Collects, never chooses: Define makes the blocks. Wrap up after any step. (F228, 2026-11-10: no longer a stage — Ideate gathers the material now; kept on disk because its research flow becomes F229 — Research, callable anywhere.)",
   "watchdogMs": 1200000,
   "next": {"pipeline": "define"},
   "steps": [

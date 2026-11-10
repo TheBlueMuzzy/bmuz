@@ -570,6 +570,15 @@ async function advance($: any, resume: boolean, opts: { timer?: boolean, go?: bo
     } else if (s.status === 'working' && step.kind === 'flow' && flowAskedHere === `${step.id}#${s.retries[step.id] || 0}`) {
       return // this session already asked for this try's launch; the watchdog covers it if it never comes
     }
+    // A step with "when" runs only when the earlier result it names says yes (research offered, never forced):
+    // otherwise it is skipped like a wrapped-up step, journaled, and the run goes on.
+    if (!isRestart && !E.isWanted(step, vars())) {
+      const empties = E.wrapEmpties(ctx.pipeline, ctx.state, [step.id])
+      ctx.state = E.applyWrap(ctx.state, [step.id], empties)
+      await journal($, { ev: 'step.skip', step: step.id, when: step.when, empties })
+      await save($)
+      continue
+    }
     if (isRestart && resume) await journal($, { ev: 'resume', step: step.id, status: s.status })
     ctx.state = E.begin(ctx.state, step, await $.clock.now())
     // The checkpoint comes before the step.start line: a crash between them then retakes it (the files
@@ -600,9 +609,28 @@ async function advance($: any, resume: boolean, opts: { timer?: boolean, go?: bo
       const next = await settle($, step, verdict, null)
       if (next === 'stop') return
       if (next === 'retry') ctx.state = { ...ctx.state, current: step.id }
+      // F228: a script step's "show" file goes to the creative in a turn of its own; the run goes on at its end.
+      if (next === 'next' && step.show && (await showFile($, step))) return
       continue
     }
   }
+}
+
+// Shows a script step's "show" file: a copy goes to .bmuz/last-shown.md and the engine's own message asks Claude to
+// show it word for word. Returns false (nothing shown, the run goes on) when the file isn't there.
+async function showFile($: any, step: any) {
+  // (the path is from the plugin's own pipeline file, checked at load; re-checked right before it is read)
+  if (!E.isSafePath(step.show)) return false
+  const text = await readText($, `${ctx.dir}/${step.show}`)
+  if (text === null || !text.trim()) {
+    await journal($, { ev: 'show.missing', step: step.id, path: step.show })
+    return false
+  }
+  await $.fs.write(`${ctx.dir}/.bmuz/last-shown.md`, text.endsWith('\n') ? text : text + '\n')
+  await journal($, { ev: 'show', step: step.id, path: step.show })
+  pending = 'advance'
+  await $.prompt.submit({ text: E.showPrompt(`${ctx.dir}/.bmuz/last-shown.md`) })
+  return true
 }
 
 // An auto run's questions go to .bmuz/questions.md for the creative, each with the default it took.
@@ -848,6 +876,10 @@ export const register: Register = on => {
       if ((res?.deny || res?.isError) && !E.isPersonDeclining(res)) {
         ctx.auto = true
         await journal($, { ev: 'auto.detected', why: 'the question tool was refused: nobody can answer in this session' })
+      } else if (!res?.deny && !res?.isError) {
+        // F228: the creative's answer, as the box returned it: a script checks the creative's "own words" against
+        // these (ideate-doc.mjs), so a quote Claude hands back as theirs is checked, not trusted.
+        await journal($, { ev: 'answer', step: ctx.state.current, text: E.answerText(res).slice(0, 6000) })
       }
       return res
     }

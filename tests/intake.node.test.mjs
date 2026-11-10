@@ -33,48 +33,54 @@ test('a quote counts as the creative\'s words only when it is in the material (c
 })
 
 test('the gap map: covered / partly / not yet per stage, by fixed rules', () => {
-  assert.deepEqual(gapMap({}).gaps, { discover: 'not yet', define: 'not yet', design: 'not yet', develop: 'not yet', release: 'not yet' })
+  assert.deepEqual(gapMap({}).gaps, { ideate: 'not yet', define: 'not yet', design: 'not yet', develop: 'not yet', deliver: 'not yet', release: 'not yet' })
   const concept = gapMap({ youAre: [q('a')], spark: [q('b')], experiences: [q('c')], primaries: [q('d')] })
-  assert.deepEqual([concept.gaps.discover, concept.gaps.define], ['partly', 'partly'])
+  assert.deepEqual([concept.gaps.ideate, concept.gaps.define], ['partly', 'partly'])
   assert.match(concept.why.define, /has the primary feelings; still open: the 3–5 line story, the pillars, the first-release musts/)
   const rulebook = gapMap({ youAre: [q('a')], spark: [q('b')], experiences: [q('c')], tone: [q('t')], verbs: [q('v')], primaries: [q('d')], story: [q('s')], pillars: [q('p')], musts: [q('m')], rules: [q('r')], playtests: [q('x')] })
   // a line in each of four groups is breadth without depth: still "partly"
-  assert.deepEqual(rulebook.gaps, { discover: 'partly', define: 'covered', design: 'covered', develop: 'not yet', release: 'not yet' })
+  assert.deepEqual(rulebook.gaps, { ideate: 'partly', define: 'covered', design: 'covered', develop: 'not yet', deliver: 'not yet', release: 'not yet' })
   const many = n => Array.from({ length: n }, (_, i) => q(`item ${i}`))
-  assert.equal(gapMap({ youAre: many(5), experiences: many(5), tone: many(5), verbs: many(5) }).gaps.discover, 'covered')
-  assert.equal(gapMap({ youAre: many(5), experiences: many(5), tone: many(9) }).gaps.discover, 'partly') // deep, but 3 groups
+  assert.equal(gapMap({ youAre: many(5), experiences: many(5), tone: many(5), verbs: many(5) }).gaps.ideate, 'covered')
+  assert.equal(gapMap({ youAre: many(5), experiences: many(5), tone: many(9) }).gaps.ideate, 'partly') // deep, but 3 groups
 })
 
-test('the proposal: nothing or a spark → Discover\'s spark; a later goal than the material supports catches up first', () => {
+test('the proposal: nothing or a spark → Ideate; a later goal than the material supports catches up first', () => {
   const p = (where, goal, items) => { const { gaps, discoverGot } = gapMap(items); return propose({ where, goal, items, g: gaps, discoverGot }) }
-  assert.deepEqual([p('nothing', 'none', {}).stage, p('nothing', 'none', {}).at], ['discover', 'spark'])
-  assert.deepEqual([p('spark', 'none', { spark: [q('a')], youAre: [q('b')] }).stage, p('spark', 'none', { spark: [q('a')], youAre: [q('b')] }).at], ['discover', 'spark'])
-  // a concept, "pin it down": Define from the start, Discover offered as "earlier"
+  assert.deepEqual([p('nothing', 'none', {}).stage, p('nothing', 'none', {}).at], ['ideate', 'first'])
+  assert.deepEqual([p('spark', 'none', { spark: [q('a')], youAre: [q('b')] }).stage, p('spark', 'none', { spark: [q('a')], youAre: [q('b')] }).at], ['ideate', 'first'])
+  // a concept, "pin it down": Define from the start, Ideate offered as "earlier"
   const pin = p('concept', 'pin', { youAre: [q('a')], primaries: [q('calm')] })
-  assert.deepEqual([pin.stage, pin.at, pin.catchUp, pin.earlier], ['define', 'digest', null, { stage: 'discover', at: 'spark' }])
+  assert.deepEqual([pin.stage, pin.at, pin.catchUp, pin.earlier], ['define', 'digest', null, { stage: 'ideate', at: 'first' }])
   // "work it out" with no pillars or scope: Design needs them, so Define first (the catch-up)
   const work = p('written', 'work', { youAre: [q('a')], primaries: [q('calm')], rules: [q('r')] })
   assert.equal(work.stage, 'define')
   assert.match(work.catchUp, /^Design needs the 3–5 line story, the pillars, the first-release musts; I'll start you in Define to make those first, with everything your material already chose kept in one tap\.$/)
-  // "open it up" with the spark and experience already in the material: Discover starts at Theme
+  // "open it up" with material: Ideate at its first step (it shows what was read and asks for the rest)
   const open = p('written', 'open', { youAre: [q('a')], spark: [q('b')], experiences: [q('c')] })
-  assert.deepEqual([open.stage, open.at], ['discover', 'theme'])
-  assert.match(open.why, /already covers spark, experience: we start at Theme/)
+  assert.deepEqual([open.stage, open.at], ['ideate', 'first'])
+  assert.match(open.why, /Ideate reads all of your material \(it already touches spark, experience\), writes back the game so far/)
   // the label is off: "build it" from a bare concept goes back to Define
   assert.equal(p('concept', 'build', { youAre: [q('a')], spark: [q('b')] }).stage, 'define')
 })
 
-test('buildIntake: the proposal screen, the gap map for all five stages, the material marked where it came from', () => {
+test('buildIntake: the proposal screen, the gap map for all six stages, the material marked where it came from', () => {
   const result = { where: 'concept', goal: 'pin', brief: 'a cosy lighthouse game', slug: 'cosy-lighthouse', material: { youAre: [q('You are the keeper of a lighthouse on a rocky island')], primaries: [q('the quiet care')], experiences: [q('A boat makes it home and the night goes quiet')], reminds: [q('Lighthouse: The Game')], verbs: ['tend the lamp'] } }
-  const { json, md, run } = buildIntake({ result, sources: [{ name: 'pasted text', text: CONCEPT }], defineKeys: DEFINE_KEYS, date: '2026-11-09', key: 'k1' })
+  const { json, md, run, screen } = buildIntake({ result, sources: [{ name: 'pasted text', text: CONCEPT }], defineKeys: DEFINE_KEYS, date: '2026-11-09', key: 'k1' })
   assert.equal(json.proposal.stage, 'define')
   assert.deepEqual(json.given.primaries, [q('the quiet care')])
   assert.equal(json.given.brief, 'a cosy lighthouse game')
   assert.equal(json.given.slug, 'cosy-lighthouse')
   assert.match(md, /^## Proposal\n\*\*What I read:\*\*\n- "a cosy lighthouse game"\n- "You are the keeper/m)
-  for (const s of ['Discover (the material)', 'Define (the blocks)', 'Design (assembling them)', 'Develop (the production model)', 'Release (the public)']) assert.match(md, new RegExp(`\\n- ${s.replace(/[()]/g, '\\$&')}: (covered|partly|not yet) — `))
+  for (const s of ['Ideate (the material)', 'Define (the blocks)', 'Design (assembling them)', 'Develop (the production model)', 'Deliver (ready to hand over)', 'Release (the public)']) assert.match(md, new RegExp(`\\n- ${s.replace(/[()]/g, '\\$&')}: (covered|partly|not yet) — `))
   assert.match(md, /\*\*Where I'd start you:\*\* Define · digest — You asked to pin it down/)
-  assert.match(md, /## Options\n- Start there: Define · digest\n- Start earlier: Discover\n- Somewhere else\n/)
+  assert.match(md, /## Options\n- Start there: Define · digest\n- Start earlier: Ideate\n- Somewhere else\n/)
+  // F228: the screen the engine shows before "Start there?": the proposal only, no options, no material list
+  assert.match(screen, /^## Where you're starting — a cosy lighthouse game\n\*\*What I read:\*\*\n/)
+  assert.match(screen, /\*\*Where I'd start you:\*\* Define · digest/)
+  assert.ok(!/## Options|## The material/.test(screen))
+  assert.equal(buildIntake({ result: { where: 'nothing' }, sources: [], defineKeys: DEFINE_KEYS, date: '2026-11-09' }).screen, '')
+  assert.deepEqual(json.pasted, [])
   // DISCOVER.md: every Discover item on its shelf, quotes marked "from your material", the rest Claude's reading
   const doc = mergeDoc(null, run).text
   assert.match(doc, /\n- Situation: "A boat makes it home and the night goes quiet" — run 1 · from your material\n/)
@@ -119,9 +125,10 @@ test('the script: reads the files named, says plainly what it can\'t read, write
     assert.equal(json.proposal.stage, 'define') // "work it out" without a story or musts: Define first
     assert.deepEqual(json.given.pillars, [q('quiet care'), q('nobody loses')])
     const md = readFileSync(join(dir, '.planning', 'research', 'intake.md'), 'utf8')
-    assert.match(md, /not readable yet: deck\.pdf \(not a text file yet: paste its text instead\), https:\/\/docs\.google\.com\/x \(a link: paste its text instead\)/)
+    assert.match(md, /not readable yet: deck\.pdf \(not a text file yet: paste its text instead\), https:\/\/docs\.google\.com\/x \(a link: Ideate reads it \(Google Drive folders and docs\), or paste its text\)/)
     assert.match(md, /Design needs the primary feelings, the 3–5 line story, the first-release musts; I'll start you in Define/)
-    assert.match(md, /- Discover \(the material\): partly — 1 piece of material, touching spark \(1 of 6\)/)
+    assert.match(md, /- Ideate \(the material\): partly — 1 piece of material, touching spark \(1 of 6\)/)
+    assert.match(readFileSync(join(dir, '.planning', 'research', 'intake-proposal.md'), 'utf8'), /^## Where you're starting — Tidekeeper\n/)
     assert.match(readFileSync(join(dir, '.planning', 'DISCOVER.md'), 'utf8'), /\n- "You are the keeper of a lighthouse\." — run 1 · from your material\n/)
     assert.ok(existsSync(join(dir, '.planning', 'research', 'intake.md')))
   } finally {

@@ -1,0 +1,70 @@
+{
+  "id": "ideate",
+  "version": 1,
+  "description": "Ideate (F228; framework .planning/research/bmuz-vision/stages.md): gather the material — the loose idea, captured. Show me what you have (all of it read, Google Drive too); the game so far written back per need (fixed · ideas · open); a few gap questions, gather mode only, frame first; then the game so far, version 2, with the open questions that matter most. Nothing is chosen here and no research runs by default; Define comes next.",
+  "watchdogMs": 1200000,
+  "next": { "pipeline": "define" },
+  "steps": [
+    {
+      "id": "show",
+      "kind": "talk",
+      "needs": [],
+      "description": "Show me what you have: the idea in one breath, and every file, folder or Drive link",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "craft": "craft/ideate-show.md",
+      "results": ["breath", "pasted", "files", "links"]
+    },
+    {
+      "id": "fetch",
+      "kind": "script",
+      "needs": ["show"],
+      "always": true,
+      "description": "Reading it all: the text of everything shared (files, folders, Drive), and what the rest appears to be",
+      "run": ["node", "{plugin}/scripts/ideate-fetch.mjs"],
+      "writes": [".planning/research/shared.md", ".planning/research/shared.json"],
+      "done": { "type": "file-contains", "path": ".planning/research/shared.md", "text": "## The text" }
+    },
+    {
+      "id": "read",
+      "kind": "talk",
+      "needs": ["fetch"],
+      "always": true,
+      "description": "Sorting it: what's fixed, the ideas and what's open, for each thing a game needs (nothing asked)",
+      "tools": ["Read", "Glob", "Grep"],
+      "craft": "craft/ideate-read.md",
+      "results": ["sofar"]
+    },
+    {
+      "id": "so-far",
+      "kind": "script",
+      "needs": ["read"],
+      "always": true,
+      "description": "The game so far, version 1: what you shared, per need (your quotes checked against your words)",
+      "run": ["node", "{plugin}/scripts/ideate-doc.mjs", "so-far"],
+      "writes": [".planning/research/ideate-so-far.md"],
+      "show": ".planning/research/ideate-so-far.md",
+      "done": { "type": "file-contains", "path": ".planning/research/ideate-so-far.md", "text": "## The game so far" }
+    },
+    {
+      "id": "gaps",
+      "kind": "talk",
+      "needs": ["so-far"],
+      "description": "The gaps: a few questions at a time, the costliest first (frame first), each saying which gap it fills",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "craft": "craft/ideate-gaps.md",
+      "results": ["added", "answered", "matter"],
+      "recap": ["sofar"]
+    },
+    {
+      "id": "save",
+      "kind": "script",
+      "needs": ["gaps"],
+      "always": true,
+      "description": "The game so far, version 2: saved in .planning/IDEATE.md (shelves only grow) with the open questions that matter most",
+      "run": ["node", "{plugin}/scripts/ideate-doc.mjs", "save"],
+      "writes": [".planning/IDEATE.md", ".planning/research/ideate-so-far.md"],
+      "show": ".planning/research/ideate-so-far.md",
+      "done": { "type": "file-contains", "path": ".planning/IDEATE.md", "text": "## Shelves" }
+    }
+  ]
+}

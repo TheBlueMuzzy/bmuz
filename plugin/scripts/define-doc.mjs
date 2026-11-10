@@ -1,4 +1,5 @@
-// Define's documents (pipeline "define"): reads DISCOVER.md's shelves and writes the concept, GDD Part 1.
+// Define's documents (pipeline "define"): reads the material's shelves (IDEATE.md, else an older DISCOVER.md) and
+// writes the concept, GDD Part 1.
 // node define-doc.mjs            (step "write"; run in the project folder)
 //
 // The design: framework .planning/research/bmuz-vision/define-research.md, section 5(c) and section 6
@@ -31,9 +32,24 @@ export const SHELF_CODES = {
   'Spark': 'SP', 'Experience goals': 'EX', 'Theme': 'TH', 'Nouns': 'NO', 'Verbs': 'VE', 'Verb × noun grid': 'GR',
   'Decisions': 'DE', 'Mechanism shelf': 'ME', 'Prior art': 'PA', 'Hooks & anchors': 'HA', 'Twists': 'TW',
   'On ice': 'OI', 'Open questions': 'OQ', 'Hopes & fears': 'HF',
+  // F228: IDEATE.md's shelves, one per need (Decisions shares DISCOVER.md's: only one file is read at a time)
+  'Frame': 'FR', 'Core loop': 'LO', 'Things in play': 'TP', 'Rules': 'RU', 'Feel': 'FE', 'Change over time': 'CT',
+  'Smallest version': 'SV', 'Look & sound': 'LS', 'Also noted': 'AN',
 }
 export const BRICK_ID = /^[A-Z]{2}\d{1,4}$/
-const KNOWN_LABELS = new Set(Object.values(TALK_KEYS).map(([, label]) => label).filter(Boolean))
+// (F228: IDEATE.md labels each line Fixed / Idea / Open)
+const KNOWN_LABELS = new Set([...Object.values(TALK_KEYS).map(([, label]) => label).filter(Boolean), 'Fixed', 'Idea', 'Open'])
+
+// ---- Which material Define builds on (F228) ----
+// Ideate's IDEATE.md (the game so far, one shelf per need) when it exists; else DISCOVER.md (an older project, or one
+// that entered Define straight from the start, whose intake put what was shared on DISCOVER.md's shelves).
+export const IDEATE = '.planning/IDEATE.md'
+export function sourceDoc(read) {
+  const ideate = read(IDEATE)
+  if (ideate && readShelves(ideate)) return { path: IDEATE, text: ideate, kind: 'ideate' }
+  const discover = read(DISCOVER)
+  return discover ? { path: DISCOVER, text: discover, kind: 'discover' } : { path: null, text: null, kind: null }
+}
 const PROVENANCE = / — run (\d+)((?: · .*)?)$/
 
 // Reads DISCOVER.md. Returns { lines, shelves: [{ name, code, bricks }], discoverRuns, seed } or null when the
@@ -63,7 +79,8 @@ export function readShelves(text) {
     const by = tail[0] || ''
     // (F225: "from your material" = the creative's own words, quoted from what they shared at the start;
     // "Claude's reading of your material" = Claude's words for something in it that had no quote)
-    const source = !p ? 'hand-added' : by === "the creative's words" ? 'creative' : by === 'from your material' ? 'material' : by === 'picked by the creative' ? 'picked' : by === "Claude's suggestion" || by === "Claude's reading of your material" ? 'Claude' : 'research'
+    // (F228: "open question" = an IDEATE.md line still to answer)
+    const source = !p ? 'hand-added' : by === "the creative's words" ? 'creative' : by === 'from your material' ? 'material' : by === 'picked by the creative' ? 'picked' : by === "Claude's suggestion" || by === "Claude's reading of your material" ? 'Claude' : by === 'open question' ? 'open' : 'research'
     const lab = text.match(/^([^:]{2,48}): /)
     const label = lab && KNOWN_LABELS.has(lab[1]) ? lab[1] : ''
     shelf.bricks.push({
@@ -237,10 +254,10 @@ export function brickRefs(results, by) {
 }
 
 // ---- Merging the run into GDD.md ----
-export function newGdd(brief) {
+export function newGdd(brief, source = 'DISCOVER.md') {
   return [
     '# Game Design Document',
-    `Idea: ${brief ? `"${brief}" (from DISCOVER.md)` : '(see DISCOVER.md)'}`,
+    `Idea: ${brief ? `"${brief}" (from ${source})` : `(see ${source})`}`,
     'Current phase: Define',
     '',
     PART1_HEADING,
@@ -261,7 +278,8 @@ const PART1_INTRO = 'Written by /define: about one page. Hand edits are kept: a 
 // Merges this run's choices into the GDD text. Returns { text, changed: [labels], chosenNow: [labels], open: [labels] }.
 // run = { n, discoverRuns, date, results, by, bricks (Map id → brick), refs (brickRefs), unmatched: n, brief }.
 export function mergeGdd(oldText, run) {
-  let text = oldText && oldText.trim() ? String(oldText).replace(/\r\n/g, '\n') : newGdd(run.brief)
+  const src = run.source || 'DISCOVER.md'
+  let text = oldText && oldText.trim() ? String(oldText).replace(/\r\n/g, '\n') : newGdd(run.brief, src)
   let g = readGdd(text)
   if (g.at < 0) {
     // An older GDD without the layout: Part 1 goes above its first section, which becomes Part 2.
@@ -301,7 +319,7 @@ export function mergeGdd(oldText, run) {
 
   // The line that ties Part 1 to the shelves: how many bricks this run chose (the lint counts DISCOVER.md's marks).
   const marked = [...run.refs.values()].filter(r => r.kind !== 'parked').length
-  const shelvesLine = `**${SHELVES_LABEL}:** Define run ${run.n} chose ${marked} brick${marked === 1 ? '' : 's'} from DISCOVER.md's shelves (marked there "→ chosen" / "→ brought in")${run.unmatched ? ` · ${run.unmatched} brick id${run.unmatched === 1 ? '' : 's'} not found on a shelf, written as new` : ''}`
+  const shelvesLine = `**${SHELVES_LABEL}:** Define run ${run.n} chose ${marked} brick${marked === 1 ? '' : 's'} from ${src}'s shelves (marked there "→ chosen" / "→ brought in")${run.unmatched ? ` · ${run.unmatched} brick id${run.unmatched === 1 ? '' : 's'} not found on a shelf, written as new` : ''}`
   let intro = g.intro.filter(l => !l.startsWith(`**${SHELVES_LABEL}:**`))
   if (!intro.some(l => l.trim())) intro = ['', PART1_INTRO, '']
   while (intro.length && !intro[intro.length - 1].trim()) intro.pop()
@@ -310,7 +328,7 @@ export function mergeGdd(oldText, run) {
 
   // The phase line: a Define run (re)opens the concept; the stage script moves it to Design when locked.
   const head = g.head.slice()
-  const phase = `Current phase: Define · Define run ${run.n} · read DISCOVER.md through Discover run ${run.discoverRuns}`
+  const phase = `Current phase: Define · Define run ${run.n} · read ${src} through ${src === 'IDEATE.md' ? 'Ideate' : 'Discover'} run ${run.discoverRuns}`
   const pAt = head.findIndex(l => /^Current phase:/.test(l))
   if (pAt >= 0) head[pAt] = phase
   else head.splice(Math.min(1, head.length), 0, phase) // under the title
@@ -323,7 +341,7 @@ export function mergeGdd(oldText, run) {
   rest = addUnder(rest, 'Open questions', probes)
   const logs = []
   const why = clean(run.results.whyChanged) || 'the creative chose it again'
-  if (first) logs.push(`- ${run.date} · Concept written (Part 1): ${chosenNow.length} fields chosen; still open: ${!open.length ? 'none' : chosenNow.length ? open.map(o => o.split(': ')[1]).join(', ') : 'every field'} · from DISCOVER.md's shelves · Define run ${run.n}`)
+  if (first) logs.push(`- ${run.date} · Concept written (Part 1): ${chosenNow.length} fields chosen; still open: ${!open.length ? 'none' : chosenNow.length ? open.map(o => o.split(': ')[1]).join(', ') : 'every field'} · from ${src}'s shelves · Define run ${run.n}`)
   else {
     for (const c of changed) logs.push(`- ${run.date} · ${c.name}: "${c.label}" changed · why: ${why} (step ${c.step}) · Define run ${run.n}`)
     if (chosenNow.length) logs.push(`- ${run.date} · Chosen: ${chosenNow.join(', ')} · were open · Define run ${run.n}`)
@@ -419,9 +437,10 @@ function main() {
   const pipeline = JSON.parse(readFileSync(join(root, 'pipelines', `${cfg.pipeline}.json`), 'utf8'))
   const state = JSON.parse(read('.bmuz/state.json') || 'null')
   if (!state) { console.log('✘ no .bmuz/state.json: the write step runs inside a define run'); process.exit(1) }
-  const discoverText = read(DISCOVER)
+  const src = sourceDoc(read)
+  const discoverText = src.text
   const doc = discoverText && readShelves(discoverText)
-  if (!doc) { console.log(`✘ ${DISCOVER} is missing or has no "## Shelves": Define builds on Discover's shelves. Run discover first.`); process.exit(1) }
+  if (!doc) { console.log(`✘ neither ${IDEATE} nor ${DISCOVER} has shelves ("## Shelves"): Define builds on the game so far. Run Ideate first (bmuz stage ideate).`); process.exit(1) }
   const gddText = read(GDD)
   const n = digestRun(read(DIGEST)) || gddRuns(gddText).define + 1
   const { results, by } = chosen(pipeline.steps, state)
@@ -430,12 +449,12 @@ function main() {
   let unmatched = 0
   for (const id of [...refs.keys()]) if (!bricks.has(id)) { refs.delete(id); unmatched++ }
   const date = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD, the local day
-  const merged = mergeGdd(gddText, { n, discoverRuns: doc.discoverRuns, date, results, by, bricks, refs, unmatched, brief: doc.brief })
+  const merged = mergeGdd(gddText, { n, discoverRuns: doc.discoverRuns, date, results, by, bricks, refs, unmatched, brief: doc.brief, source: src.path.split('/').pop() })
   const ann = annotateDiscover(discoverText, doc, refs, n)
   mkdirSync(join(project, '.planning'), { recursive: true })
   writeFileSync(join(project, GDD), merged.text)
-  if (ann.marked) writeFileSync(join(project, DISCOVER), ann.text)
-  console.log(`✔ ${GDD}: Define run ${n} — chosen now: ${merged.chosenNow.length}, changed: ${merged.changed.length}, still open: ${merged.open.length} · ${DISCOVER}: ${ann.marked} bricks marked${unmatched ? ` · ${unmatched} brick ids not on a shelf` : ''}`)
+  if (ann.marked) writeFileSync(join(project, src.path), ann.text)
+  console.log(`✔ ${GDD}: Define run ${n} — chosen now: ${merged.chosenNow.length}, changed: ${merged.changed.length}, still open: ${merged.open.length} · ${src.path}: ${ann.marked} bricks marked${unmatched ? ` · ${unmatched} brick ids not on a shelf` : ''}`)
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main()

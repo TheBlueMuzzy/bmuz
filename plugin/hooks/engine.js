@@ -13,16 +13,20 @@ const TOP_KEYS = ['id', 'version', 'description', 'watchdogMs', 'next', 'steps']
 // "next": the stage that follows this pipeline (docs/pipeline-format.md, "Stages").
 const NEXT_KEYS = ['pipeline', 'at', 'carry', 'ask']
 
-// ---- Stages (F225; VISION V48): one project runs them in order, each a pipeline named like its stage ----
-// Discover gathers the MATERIAL, Define MAKES the blocks, Design ASSEMBLES them, Develop makes the production
-// model, Release lets the public experience it. The intros are Muzzy's wording (entry-research.md, 2026-11-09).
-// forNow: what to use while a stage isn't on the engine yet (its pipeline file doesn't exist: F226).
+// ---- Stages (F225, F228; framework research/bmuz-vision/stages.md): one project runs them in order, each a
+// pipeline named like its stage. Muzzy 2026-11-10: "Ideate > Define > Design > Develop > Deliver > Release with
+// research being callable anywhere." Ideate GATHERS the material (nothing chosen), Define MAKES the blocks ("which
+// one is it?"), Design ASSEMBLES them, Develop makes the production model, Deliver makes it ready to hand over,
+// Release lets the public experience it. Intros in Muzzy's wording (entry-research.md 2026-11-09, stages.md).
+// Discover is no longer a stage: its pipeline file stays on disk (its research flow becomes F229 — Research).
+// forNow: what to use while a stage isn't on the engine yet (its pipeline file doesn't exist).
 export const STAGES = [
-  { id: 'discover', name: 'Discover', intro: "We're in Discover: gathering the raw material for the game — how it should feel, its theme, things you might do in it, games like it. Nothing is shaped or chosen yet. A few questions at a time, research in between, and you can wrap up whenever you have enough." },
-  { id: 'define', name: 'Define', intro: "We're in Define: turning that material into the game's building blocks — the feelings that matter, a 3–5 line story, the pillars, the core verbs, and what goes in the first release. It ends with one page, the concept." },
+  { id: 'ideate', name: 'Ideate', intro: "We're in Ideate: gathering the material — your loose idea, captured. Show me everything you have; I'll read all of it and write back the game so far: what's already fixed, the ideas you have, and what's still open. Then a few questions about the gaps only — nothing gets chosen here; that's Define." },
+  { id: 'define', name: 'Define', intro: "We're in Define: making the blocks from the game so far — for each part of the game, which one is it? One answer each: what's fixed is one tap to keep, your ideas are the options, and only what's open is asked. It ends with one page, the concept." },
   { id: 'design', name: 'Design', intro: "We're in Design: assembling the blocks in whatever way feels right — cutting some, tweaking others — into rules and systems, tested with sketches and paper playtests. It ends with the blueprint: the full design and the build plan.", feature: 'F227 — Design pipeline', forNow: "today's /define skill for the design work (rules, systems, the rest of the GDD), then /develop" },
   { id: 'develop', name: 'Develop', intro: "We're in Develop: building the production model from the blueprint, in short sprints you play and approve one piece at a time.", forNow: 'today\'s /develop skill' },
-  { id: 'release', name: 'Release', intro: "We're in Release: letting the public start experiencing it — final checks, polish, and a live link.", feature: 'F219 — Release pipeline', forNow: "today's /deliver skill (nothing is renamed until F226)" },
+  { id: 'deliver', name: 'Deliver', intro: "We're in Deliver: making the finished product ready to hand over — final checks, polish, versions, and a build for each platform.", feature: 'F219 — Deliver pipeline', forNow: "today's /deliver skill (nothing is renamed until F226)" },
+  { id: 'release', name: 'Release', intro: "We're in Release: letting the public start experiencing it — the launch, the live link, and players' first reactions.", feature: 'F230 — Release pipeline', forNow: "today's /deliver skill (nothing is renamed until F226)" },
 ]
 export const stageOf = id => STAGES.find(s => s.id === id) || null
 // A "next" that names one of these means "no stage now" (the start's "Not now": the creative starts later).
@@ -79,10 +83,14 @@ const STEP_KEYS = {
   // always: the step still runs when the creative wraps up early (a talk step's "wrapTo")
   // retries: how many times a failed step runs again before it BLOCKS (0..MAX_RETRIES, default MAX_RETRIES);
   // 0 for a step whose refusal is a verdict, not a flake (Define's stage: running it again says the same)
-  common: ['id', 'kind', 'needs', 'description', 'timeoutMs', 'always', 'retries'],
+  // when: "{key}" — the step runs only when that earlier talk result says yes (F218: research offered, never forced);
+  // otherwise it is skipped like a wrapped-up step (it counts as finished and hands back nothing)
+  common: ['id', 'kind', 'needs', 'description', 'timeoutMs', 'always', 'retries', 'when'],
   talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results', 'wrapTo', 'recap'],
   gate: ['question', 'options', 'approve', 'backTo'],
-  script: ['run', 'writes', 'done'],
+  // show: a .md file the script wrote; after the step passes, the engine shows it to the creative word for word
+  // in a turn of its own (F228: Ideate's "the game so far"), then goes on
+  script: ['run', 'writes', 'done', 'show'],
   flow: ['workflow', 'args', 'agentTools', 'writes', 'craft', 'done'],
 }
 const DONE_KEYS = {
@@ -191,6 +199,8 @@ export function checkPipeline(p) {
       else if (s.options[0] === s.approve) problems.push(`${at} (gate): "${s.approve}" can't be the first option; a stray Enter would approve it. Put the safe choice first`)
       if (s.backTo !== undefined && !byId.has(s.backTo)) problems.push(`${at} (gate): "backTo" "${s.backTo}" is not an earlier step`)
     }
+    if (s.show !== undefined && !(isSafePath(s.show) && s.show.endsWith('.md') && !/\{/.test(s.show))) problems.push(`${at}: "show" must be a .md file inside the project with no {holes}, like .planning/research/so-far.md`)
+    if (s.when !== undefined && !(typeof s.when === 'string' && /^\{\w+\}$/.test(s.when))) problems.push(`${at}: "when" must be one {hole}: a result of a talk step this step needs, like "{priorArt}"`)
     if (s.kind === 'script' && (!isList(s.run) || s.run.length === 0)) problems.push(`${at} (script) needs "run": the command as a list, like ["node", "{plugin}/scripts/x.mjs"]`)
     if (s.kind === 'flow') {
       if (typeof s.workflow !== 'string' || !/^[a-z0-9-]+:[a-z0-9-]+$/.test(s.workflow)) problems.push(`${at} (flow) needs "workflow" as plugin:name, like bmuz:hello-flow`)
@@ -210,7 +220,7 @@ export function checkPipeline(p) {
       for (const m of Array.isArray(n.needs) ? n.needs : []) walk(m)
     }
     for (const n of Array.isArray(s.needs) ? s.needs : []) walk(n)
-    const filled = { question: s.question, run: s.run, args: s.args, path: s.done && s.done.path, text: s.done && s.done.text, check: s.done && s.done.run }
+    const filled = { question: s.question, run: s.run, args: s.args, path: s.done && s.done.path, text: s.done && s.done.text, check: s.done && s.done.run, when: s.when }
     for (const h of new Set(holesIn(filled))) if (!known.has(h)) problems.push(`${at}: {${h}} isn't known here (known: ${[...known].map(k => `{${k}}`).join(', ')}); a result comes from a talk step this step needs`)
     // A recap shows earlier results in the step's prompt: each key must be one a needed talk step hands back.
     for (const k of isList(s.recap) ? s.recap : []) if (!known.has(k) || BUILT_IN_HOLES.includes(k)) problems.push(`${at}: "recap" key "${k}" isn't a result of a talk step this step needs`)
@@ -436,6 +446,26 @@ export function isTalkHeadline(text) {
   // (the last line: a stage's first step has its intro paragraph above the headline)
   const last = String(text).split('\n').pop()
   return /^BMUZ step "[a-z0-9-]+".* \(from the BMUZ engine; its instructions for this step are attached\)$/.test(last)
+}
+
+// A step with "when": does the earlier result it names say yes? (true / "yes" / "y" / "true"; a missing, empty or
+// skipped result is no: research is offered, never forced.) A step without "when" always runs.
+export function isWanted(step, vars) {
+  if (!step || typeof step.when !== 'string') return true
+  const m = step.when.match(/^\{(\w+)\}$/)
+  if (!m) return false
+  const v = vars ? vars[m[1]] : undefined
+  const one = Array.isArray(v) ? v[0] : v
+  const said = one && typeof one === 'object' ? one.text : one
+  return said === true || (typeof said === 'string' && /^\s*(yes|y|true)\b/i.test(said))
+}
+
+// The engine's own message that shows a file a script step wrote (its "show"), word for word, in a turn of its own.
+// Like the card, it points at a copy (.bmuz/last-shown.md) instead of carrying the text: a message with the text in
+// it showed it twice. Nothing is asked in that turn: the next step's question comes after it (live review
+// 2026-11-09 #20b: plain text written in the same turn as a question box was hidden behind the box).
+export function showPrompt(path) {
+  return `BMUZ engine — this message comes from the BMUZ engine, not the creative. Read ${path} and show the creative its text exactly as written, word for word, with nothing before or after it. Ask nothing; then end your turn (the engine starts the next step itself).`
 }
 
 // The engine's own message that shows a hand-off card (sent at turn.complete, like every engine message).
@@ -725,6 +755,22 @@ export function isPersonDeclining(res) {
   return /doesn't want to proceed|tool use was rejected/i.test(text)
 }
 
+// The text of a question box's answer, whatever field carries it (the mod docs don't fix the result's shape).
+export function answerText(res) {
+  if (res == null) return ''
+  if (typeof res === 'string') return res
+  for (const k of ['text', 'result', 'content', 'value']) {
+    const v = res[k]
+    if (typeof v === 'string' && v.trim()) return v
+    if (Array.isArray(v)) {
+      const t = v.map(x => (typeof x === 'string' ? x : x && typeof x.text === 'string' ? x.text : '')).join('\n')
+      if (t.trim()) return t
+    }
+    if (v && typeof v === 'object') { const t = answerText(v); if (t) return t }
+  }
+  return JSON.stringify(res)
+}
+
 // Plan mode's own moves: loading and calling ExitPlanMode, and writing its plan file
 // (~/.claude/plans/*.md, outside the project). A mod can't switch plan mode off, so the engine lets
 // these through and nothing else; the work itself still waits for the step's own tools
@@ -742,8 +788,9 @@ export function isPlanModeMove(call) {
 export function judgeTool(p, state, call, opts = {}) {
   // (not in an auto run: leaving plan mode waits for a person's OK)
   if (!call.agentId && !opts.auto && isPlanModeMove(call)) return { allow: true }
-  // Reading the saved hand-off card is always allowed: the engine asks for it between steps (cardPrompt).
-  if (!call.agentId && call.tool === 'Read' && /[\\/]\.bmuz[\\/]last-card\.md$/.test(String((call.input || {}).file_path || ''))) return { allow: true }
+  // Reading the saved hand-off card (cardPrompt) or a script step's shown file (showPrompt) is always allowed: the
+  // engine asks for them between steps.
+  if (!call.agentId && call.tool === 'Read' && /[\\/]\.bmuz[\\/]last-(card|shown)\.md$/.test(String((call.input || {}).file_path || ''))) return { allow: true }
   if (opts.auto && call.tool === 'AskUserQuestion') {
     return { allow: false, why: `BMUZ engine: auto run, nobody is here to answer. Don't ask: pick the sensible default, add {"question": "...", "picked": "..."} to the "asks" list in ${ENGINE_TOOL}'s result, and carry on.` }
   }
@@ -966,6 +1013,7 @@ export function rebuildFromJournal(pipelineId, lines) {
     if (j.ev === 'step.start') s = { ...s, current: j.step, status: j.kind === 'gate' ? 'waiting' : 'working', startedAt: j.t }
     if (j.ev === 'step.done') s = finish(s, { id: j.step }, j.result || null)
     if (j.ev === 'wrap') s = applyWrap(s, j.skipped || [], j.empties || {})
+    if (j.ev === 'step.skip') s = applyWrap(s, [j.step], j.empties || {})
     if (j.ev === 'retry') s = { ...s, retries: { ...s.retries, [j.step]: (s.retries[j.step] || 0) + 1 } }
     if (j.ev === 'gate.back') s = { ...dropSteps(s, new Set(j.dropped || [])), current: null, status: 'idle', startedAt: null }
     if (j.ev === 'undo') s = { ...dropSteps(s, new Set(j.redo || [])), current: null, status: 'idle', startedAt: null, blocked: null }

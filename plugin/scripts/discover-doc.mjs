@@ -247,8 +247,11 @@ const KEY_MARK = key => `<!-- bmuz run key: ${key} -->`
 
 // Merges one run into the document text (null/'' = a new document). Returns { text, n, added, again },
 // or { text, n, already: true } when this run (its key) is already in the document.
-export function mergeDoc(oldText, run, { reportLink = p => p } = {}) {
-  const doc = parseDoc(oldText && oldText.trim() ? oldText : newDoc()) || parseDoc(`${String(oldText).trimEnd()}\n\n${newDoc().split('\n').slice(5).join('\n')}`)
+// (F228: Ideate's IDEATE.md uses the same layout with its own shelves: opts.shelves, opts.fresh = its new document;
+// run.extra = more lines for the run section; run.noResearch = no "Research: none ran" line)
+export function mergeDoc(oldText, run, { reportLink = p => p, shelves = SHELVES, fresh = newDoc } = {}) {
+  const blank = fresh().split('\n')
+  const doc = parseDoc(oldText && oldText.trim() ? oldText : fresh()) || parseDoc(`${String(oldText).trimEnd()}\n\n${blank.slice(blank.findIndex(l => /^## Shelves/.test(l))).join('\n')}`)
   if (run.key && doc.runs.some(l => l.includes(KEY_MARK(run.key)))) return { text: oldText, n: null, already: true }
   const n = runNumber(doc.runs)
   const added = {}
@@ -257,7 +260,7 @@ export function mergeDoc(oldText, run, { reportLink = p => p } = {}) {
     let shelf = doc.shelves.find(s => s.name.toLowerCase() === b.shelf.toLowerCase())
     if (!shelf) {
       // A shelf the creative removed (or a new one) comes back at the end of the shelves when it has a brick.
-      const d = (SHELVES.find(s => s[0] === b.shelf) || [b.shelf, ''])[1]
+      const d = (shelves.find(s => s[0] === b.shelf) || [b.shelf, ''])[1]
       shelf = { name: b.shelf, lines: [`### ${b.shelf}${d ? ` — ${d}` : ''}`, ''] }
       doc.shelves.push(shelf)
     }
@@ -288,6 +291,7 @@ export function mergeDoc(oldText, run, { reportLink = p => p } = {}) {
     ...(run.material && run.material.length ? [`- From your material: ${run.material.join(' · ')}`] : []),
     ...(run.questions.length ? ['- Research questions:', ...run.questions.map((q, i) => `  ${i + 1}. ${q}`)] : []),
     `- Material added: ${Object.keys(added).length ? Object.entries(added).map(([s, c]) => `[${s}](${anchor(s)}) ${c}`).join(' · ') : 'none new'}${again ? ` · ${again} already on the shelves, marked "again in run ${n}"` : ''}`,
+    ...(run.extra || []),
   ]
   for (const r of run.reports) {
     section.push(`- ${r.label} research: [the full report](${reportLink(r.path)}) · ${r.findings} findings, ${r.strong.length} backed by several sources`)
@@ -295,7 +299,7 @@ export function mergeDoc(oldText, run, { reportLink = p => p } = {}) {
     if (r.contradictions.length) section.push('  Contradictions kept:', ...r.contradictions.map(c => `  ${c}`))
     if (r.surprises.length) section.push('  Surprises:', ...r.surprises.map(c => `  ${c}`))
   }
-  if (!run.reports.length) section.push('- Research: none ran in this run')
+  if (!run.reports.length && !run.noResearch) section.push('- Research: none ran in this run')
   section.push('')
 
   // The seed line says the first "You are" and idea, and when the last run was; a seed line the creative

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import * as E from '../plugin/hooks/engine.js'
 
 const P = {
-  id: 'discover',
+  id: 'ideate',
   version: 1,
   next: { pipeline: 'define' },
   steps: [
@@ -39,7 +39,7 @@ test('nextOf fills the holes from the results; "later" and a hole left empty mea
 })
 
 test('enterAt: steps above the entry are done by material, their keys filled from the intake or null; an "always" step still runs', () => {
-  const out = E.enterAt(P, E.freshState('discover'), 'verbs', GIVEN)
+  const out = E.enterAt(P, E.freshState('ideate'), 'verbs', GIVEN)
   assert.deepEqual(out.skipped, ['spark', 'feel'])
   const s = out.state
   assert.deepEqual(s.finished, ['spark', 'feel'])
@@ -52,14 +52,14 @@ test('enterAt: steps above the entry are done by material, their keys filled fro
   // the entry step's own keys are shown as already chosen; empty ones are left out
   assert.deepEqual(E.givenFor(E.stepById(P, 'verbs'), s.given), { verbs: GIVEN.verbs })
   assert.deepEqual(E.givenFor(E.stepById(P, 'feel'), { experiences: [], fantasies: '' }), {})
-  assert.match(E.enterAt(P, E.freshState('discover'), 'nope', {}).error, /"nope" isn't a step of discover/)
+  assert.match(E.enterAt(P, E.freshState('ideate'), 'nope', {}).error, /"nope" isn't a step of ideate/)
   // no step named: the first step, nothing skipped, the material still carried
-  const plain = E.enterAt(P, E.freshState('discover'), null, GIVEN).state
+  const plain = E.enterAt(P, E.freshState('ideate'), null, GIVEN).state
   assert.deepEqual([plain.finished, plain.given.brief], [[], 'a lighthouse'])
 })
 
 test('the undo list marks steps the material answered; going back before one runs it for real', () => {
-  const s = E.enterAt(P, E.freshState('discover'), 'verbs', GIVEN).state
+  const s = E.enterAt(P, E.freshState('ideate'), 'verbs', GIVEN).state
   const list = E.undoList(P, s)
   assert.match(list.find(u => u.step === 'spark').line, /\(answered by your material when this stage started\)/)
   const back = E.undoTo(P, s, 'feel')
@@ -67,9 +67,9 @@ test('the undo list marks steps the material answered; going back before one run
 })
 
 test('the stage intro: the first talk step of a stage pipeline shows it above its line, once; the start has none', () => {
-  const intro = E.introFor(P, E.freshState('discover'))
-  assert.match(intro, /^We're in Discover: gathering the raw material/)
-  assert.equal(E.introFor(P, { ...E.freshState('discover'), introShown: true }), null)
+  const intro = E.introFor(P, E.freshState('ideate'))
+  assert.match(intro, /^We're in Ideate: gathering the material — your loose idea, captured\./)
+  assert.equal(E.introFor(P, { ...E.freshState('ideate'), introShown: true }), null)
   assert.equal(E.introFor({ id: 'start' }, E.freshState('start')), null)
   const text = E.talkHeadline(E.stepById(P, 'spark'), intro)
   assert.ok(text.startsWith(intro + '\n\nBMUZ step "spark"'))
@@ -81,27 +81,31 @@ test('the stage intro: the first talk step of a stage pipeline shows it above it
 })
 
 test('a finished stage\'s band says where "bmuz go" goes next (only for a stage on the engine)', () => {
-  assert.equal(E.bandText(P, { ...E.freshState('discover'), status: 'done' }, 0), 'BMUZ · discover · all 4 steps done · bmuz go: on to Define')
+  assert.equal(E.bandText(P, { ...E.freshState('ideate'), status: 'done' }, 0), 'BMUZ · ideate · all 4 steps done · bmuz go: on to Define')
   assert.equal(E.bandText({ ...P, id: 'define', next: { pipeline: 'design' } }, { ...E.freshState('define'), status: 'done' }, 0), 'BMUZ · define · all 4 steps done')
 })
 
 test('a stage not on the engine says what to use for now; a word that is no stage says so', () => {
   assert.match(E.notOnEngineLine('design'), /^Design isn't on the BMUZ engine yet \(it comes with F227 — Design pipeline\)\. For now use today's \/define skill/)
   assert.match(E.notOnEngineLine('develop'), /^Develop isn't on the BMUZ engine yet\. For now use today's \/develop/)
-  assert.match(E.notOnEngineLine('release'), /^Release isn't on the BMUZ engine yet \(it comes with F219 — Release pipeline\)\. For now use today's \/deliver skill \(nothing is renamed until F226\)/)
+  assert.match(E.notOnEngineLine('deliver'), /^Deliver isn't on the BMUZ engine yet \(it comes with F219 — Deliver pipeline\)\. For now use today's \/deliver skill \(nothing is renamed until F226\)/)
+  assert.match(E.notOnEngineLine('release'), /^Release isn't on the BMUZ engine yet \(it comes with F230 — Release pipeline\)\. For now use today's \/deliver skill/)
+  // F228: Discover is no longer a stage (its pipeline file stays on disk for the research flow)
+  assert.deepEqual(E.STAGES.map(x => x.id), ['ideate', 'define', 'design', 'develop', 'deliver', 'release'])
+  assert.match(E.notOnEngineLine('discover'), /"discover" isn't a stage/)
   assert.match(E.notOnEngineLine('designn'), /"designn" isn't a stage/)
 })
 
 test('the journal rebuild after a switch: "stage.enter" is the new stage\'s starting point, and the intro is remembered', () => {
-  const first = E.enterAt(P, E.freshState('discover'), 'verbs', GIVEN).state
+  const first = E.enterAt(P, E.freshState('ideate'), 'verbs', GIVEN).state
   const lines = [
-    JSON.stringify({ ev: 'stage.enter', from: 'start', to: 'discover', state: first }),
+    JSON.stringify({ ev: 'stage.enter', from: 'start', to: 'ideate', state: first }),
     JSON.stringify({ ev: 'step.start', step: 'dig', kind: 'flow' }),
     JSON.stringify({ ev: 'step.done', step: 'dig', result: null }),
     JSON.stringify({ ev: 'step.start', step: 'verbs', kind: 'talk' }),
-    JSON.stringify({ ev: 'intro', step: 'verbs', stage: 'discover' }),
+    JSON.stringify({ ev: 'intro', step: 'verbs', stage: 'ideate' }),
   ]
-  const s = E.rebuildFromJournal('discover', lines)
+  const s = E.rebuildFromJournal('ideate', lines)
   assert.deepEqual([s.finished, s.current, s.status, s.introShown], [['spark', 'feel', 'dig'], 'verbs', 'working', true])
   assert.deepEqual(s.entered, first.entered)
   const kept = JSON.stringify({ ...s })

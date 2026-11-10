@@ -11,10 +11,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as E from '../hooks/engine.js'
-import { DISCOVER, GDD, PART1, PART1_HEADING, SHELVES_LABEL, fieldItems, fieldText, isOpen, markedIn, readGdd } from './define-doc.mjs'
+import { DISCOVER, GDD, PART1, PART1_HEADING, SHELVES_LABEL, fieldItems, fieldText, isOpen, markedIn, readGdd, sourceDoc } from './define-doc.mjs'
 
 // Returns { problems: [plain words], warnings: [plain words], open: [field names] }.
-export function lintConcept(gddText, discoverText) {
+// sourcePath: the material file the marks are in (IDEATE.md, else DISCOVER.md: define-doc.mjs sourceDoc).
+export function lintConcept(gddText, discoverText, sourcePath = DISCOVER) {
   const problems = []
   const warnings = []
   const open = []
@@ -63,8 +64,8 @@ export function lintConcept(gddText, discoverText) {
   else {
     const m = line.match(/Define run (\d+) chose (\d+) brick/)
     if (!m) problems.push(`the **${SHELVES_LABEL}:** line doesn't say "Define run N chose M bricks"`)
-    else if (discoverText === null) problems.push(`${DISCOVER} is missing, so the chosen bricks can't be checked against the shelves`)
-    else if (markedIn(discoverText, Number(m[1])) !== Number(m[2])) problems.push(`Part 1 says Define run ${m[1]} chose ${m[2]} bricks, but ${DISCOVER} marks ${markedIn(discoverText, Number(m[1]))} as chosen in that run`)
+    else if (discoverText === null) problems.push(`${sourcePath} is missing, so the chosen bricks can't be checked against the shelves`)
+    else if (markedIn(discoverText, Number(m[1])) !== Number(m[2])) problems.push(`Part 1 says Define run ${m[1]} chose ${m[2]} bricks, but ${sourcePath} marks ${markedIn(discoverText, Number(m[1]))} as chosen in that run`)
   }
   return { problems, warnings, open }
 }
@@ -73,7 +74,8 @@ function main() {
   const out = process.argv[2] || GDD
   if (!E.isSafePath(out)) { console.log(`✘ ${out} isn't a path inside the project`); process.exit(1) }
   const read = f => (existsSync(join(process.cwd(), f)) ? readFileSync(join(process.cwd(), f), 'utf8') : null)
-  const r = lintConcept(read(out), read(DISCOVER))
+  const src = sourceDoc(read)
+  const r = lintConcept(read(out), src.text, src.path || DISCOVER)
   const notes = [...r.warnings.map(w => `  note: ${w}`), ...(r.open.length ? [`  still open: ${r.open.join(', ')}`] : [])]
   if (r.problems.length) {
     console.log([`✘ ${out}: ${r.problems.length} problem${r.problems.length > 1 ? 's' : ''} in the concept`, ...r.problems.map(p => `  - ${p}`), ...notes].join('\n'))

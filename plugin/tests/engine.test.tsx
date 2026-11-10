@@ -809,8 +809,8 @@ test('F218: a script that refuses says why; its words are the failed try\'s reas
 })
 
 // ---- F225: one project runs the stages in order ----
-const DISCOVER = {
-  id: 'discover', version: 1, next: { pipeline: 'define' }, steps: [
+const IDEATE = {
+  id: 'ideate', version: 1, next: { pipeline: 'define' }, steps: [
     { id: 'spark', kind: 'talk', tools: ['Read'], craft: 'craft/name.md', results: ['brief', 'slug', 'youAre'] },
     { id: 'experience', kind: 'talk', needs: ['spark'], tools: ['Read'], craft: 'craft/name.md', results: ['experiences'], recap: ['brief', 'youAre'] },
     { id: 'bricks', kind: 'talk', needs: ['experience'], tools: ['Read'], craft: 'craft/review.md', results: ['found'], writes: ['notes.md'] },
@@ -835,7 +835,7 @@ function staged(on: any, pipeline: string, st: Record<string, unknown>) {
   on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(String.fromCharCode(10))); return { text: e.text } })
   on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
   const w = world(on, base({}))
-  w.files['PIPELINE:discover'] = JSON.stringify(DISCOVER)
+  w.files['PIPELINE:ideate'] = JSON.stringify(IDEATE)
   w.files['PIPELINE:define'] = JSON.stringify(DEFINE)
   w.files['PIPELINE:start'] = JSON.stringify(START)
   w.files['/proj/bmuz.json'] = JSON.stringify({ pipeline, watchdogTickMs: 3600000 })
@@ -843,24 +843,24 @@ function staged(on: any, pipeline: string, st: Record<string, unknown>) {
   return { w, prompts }
 }
 const turn = ($: any, id: string) => $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: id } as any)
-const DEFINE_INTRO = /^We're in Define: turning that material into the game's building blocks/
+const DEFINE_INTRO = /^We're in Define: making the blocks from the game so far/
 
-test('F225: a stage\'s end offers the next stage; "On to Define" archives Discover\'s record and Define starts with its intro, once', async ($, on) => {
+test('F225: a stage\'s end offers the next stage; "On to Define" archives Ideate\'s record and Define starts with its intro, once', async ($, on) => {
   mock.clock(on, { now: 1000 })
   on('tool.call', { tool: 'AskUserQuestion' }, (_: any, e: any) => ({ result: { questions: e.questions, answers: { [e.questions[0].question]: 'On to Define' } } }))
-  const { w, prompts } = staged(on, 'discover', { current: 'bricks', status: 'working', finished: ['spark', 'experience'], results: { brief: 'a lighthouse', slug: 'lighthouse' }, resultsBy: { spark: { brief: 'a lighthouse', slug: 'lighthouse' } } })
+  const { w, prompts } = staged(on, 'ideate', { current: 'bricks', status: 'working', finished: ['spark', 'experience'], results: { brief: 'a lighthouse', slug: 'lighthouse' }, resultsBy: { spark: { brief: 'a lighthouse', slug: 'lighthouse' } } })
   w.files['/proj/.bmuz/checkpoint-bricks.json'] = '{"notes.md":null}'
   await start($, true)
   await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { found: 'a storm' } } as any)
   await turn($, 't1')
-  // the record moved, Discover's "bricks" checkpoint with it (Define has a "bricks" step too)
+  // the record moved, Ideate's "bricks" checkpoint with it (Define has a "bricks" step too)
   expect(JSON.parse(w.files['/proj/bmuz.json']).pipeline).toBe('define')
   expect(JSON.parse(w.files['/proj/bmuz.json']).watchdogTickMs).toBe(3600000) // the rest of bmuz.json kept
-  expect(JSON.parse(w.files['/proj/.bmuz/stages/1-discover/state.json'])).toMatchObject({ pipeline: 'discover', status: 'done' })
-  expect(w.files['/proj/.bmuz/stages/1-discover/checkpoint-bricks.json']).toBe('{"notes.md":null}')
+  expect(JSON.parse(w.files['/proj/.bmuz/stages/1-ideate/state.json'])).toMatchObject({ pipeline: 'ideate', status: 'done' })
+  expect(w.files['/proj/.bmuz/stages/1-ideate/checkpoint-bricks.json']).toBe('{"notes.md":null}')
   expect(w.files['/proj/.bmuz/checkpoint-bricks.json']).toBeUndefined()
   expect(w.files['/proj/.bmuz/switch.json']).toBeUndefined()
-  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/^\{[^\n]*"ev":"stage.enter","from":"discover","to":"define"/)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/^\{[^\n]*"ev":"stage.enter","from":"ideate","to":"define"/)
   // Define ran its script, then its first talk step opened with the stage intro above the step's line
   const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
   expect([st.pipeline, st.current, st.finished]).toEqual(['define', 'direction', ['digest']])
@@ -883,12 +883,12 @@ test('F225: a stage\'s end offers the next stage; "On to Define" archives Discov
 
 test('F225: in an auto run the offer is noted, not asked; "bmuz go" on the finished stage moves on', async ($, on) => {
   mock.clock(on, { now: 1000 })
-  const { w, prompts } = staged(on, 'discover', { current: 'bricks', status: 'working', finished: ['spark', 'experience'] })
+  const { w, prompts } = staged(on, 'ideate', { current: 'bricks', status: 'working', finished: ['spark', 'experience'] })
   await start($, false)
   await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { found: 'a storm' } } as any)
   await turn($, 't1')
-  expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'discover', status: 'done' })
-  expect(w.files['/proj/.bmuz/questions.md']).toMatch(/Discover is done. On to Define\? \(say "bmuz go" to move on\)/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'ideate', status: 'done' })
+  expect(w.files['/proj/.bmuz/questions.md']).toMatch(/Ideate is done. On to Define\? \(say "bmuz go" to move on\)/)
   await $.prompt.submit({ text: 'bmuz go' } as any)
   await turn($, 't2')
   expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'define', current: 'direction' })
@@ -912,28 +912,28 @@ test('F225: the start moves straight into the chosen stage at the chosen step; e
   const { w, prompts } = staged(on, 'start', { current: 'propose', status: 'working' })
   w.files['/proj/.planning/research/intake.json'] = JSON.stringify({ given: { brief: 'a lighthouse', slug: 'lighthouse', youAre: [{ text: 'You are a keeper', his: true }], experiences: [{ text: 'tea in a storm', his: true }] } })
   await start($, true)
-  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { stage: 'discover', at: 'experience' } } as any)
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { stage: 'ideate', at: 'experience' } } as any)
   await turn($, 't1')
   const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
-  expect([st.pipeline, st.current, st.finished, st.skipped]).toEqual(['discover', 'experience', ['spark'], ['spark']])
+  expect([st.pipeline, st.current, st.finished, st.skipped]).toEqual(['ideate', 'experience', ['spark'], ['spark']])
   expect(st.results).toEqual({ brief: 'a lighthouse', slug: 'lighthouse', youAre: [{ text: 'You are a keeper', his: true }] })
   expect(st.entered).toEqual({ at: 'experience', skipped: ['spark'] })
   const exp = prompts.find(p => /BMUZ step "experience"/.test(p))!
-  expect(exp).toMatch(/^We're in Discover: gathering the raw material/)
+  expect(exp).toMatch(/^We're in Ideate: gathering the material/)
   expect(exp).toMatch(/Collected so far by earlier steps \(build on it; don't ask it again\): \{"brief":"a lighthouse","youAre":\[\{"text":"You are a keeper","his":true\}\]\}/)
   expect(exp).toMatch(/Already chosen in the creative's own material .*\{"experiences":\[\{"text":"tea in a storm","his":true\}\]\}.*"Keep" as the first option/)
-  expect(JSON.parse(w.files['/proj/.bmuz/stages/1-start/state.json']).results).toEqual({ stage: 'discover', at: 'experience' })
+  expect(JSON.parse(w.files['/proj/.bmuz/stages/1-start/state.json']).results).toEqual({ stage: 'ideate', at: 'experience' })
   const undo: any = await $.command.run({ command: 'bmuz-undo', args: '' } as any)
   expect(String(undo.text)).toMatch(/- spark: go back to before "spark" \(answered by your material when this stage started\)/)
 })
 
 test('F225: a stage switch cut short by a crash is finished at the next start', async ($, on) => {
   mock.clock(on, { now: 1000 })
-  const { w } = staged(on, 'discover', { status: 'done', finished: ['spark', 'experience', 'bricks'] })
-  w.files['/proj/.bmuz/switch.json'] = JSON.stringify({ from: 'discover', to: 'define', at: null, given: {}, n: 1, archive: 'stages/1-discover', checkpoints: ['checkpoint-bricks.json'] })
+  const { w } = staged(on, 'ideate', { status: 'done', finished: ['spark', 'experience', 'bricks'] })
+  w.files['/proj/.bmuz/switch.json'] = JSON.stringify({ from: 'ideate', to: 'define', at: null, given: {}, n: 1, archive: 'stages/1-ideate', checkpoints: ['checkpoint-bricks.json'] })
   await start($, true)
   expect(JSON.parse(w.files['/proj/bmuz.json']).pipeline).toBe('define')
-  expect(JSON.parse(w.files['/proj/.bmuz/stages/1-discover/state.json']).status).toBe('done')
+  expect(JSON.parse(w.files['/proj/.bmuz/stages/1-ideate/state.json']).status).toBe('done')
   expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'define', finished: [], status: 'idle' })
   expect(w.files['/proj/.bmuz/switch.json']).toBeUndefined()
   const r: any = await $.tool.call({ tool: 'Read', file_path: '/proj/x' } as any)
@@ -959,4 +959,65 @@ test('F225: "bmuz new" in a folder without bmuz.json makes it a BMUZ project on 
   expect(prompts.some(p => /^BMUZ step "propose"/.test(p) && /Ask where the game is\./.test(p))).toBe(true)
   const done: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { stage: 'later', at: 'first' } } as any)
   expect(String(done.result)).toMatch(/Recorded/)
+})
+
+// ---- F228: a script step's "show" file in a turn of its own; a "when" step only on a yes ----
+function shown(on: any) {
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(String.fromCharCode(10))); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, base({}))
+  w.files.PIPELINE = JSON.stringify({
+    id: 'hello', version: 1, steps: [
+      { id: 'ask', kind: 'talk', tools: ['Read', 'AskUserQuestion'], craft: 'craft/name.md', results: ['priorArt'] },
+      { id: 'look', kind: 'script', needs: ['ask'], when: '{priorArt}', run: ['node', 'look.mjs'], writes: ['so-far.md'], show: 'so-far.md' },
+      { id: 'after', kind: 'talk', needs: ['look'], tools: ['Read'], craft: 'craft/review.md', results: ['found'] },
+    ],
+  })
+  w.files['/proj/so-far.md'] = '## The game so far\n- Fixed: “standard pong”'
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ pipeline: 'hello', current: 'ask', status: 'working', results: {}, retries: {}, finished: [], blocked: null, startedAt: 1 })
+  return { w, prompts }
+}
+
+test('F228: a script step\'s "show" file goes to the creative in a turn of its own; the next step starts at that turn\'s end', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = shown(on)
+  await start($, true)
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { priorArt: 'yes' } } as any)
+  await turn($, 't1')
+  expect(w.runs.some(r => r[1] === 'look.mjs')).toBe(true)
+  expect(w.files['/proj/.bmuz/last-shown.md']).toBe('## The game so far\n- Fixed: “standard pong”\n')
+  expect(prompts[prompts.length - 1]).toMatch(/^BMUZ engine — this message comes from the BMUZ engine[^\n]*Read \/proj\/\.bmuz\/last-shown\.md and show the creative its text exactly as written/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ finished: ['ask', 'look'], current: null, status: 'idle' })
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"show","step":"look","path":"so-far.md"/)
+  // Claude reads the shown copy between steps (allowed), then the turn ends and the next step starts
+  const r: any = await $.tool.call({ tool: 'Read', file_path: '/proj/.bmuz/last-shown.md' } as any)
+  expect(refused(r)).toBe(false)
+  await turn($, 't2')
+  expect(prompts.some(p => /^BMUZ step "after"/.test(p))).toBe(true)
+})
+
+test('F228: a "when" step whose result says no is skipped (journaled), and the run goes on', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = shown(on)
+  await start($, true)
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { priorArt: 'no' } } as any)
+  await turn($, 't1')
+  expect(w.runs.some(r => r[1] === 'look.mjs')).toBe(false)
+  expect(w.files['/proj/.bmuz/last-shown.md']).toBeUndefined()
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"step.skip","step":"look","when":"\{priorArt\}"/)
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect([st.finished, st.skipped, st.current]).toEqual([['ask', 'look'], ['look'], 'after'])
+  expect(prompts.some(p => /^BMUZ step "after"/.test(p))).toBe(true)
+  const doc: any = await $.command.run({ command: 'bmuz-doctor', args: '' } as any)
+  expect(String(doc.text)).toMatch(/All good/)
+})
+
+test('F228: the creative\'s answer to the question box is journaled, so a script can check their "own words"', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: 'User has answered your questions: "How does it end?"="first to 11"' }))
+  const { w } = shown(on)
+  await start($, true)
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'How does it end?' }] } as any)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"answer","step":"ask","text":"User has answered your questions: \\"How does it end\?\\"=\\"first to 11\\""/)
 })

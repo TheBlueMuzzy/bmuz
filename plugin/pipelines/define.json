@@ -1,7 +1,7 @@
 {
   "id": "define",
   "version": 1,
-  "description": "Define a game (framework .planning/research/bmuz-vision/define-research.md section 5, with section 6's 'Muzzy's answers' built in): build on DISCOVER.md's shelves, choose the direction, the 3-5 line story, the blocks (core verbs and mechanisms), the pillars, the scope and the risks, check them against each other, write the concept (GDD Part 1) and lock it. Choosing is the creative's: an auto run chooses nothing. Wrap up after any talk step.",
+  "description": "Define a game (framework .planning/research/bmuz-vision/define-research.md section 5, with section 6's 'Muzzy's answers' built in): build on DISCOVER.md's shelves, choose the direction, the 3-5 line story, the blocks (core verbs and mechanisms), the pillars, the scope and the risks, check them against each other, write the concept (GDD Part 1) and lock it. Choosing is the creative's: an auto run chooses nothing. Wrap up after any talk step. (F228: it builds on Ideate's game so far, .planning/IDEATE.md, and on an older DISCOVER.md when there is none.)",
   "watchdogMs": 1200000,
   "next": {"pipeline": "design"},
   "steps": [

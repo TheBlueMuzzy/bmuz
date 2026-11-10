@@ -23,6 +23,7 @@ import { TALK_KEYS, itemText, mergeDoc } from './discover-doc.mjs'
 
 export const INTAKE_JSON = '.planning/research/intake.json'
 export const INTAKE_MD = '.planning/research/intake.md'
+export const INTAKE_SCREEN = '.planning/research/intake-proposal.md'
 const DISCOVER = '.planning/DISCOVER.md'
 
 // Design-stage facts a rulebook or a prototype brings (no Discover shelf, no Define field).
@@ -43,9 +44,12 @@ export const DISCOVER_COVERED_ITEMS = 20
 // Define's must-haves before Design (define-doc.mjs CORE, by result key) and their plain words.
 export const DEFINE_CORE = [['primaries', 'the primary feelings'], ['story', 'the 3–5 line story'], ['pillars', 'the pillars'], ['musts', 'the first-release musts']]
 
-const ORDER = ['discover', 'define', 'design', 'develop', 'release']
-const GOALS = { open: 'discover', pin: 'define', work: 'design', build: 'develop' }
-const GAP_NAMES = { discover: 'Discover (the material)', define: 'Define (the blocks)', design: 'Design (assembling them)', develop: 'Develop (the production model)', release: 'Release (the public)' }
+// The stages in order (F228: Ideate replaced Discover as the first stage; Deliver and Release are two stages).
+// The material groups and the shelves keep Discover's names (DISCOVER.md still carries what the start read, so a
+// project entering Define straight away has shelves to build on); the gap map calls their stage Ideate.
+const ORDER = ['ideate', 'define', 'design', 'develop', 'deliver', 'release']
+const GOALS = { open: 'ideate', pin: 'define', work: 'design', build: 'develop' }
+const GAP_NAMES = { ideate: 'Ideate (the material)', define: 'Define (the blocks)', design: 'Design (assembling them)', develop: 'Develop (the production model)', deliver: 'Deliver (ready to hand over)', release: 'Release (the public)' }
 
 const clean = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim()
 const listOf = v => (Array.isArray(v) ? v : v == null || v === '' ? [] : [v])
@@ -98,17 +102,19 @@ export function gapMap(items) {
   // (headless entry-concept 2026-11-09: a six-sentence concept read as "covered"), a Discover run leaves dozens.
   const discoverItems = DISCOVER_GROUPS.flatMap(([, keys]) => keys).reduce((n, k) => n + listOf(items[k]).length, 0)
   const g = {
-    discover: got.length >= 4 && discoverItems >= DISCOVER_COVERED_ITEMS ? 'covered' : got.length ? 'partly' : 'not yet',
+    ideate: got.length >= 4 && discoverItems >= DISCOVER_COVERED_ITEMS ? 'covered' : got.length ? 'partly' : 'not yet',
     define: core.length === DEFINE_CORE.length ? 'covered' : anyDefine ? 'partly' : 'not yet',
     design: has(items, 'rules') && has(items, 'playtests') ? 'covered' : has(items, 'rules') || has(items, 'playtests') ? 'partly' : 'not yet',
     develop: has(items, 'released') ? 'covered' : has(items, 'built') ? 'partly' : 'not yet',
+    deliver: has(items, 'released') ? 'covered' : 'not yet',
     release: has(items, 'released') ? 'partly' : 'not yet',
   }
   const why = {
-    discover: got.length ? `${discoverItems} piece${discoverItems === 1 ? '' : 's'} of material, touching ${got.join(', ')} (${got.length} of ${DISCOVER_GROUPS.length})` : 'no material yet',
+    ideate: got.length ? `${discoverItems} piece${discoverItems === 1 ? '' : 's'} of material, touching ${got.join(', ')} (${got.length} of ${DISCOVER_GROUPS.length})` : 'no material yet',
     define: core.length ? `has ${core.map(([, w]) => w).join(', ')}${core.length < DEFINE_CORE.length ? `; still open: ${DEFINE_CORE.filter(c => !core.includes(c)).map(([, w]) => w).join(', ')}` : ''}` : anyDefine ? `some blocks, none of ${DEFINE_CORE.map(([, w]) => w).join(', ')}` : 'no blocks chosen yet',
     design: g.design === 'not yet' ? 'no rules or playtests yet' : [has(items, 'rules') && 'rules written', has(items, 'playtests') && 'playtested'].filter(Boolean).join(', '),
     develop: has(items, 'built') ? 'a prototype exists' : 'nothing built yet',
+    deliver: has(items, 'released') ? 'a version is out' : 'nothing ready to hand over yet',
     release: has(items, 'released') ? 'something is out' : 'not released',
   }
   return { gaps: g, why, discoverGot: entryGot }
@@ -116,10 +122,11 @@ export function gapMap(items) {
 
 // What a stage needs from the ones before it (rule 4: a later start never blocks, it catches up first).
 const ready = (stage, g) => ({
-  discover: true,
-  define: g.discover !== 'not yet' || g.define !== 'not yet',
+  ideate: true,
+  define: g.ideate !== 'not yet' || g.define !== 'not yet',
   design: g.define === 'covered',
   develop: g.define === 'covered' && g.design === 'covered',
+  deliver: g.develop === 'covered',
   release: g.develop === 'covered',
 }[stage])
 const missingFor = (stage, items, g) => {
@@ -130,29 +137,24 @@ const missingFor = (stage, items, g) => {
 }
 
 // Where to start: { stage, at, why, catchUp, earlier }. where = Question 1's answer; goal = Question 2's.
-// discoverSteps = discover.json's step ids (the entry must be one of them).
+// Ideate always starts at its first step ("show me what you have"): it shows what the start read and asks for the
+// rest (a Drive folder, more files), so nothing the material answered is asked again there either.
 export function propose({ where, goal, items, g, discoverGot }) {
-  const asked = where === 'nothing' || where === 'spark' ? 'discover' : GOALS[goal] || 'discover'
+  const asked = where === 'nothing' || where === 'spark' ? 'ideate' : GOALS[goal] || 'ideate'
   let stage = asked
-  while (stage !== 'discover' && !ready(stage, g)) stage = ORDER[ORDER.indexOf(stage) - 1]
+  while (stage !== 'ideate' && !ready(stage, g)) stage = ORDER[ORDER.indexOf(stage) - 1]
   const name = s => E.stageOf(s).name
-  // Discover starts at its first talk step the material doesn't cover (a spark alone still starts at Spark).
-  const discoverAt = () => {
-    if (where === 'nothing' || where === 'spark') return 'spark'
-    const step = DISCOVER_GROUPS.slice(0, 4).find(([n]) => !discoverGot.includes(n))
-    return step ? step[0] : 'mechanisms'
-  }
-  const at = stage === 'discover' ? discoverAt() : stage === 'define' ? 'digest' : 'first'
-  const catchUp = stage !== asked ? `${name(asked)} needs ${missingFor(asked, items, g)}; I'll start you in ${name(stage)} to make ${stage === 'discover' ? 'that' : 'those'} first, with everything your material already chose kept in one tap.` : null
+  const at = stage === 'define' ? 'digest' : 'first'
+  const catchUp = stage !== asked ? `${name(asked)} needs ${missingFor(asked, items, g)}; I'll start you in ${name(stage)} to make ${stage === 'ideate' ? 'that' : 'those'} first, with everything your material already chose kept in one tap.` : null
   let why
-  if (where === 'nothing') why = "Nothing to read yet, so we start where every game starts: the spark — Discover's first question is the seed."
-  else if (where === 'spark') why = "A spark is Discover's first piece of material: we start at the Spark with yours already in, and build out from it."
+  if (where === 'nothing') why = "Nothing to read yet, so we start where every game starts: Ideate — the idea in your own words, or finding one together."
+  else if (where === 'spark') why = 'A spark is the first piece of material: Ideate starts from your words and writes back the game so far, then asks only about the gaps.'
   else if (catchUp) why = catchUp
-  else if (stage === 'discover') why = at === 'spark' ? 'You asked to open it up: Discover gathers more material around what you have, and your material is already on the shelves, so nothing is asked twice.' : `You asked to open it up, and your material already covers ${discoverGot.join(', ')}: we start at ${at === 'mechanisms' ? 'the mechanism research' : at[0].toUpperCase() + at.slice(1)}, and nothing your material answered is asked again.`
+  else if (stage === 'ideate') why = `You asked to open it up: Ideate reads all of your material${discoverGot.length ? ` (it already touches ${discoverGot.join(', ')})` : ''}, writes back the game so far — fixed, ideas, open — and asks only about the gaps.`
   else if (stage === 'define') why = 'You asked to pin it down, and your material gives Define enough to choose from; whatever it already chose is one tap to keep.'
   else why = `Your material covers what ${name(stage)} needs.`
   const before = ORDER[ORDER.indexOf(stage) - 1]
-  const earlier = before ? { stage: before, at: before === 'discover' ? 'spark' : before === 'define' ? 'digest' : 'first' } : null
+  const earlier = before ? { stage: before, at: before === 'define' ? 'digest' : 'first' } : null
   return { stage, at, why, catchUp, earlier, asked }
 }
 
@@ -176,7 +178,9 @@ export function buildIntake({ result, sources, unreadable = [], defineKeys, date
   if (brief) given.brief = brief
   if (slug) given.slug = slug
   const read = readLines(brief, items)
-  const json = { version: 1, date, where, goal, brief, slug, sources: sources.map(s => ({ name: s.name, chars: s.text.length })), unreadable, read, gaps, gapWhy: why, proposal, given, notVerbatim, unknownKeys: unknown }
+  // (F228: the pasted text itself is kept, so Ideate's reading step reads it whole, not only the quotes taken from it)
+  const pasted = listOf(result.pasted).map(t => String(t == null ? '' : t)).filter(t => clean(t))
+  const json = { version: 1, date, where, goal, brief, slug, sources: sources.map(s => ({ name: s.name, chars: s.text.length })), pasted, unreadable, read, gaps, gapWhy: why, proposal, given, notVerbatim, unknownKeys: unknown }
 
   const stageLine = (s, at) => `${E.stageOf(s).name}${at && at !== 'first' ? ` · ${at}` : ''}`
   const md = [
@@ -220,7 +224,11 @@ export function buildIntake({ result, sources, unreadable = [], defineKeys, date
     steps: ['intake'], skipped: [], questions: [], bricks, reports: [],
     material: sources.map(s => s.name),
   }
-  return { json, md, run }
+  // The proposal screen the engine shows in a turn of its own (the intake step's "show"), before the "Start there?"
+  // box: shown inside or beside the box it was hidden behind (live review #20b). Empty when nothing is proposed to
+  // confirm (nothing yet or a spark goes straight in): the engine then shows nothing.
+  const screen = where === 'nothing' || where === 'spark' ? '' : md.slice(md.indexOf('## Proposal'), md.indexOf('## Options')).replace(/^## Proposal\n/, `## Where you're starting${brief ? ` — ${brief}` : ''}\n`).trimEnd() + '\n'
+  return { json, md, run, screen }
 }
 
 function main() {
@@ -237,7 +245,7 @@ function main() {
   listOf(result.pasted).forEach((t, i, all) => { if (clean(t)) sources.push({ name: all.length > 1 ? `pasted text ${i + 1}` : 'pasted text', text: String(t) }) })
   for (const f of listOf(result.files)) {
     const path = String(f).replace(/\\/g, '/').replace(/^\.\//, '')
-    if (/^https?:\/\//i.test(path)) { unreadable.push({ path, why: 'a link: paste its text instead' }); continue }
+    if (/^https?:\/\//i.test(path)) { unreadable.push({ path, why: 'a link: Ideate reads it (Google Drive folders and docs), or paste its text' }); continue }
     if (!E.isSafePath(path)) { unreadable.push({ path, why: 'outside this folder' }); continue }
     if (/\.(pdf|docx?|pptx?|xlsx?|png|jpe?g|gif|zip)$/i.test(path)) { unreadable.push({ path, why: 'not a text file yet: paste its text instead' }); continue }
     if (!existsSync(join(project, path))) { unreadable.push({ path, why: 'not found' }); continue }
@@ -250,6 +258,7 @@ function main() {
   mkdirSync(join(project, dirname(INTAKE_JSON)), { recursive: true })
   writeFileSync(join(project, INTAKE_JSON), JSON.stringify(out.json, null, 2) + '\n')
   writeFileSync(join(project, INTAKE_MD), out.md)
+  writeFileSync(join(project, INTAKE_SCREEN), out.screen)
   let saved = 'nothing shared, so DISCOVER.md is left alone'
   if (out.run) {
     const old = existsSync(join(project, DISCOVER)) ? readFileSync(join(project, DISCOVER), 'utf8') : null

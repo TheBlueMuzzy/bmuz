@@ -9,13 +9,16 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DIGEST, DISCOVER, GDD, PART1, allBricks, fieldText, gddRuns, readGdd, readShelves } from './define-doc.mjs'
+import { DIGEST, DISCOVER, GDD, IDEATE, PART1, allBricks, fieldText, gddRuns, readGdd, readShelves, sourceDoc } from './define-doc.mjs'
 
-const SOURCE_WORDS = { creative: "the creative's words", material: 'from their material', picked: 'picked by the creative', Claude: "Claude's suggestion", research: 'research', 'hand-added': 'added by hand' }
-const tag = b => `(${b.source === 'research' ? 'research' : b.source === 'hand-added' ? 'added by hand' : b.source === 'creative' ? 'their words' : b.source === 'material' ? 'their words, from their material' : b.source === 'picked' ? 'they picked it' : 'Claude'}${b.defineNotes.length ? ` · ${b.defineNotes.join(' · ')}` : ''})`
+// (F228: "open" = an IDEATE.md question still to answer)
+const SOURCE_WORDS = { creative: "the creative's words", material: 'from their material', picked: 'picked by the creative', Claude: "Claude's suggestion", research: 'research', open: 'still open', 'hand-added': 'added by hand' }
+const tag = b => `(${b.source === 'research' ? 'research' : b.source === 'hand-added' ? 'added by hand' : b.source === 'creative' ? 'their words' : b.source === 'material' ? 'their words, from their material' : b.source === 'picked' ? 'they picked it' : b.source === 'open' ? 'still open' : 'Claude'}${b.defineNotes.length ? ` · ${b.defineNotes.join(' · ')}` : ''})`
 
 // The digest's text. doc = readShelves(DISCOVER.md); gddText = GDD.md or null.
-export function digest(doc, gddText, date) {
+export function digest(doc, gddText, date, sourcePath = DISCOVER) {
+  const name = sourcePath.split('/').pop()
+  const ideate = sourcePath === IDEATE
   const g = gddText ? readGdd(gddText) : null
   const revision = !!(g && g.at >= 0 && g.subs.length)
   const runs = gddRuns(gddText)
@@ -24,9 +27,11 @@ export function digest(doc, gddText, date) {
   const out = [
     `# Define digest${doc.brief ? `: ${doc.brief}` : ''}`,
     `Define run: ${n}${revision ? ' (a revision: GDD Part 1 is already written; each step shows the locked version first, so "keep" is one tap)' : ' (the first Define run)'}`,
-    `Read: ${DISCOVER} through Discover run ${doc.discoverRuns} · ${date} · ${bricks.length} bricks on ${doc.shelves.filter(s => s.bricks.length).length} shelves`,
+    `Read: ${sourcePath} through ${ideate ? 'Ideate' : 'Discover'} run ${doc.discoverRuns} · ${date} · ${bricks.length} ${ideate ? 'items' : 'bricks'} on ${doc.shelves.filter(s => s.bricks.length).length} shelves`,
     '',
-    'Made by the define-digest script (no AI): DISCOVER.md\'s shelves grouped by shelf, then by the label Discover gave each brick, then research. Nothing here is chosen or ranked; shelf order is DISCOVER.md\'s order. Each brick has an id like [EX3]: hand it back as "brick" with any item chosen from a shelf, so the write step marks it in DISCOVER.md.',
+    ideate
+      ? `Made by the define-digest script (no AI): ${name}, the game so far, one shelf per need (frame first), each line labelled Fixed / Idea / Open. Nothing here is chosen or ranked. Each line has an id like [FR2]: hand it back as "brick" with any item chosen from it, so the write step marks it in ${name}.`
+      : 'Made by the define-digest script (no AI): DISCOVER.md\'s shelves grouped by shelf, then by the label Discover gave each brick, then research. Nothing here is chosen or ranked; shelf order is DISCOVER.md\'s order. Each brick has an id like [EX3]: hand it back as "brick" with any item chosen from a shelf, so the write step marks it in DISCOVER.md.',
     `Seed: ${doc.seed || 'not given'}`,
     '',
     '## Counts',
@@ -74,10 +79,10 @@ export function digest(doc, gddText, date) {
 function main() {
   const project = process.cwd()
   const read = f => (existsSync(join(project, f)) ? readFileSync(join(project, f), 'utf8') : null)
-  const text = read(DISCOVER)
-  const doc = text && readShelves(text)
-  if (!doc) { console.log(`✘ ${DISCOVER} is missing or has no "## Shelves": Define builds on Discover's shelves. Run discover first.`); process.exit(1) }
-  const d = digest(doc, read(GDD), new Date().toLocaleDateString('en-CA'))
+  const src = sourceDoc(read)
+  const doc = src.text && readShelves(src.text)
+  if (!doc) { console.log(`✘ neither ${IDEATE} nor ${DISCOVER} has shelves ("## Shelves"): Define builds on the game so far. Run Ideate first (bmuz stage ideate).`); process.exit(1) }
+  const d = digest(doc, read(GDD), new Date().toLocaleDateString('en-CA'), src.path)
   mkdirSync(join(project, dirname(DIGEST)), { recursive: true })
   writeFileSync(join(project, DIGEST), d.text)
   console.log(`✔ ${DIGEST}: Define run ${d.n}${d.revision ? ' (a revision)' : ''} — ${d.count} bricks grouped`)

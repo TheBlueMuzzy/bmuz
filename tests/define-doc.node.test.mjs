@@ -233,7 +233,7 @@ test('the commands: no DISCOVER.md is refused in plain words', () => {
   try {
     const r = spawnSync('node', [join(scripts, 'define-digest.mjs')], { cwd: dir, encoding: 'utf8' })
     assert.equal(r.status, 1)
-    assert.match(r.stdout, /DISCOVER\.md is missing .*Run discover first\./)
+    assert.match(r.stdout, /neither \.planning\/IDEATE\.md nor \.planning\/DISCOVER\.md has shelves .*Run Ideate first/)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
