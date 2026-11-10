@@ -518,8 +518,12 @@ const scenarios = {
 }
 
 const pick = process.argv.slice(2)
+// Run only when named: `discover` (Discover is no longer a stage since 2026-11-10 — Ideate replaced it; its research
+// flow comes back as F229 — Research, callable anywhere, which must drop dead sources inside the flow first: the
+// full run of 2026-11-10 blocked on cited pages that 404 or have expired certificates, three tries running).
+const NAMED_ONLY = new Set(['discover'])
 for (const [name, run] of Object.entries(scenarios)) {
-  if (pick.length && !pick.includes(name)) continue
+  if (pick.length ? !pick.includes(name) : NAMED_ONLY.has(name)) continue
   console.log(`--- ${name} (${new Date().toLocaleTimeString()})`)
   await run()
 }
