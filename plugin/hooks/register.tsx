@@ -885,6 +885,12 @@ export const register: Register = on => {
       // limits still hold) and the journal says it went unchecked.
       const cur = E.stepById(ctx.pipeline, ctx.state.current)
       if (cur && cur.kind === 'talk' && ctx.state.status === 'working') {
+        // An option standing in for typing ("I'll paste the link") never gets through (live look 2026-11-10).
+        const fake = E.fakeTypeOptionProblem((e as any).questions)
+        if (fake) {
+          await journal($, { ev: 'deviation', step: cur.id, tool: 'AskUserQuestion', agentId: null, why: fake })
+          return { deny: fake }
+        }
         let rows: any = null
         try { rows = await $.session.messages() } catch (err) { rows = null }
         if (!Array.isArray(rows)) await journal($, { ev: 'ask.unchecked', step: cur.id, why: 'the transcript could not be read' })

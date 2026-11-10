@@ -761,7 +761,7 @@ export function isPersonDeclining(res) {
 
 // ---- Asking only through the question box (F228 task 3; discover-live-review-2026-11-09.md S3 and #20b) ----
 // Every live talk step is told this, whatever its craft note says.
-export const ASK_RULE = 'Asking: every question to the creative goes through AskUserQuestion (their own words go in its "Other"). Never ask anything in plain text: the creative doesn\'t see it as a question and the run waits (a live run stalled 18 minutes on one). Nothing they must read goes in plain text in the same turn as the question box: the box covers it. Put it inside the question or the options\' descriptions, with at most one short line before the box. A turn of a talk step ends only with the box answered and more to do, or with step_done.'
+export const ASK_RULE = 'Asking: every question to the creative goes through AskUserQuestion (their own words go in its "Other"). Never ask anything in plain text: the creative doesn\'t see it as a question and the run waits (a live run stalled 18 minutes on one). Nothing they must read goes in plain text in the same turn as the question box: the box covers it. Put it inside the question or the options\' descriptions, with at most one short line before the box. A turn of a talk step ends only with the box answered and more to do, or with step_done. Options: only real answers, two is fine, never filler. Never an option that means "I\'ll type or paste it" (picking an option ends the question with nothing typed): when you want their words, a link or links, say in the question itself "type or paste it in \'Type something\' below" — one or more links are fine, one item per link.'
 export const MAX_NUDGES = 2
 
 // The question a message asks in plain text (one of its last lines ending in "?"), or null.
@@ -802,6 +802,30 @@ export function hiddenTextProblem(text) {
   const lines = t.split(/\r?\n/).filter(l => l.trim()).length
   if (t.length <= 300 && lines <= 3) return null
   return `BMUZ engine: ${lines} line${lines === 1 ? '' : 's'} of plain text (${t.length} characters) came before this question box in the same turn, and the box covers them: the creative can't read them (live run: "i don't see 5 research questions that you're referring to"). Ask again with everything they need to read inside the question or the options' descriptions, and at most one short line before the box.`
+}
+
+// An option that stands in for typing ("I'll paste the link", "Write it here instead", "It's in Drive — paste it in
+// Other"): picking it ends the question with nothing typed, so the creative is asked again and again (live look
+// 2026-11-10: four screens of "I'll paste it", never a field to paste into). The box's own "Type something" is the
+// only place to type. questions = AskUserQuestion's input.questions. Returns the refusal's words, or null.
+const TYPE_WORD = '(paste|type|write|enter|drop|give|share|send)'
+const FAKE_LABEL = [
+  new RegExp(`\\b(i'?ll|i will|let me|i can|i want to)\\s+(just\\s+)?${TYPE_WORD}\\b`, 'i'),
+  /^\s*(paste|type|write)\b/i,
+  new RegExp(`\\b${TYPE_WORD}\\s+(it|them|that|the\\s+\\w+|a\\s+\\w+|my\\s+\\w+)\\s+(here|in|instead)\\b`, 'i'),
+]
+const FAKE_DESC = /\b(paste|type|write|enter)\b[^.]*\b(in|into)\s+["'“‘]?(other|type something)\b/i
+export function fakeTypeOptionProblem(questions) {
+  for (const q of Array.isArray(questions) ? questions : []) {
+    for (const o of Array.isArray(q && q.options) ? q.options : []) {
+      const label = String((o && o.label) || '')
+      const desc = String((o && o.description) || '')
+      if (FAKE_LABEL.some(r => r.test(label)) || FAKE_DESC.test(desc)) {
+        return `BMUZ engine: the option "${label}" stands in for typing, but picking an option ends the question with nothing typed — the creative gets asked again and never gets a field to paste into (live look: four screens of "I'll paste it"). Drop that option. Say in the question itself "type or paste it in 'Type something' below" (one or more links are fine), and keep only options that are real answers — two is fine, no filler.`
+      }
+    }
+  }
+  return null
 }
 
 // The text of a question box's answer, whatever field carries it (the mod docs don't fix the result's shape).

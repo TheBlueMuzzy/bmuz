@@ -1063,6 +1063,20 @@ test('F228: a question box with a wall of plain text before it in the same turn 
   expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"answer","step":"ask"/)
 })
 
+test('live look 2026-11-10: a question box with an "I\'ll paste it" option is refused, even when the transcript can\'t be read', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('session.messages', () => { throw new Error('no transcript') })
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: 'User has answered your questions: "Q?"="A"' }))
+  const { w } = shown(on)
+  await start($, true)
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Your material?', options: [{ label: 'Nothing to share yet' }, { label: "I'll paste the link" }] }] } as any)
+  expect(refused(r)).toBe(true)
+  expect(why(r)).toMatch(/stands in for typing/)
+  const ok: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: "Paste the link in 'Type something' below", options: [{ label: 'Nothing to share yet' }, { label: 'Look in this folder again' }] }] } as any)
+  expect(refused(ok)).toBe(false)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"deviation","step":"ask","tool":"AskUserQuestion"/)
+})
+
 test('F228 review: the creative\'s clarifying question answered in plain text is not nudged; a reply that asks them something is', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const { prompts } = shown(on)

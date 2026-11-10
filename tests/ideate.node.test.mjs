@@ -275,6 +275,21 @@ test('task 3: a plain-text question is found; the nudge names it, twice at most;
   assert.ok(!/every question to the creative goes through AskUserQuestion/.test(E.talkPrompt({ id: 'x', results: [] }, 'craft', '', true)))
 })
 
+test('live look 2026-11-10: an option that stands in for typing ("I\'ll paste the link") is refused; real answers pass', () => {
+  const box = (label, description = '') => [{ question: 'Your material?', options: [{ label: 'Nothing to share yet' }, { label, description }] }]
+  // what the live look actually showed, four screens of it
+  for (const fake of ["I'll paste it", "I'll paste the link", 'I will paste a link or text', 'Write it here instead', 'Paste it', 'Type it in', 'Let me paste them'])
+    assert.match(E.fakeTypeOptionProblem(box(fake)) || '', /stands in for typing/, fake)
+  assert.match(E.fakeTypeOptionProblem(box("It's in Google Drive", 'paste the link in Other')) || '', /stands in for typing/)
+  assert.match(E.fakeTypeOptionProblem(box('A Drive link or more text', "paste it in 'Type something'")) || '', /stands in for typing/)
+  // real answers, including the ones the craft notes now use
+  for (const ok of ['Read rules.md and notes.txt', 'Look in this folder again', "That's everything", 'No link — ask me the idea instead', 'Keep going', 'Send it to Define', 'Open it up', 'Nothing yet — help me find one'])
+    assert.equal(E.fakeTypeOptionProblem(box(ok, 'drop your files here first, then pick this')), null, ok)
+  assert.equal(E.fakeTypeOptionProblem(undefined), null)
+  // every live talk step is told the rule
+  assert.match(E.talkPrompt({ id: 'x', results: [] }, 'craft', '', false), /Never an option that means "I'll type or paste it"/)
+})
+
 test('F218 task 8: Define on the needs spine — the frame chosen in direction survives scope\'s one-tap keep; new Part 1 fields; prior art only on a yes', async () => {
   const { chosen, PART1 } = await import('../plugin/scripts/define-doc.mjs')
   const steps = [{ id: 'direction', kind: 'talk' }, { id: 'bricks', kind: 'talk' }, { id: 'scope', kind: 'talk' }]
