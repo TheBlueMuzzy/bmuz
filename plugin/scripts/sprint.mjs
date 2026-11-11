@@ -302,7 +302,7 @@ export function planWrite(dir, script = loadScript(), now = new Date()) {
     text = have
     for (const f of features) text = M.writeBlock(text, `sp:${f.id.toLowerCase()}`, featureMd(f), { by: { step: 'plan', stage: 'Develop', day: day(now) } }).text
   }
-  write(dir, SPRINT, text.endsWith('\n') ? text : text + '\n')
+  writePlan(dir, SPRINT, text.endsWith('\n') ? text : text + '\n', `Sprint ${pad(rec.n)}: ${rec.goal}`)
   const branch = workBranch(dir, p.milestone)
   // (review fix 12: one feature is "1 feature")
   const say = [line(features.length === 1 ? 'develop.plan.one' : 'develop.plan', { n: String(rec.n), milestone: rec.milestone, count: String(features.length) }, script),
@@ -338,10 +338,10 @@ export function featureStart(dir, script = loadScript(), now = new Date()) {
   f.status = 'building'
   f.runs = (f.runs || 0) + 1
   f.tries = []
-  // (files the creative already had changed are left out of this feature's commits)
-  f.dirty = B.dirtyFiles(dir)
+  // (review fix 6: a commit takes only what this run's own calls changed: .bmuz/own.json, per run)
+  f.toldTheirs = []
   saveRecord(dir, rec)
-  write(dir, ROADMAP, setStates(readIn(dir, ROADMAP) || '', { [f.id]: '🔨' }))
+  writePlan(dir, ROADMAP, setStates(readIn(dir, ROADMAP) || '', { [f.id]: '🔨' }), `${f.id}: building — ${f.name}`)
   write(dir, BRIEF, briefMd(dir, rec, f))
   write(dir, TRIES, '')
   const i = rec.features.indexOf(f)
@@ -460,9 +460,10 @@ export function ready(dir, script = loadScript(), now = new Date()) {
   if (f.status === 'building') {
     f.status = 'built'
     saveRecord(dir, rec)
+    const planTheirs = B.isGitRepo(dir) ? B.dirtyFiles(dir).filter(x => x === SPRINT || x === ROADMAP) : []
     write(dir, ROADMAP, setStates(readIn(dir, ROADMAP) || '', { [f.id]: '🎛️' }))
     write(dir, SPRINT, sprintEdit(readIn(dir, SPRINT) || sprintMd(rec), f.id, { tick: '🤖', checked: `${checked} (${day(now)})` }))
-    commitFeature(dir, f, `${f.id}: built — ${f.name} (${checked})`)
+    commitFeature(dir, f, `${f.id}: built — ${f.name} (${checked})`, [SPRINT, ROADMAP].filter(x => !planTheirs.includes(x)))
   }
   G.writePage(dir, now)
   return { say, proof }
@@ -489,9 +490,36 @@ export function sprintEdit(text, id, { tick = null, checked = null, note = null 
 }
 
 // The feature's files this run changed (not the ones the creative had changed before it), committed.
-function commitFeature(dir, f, message, extra = []) {
-  const files = [...B.dirtyFiles(dir).filter(x => !listOf(f.dirty).includes(x)), ...extra]
-  try { return B.commitFiles(dir, files, message, listOf(f.dirty)) } catch (e) { return { error: e.message } }
+// (review fix 6: the files this run's own calls changed — Write / Edit, Claude's or a helper's, and the engine's run
+// tool — as the engine records them in .bmuz/own.json, and only while nobody else changed them since. A file the creative
+// changed is left out, and the sprint says so. The plan files are sprint.mjs's own: committed as it writes them.)
+export function ownFiles(dir) {
+  const own = (readJson(dir, '.bmuz/own.json') || {}).steps || {}
+  const out = new Map()
+  for (const files of Object.values(own)) for (const [f, e] of Object.entries(files || {})) out.set(f, e)
+  return [...out.entries()].filter(([f, e]) => E.isSafePath(f) && e && E.textSha(readIn(dir, f)) === e.after).map(([f]) => f)
+}
+// plan: the plan files sprint.mjs just wrote for this step (in the same commit, unless they held the creative's changes).
+function commitFeature(dir, f, message, plan = []) {
+  if (!B.isGitRepo(dir)) return { nogit: true }
+  const mine = [...ownFiles(dir).filter(x => x !== SPRINT && x !== ROADMAP), ...plan]
+  const theirs = B.dirtyFiles(dir).filter(x => !mine.includes(x) && x !== SPRINT && x !== ROADMAP)
+  const rec = readRecord(dir)
+  const g = rec && rec.features.find(x => x.id === f.id)
+  const told = listOf(g && g.toldTheirs)
+  const fresh = theirs.filter(x => !told.includes(x))
+  if (fresh.length) {
+    write(dir, SPRINT, sprintEdit(readIn(dir, SPRINT) || '', f.id, { note: `left out of the commit (changed by you, not by this run): ${fresh.join(', ')}` }))
+    if (g) { g.toldTheirs = [...told, ...fresh]; saveRecord(dir, rec) }
+  }
+  try { return B.commitFiles(dir, mine, message) } catch (e) { return { error: e.message } }
+}
+// A plan file sprint.mjs writes (SPRINT.md, ROADMAP.md), committed right away — unless the creative has unsaved
+// changes in it, which are theirs to commit.
+export function writePlan(dir, rel, text, message) {
+  const theirs = B.isGitRepo(dir) && B.dirtyFiles(dir).includes(rel)
+  write(dir, rel, text)
+  if (!theirs && B.isGitRepo(dir)) { try { B.commitFiles(dir, [rel], `Plan: ${message}`) } catch (e) { /* a failed plan commit never stops the run */ } }
 }
 
 // ---- 4.5 Play & Approve: nothing is done without the creative's OK ----
@@ -572,6 +600,8 @@ export function featureEnd(dir, now = new Date()) {
   const tune = resultOf(st, 'tune')
   let states = {}
   let commit = null
+  // (the plan files go in the feature's own commit, unless the creative has unsaved changes in them)
+  const planTheirs = B.isGitRepo(dir) ? B.dirtyFiles(dir).filter(x => x === SPRINT || x === ROADMAP) : []
   if (a === 'approved') {
     f.status = 'approved'
     states = { [f.id]: '✅' }
@@ -590,8 +620,8 @@ export function featureEnd(dir, now = new Date()) {
   }
   saveRecord(dir, rec)
   if (Object.keys(states).length) write(dir, ROADMAP, setStates(readIn(dir, ROADMAP) || '', states))
+  const c = commit ? commitFeature(dir, f, commit, [SPRINT, ROADMAP].filter(x => !planTheirs.includes(x))) : null
   G.writePage(dir, now)
-  const c = commit ? commitFeature(dir, f, commit, [SPRINT, ROADMAP]) : null
   return { feature: f.id, status: f.status, commit: c }
 }
 
@@ -608,8 +638,8 @@ export function setStatus(dir, id, status, now = new Date()) {
   const last = [...runs].reverse().find(r => r.feature === id)
   const st = last ? readJson(dir, `${last.record}/state.json`) : null
   const why = clean(st && st.blocked && st.blocked.why).slice(0, 300)
-  write(dir, SPRINT, sprintEdit(readIn(dir, SPRINT) || '', id, { note: status === 'blocked' ? `BLOCKED ${day(now)} in an auto run${why ? `: ${why}` : ''}` : `parked by you ${day(now)}: a later sprint takes it up again` }))
-  if (status === 'parked') write(dir, ROADMAP, setStates(readIn(dir, ROADMAP) || '', { [id]: '🟢' }))
+  writePlan(dir, SPRINT, sprintEdit(readIn(dir, SPRINT) || '', id, { note: status === 'blocked' ? `BLOCKED ${day(now)} in an auto run${why ? `: ${why}` : ''}` : `parked by you ${day(now)}: a later sprint takes it up again` }), `${id}: ${status} — ${f.name}`)
+  if (status === 'parked') writePlan(dir, ROADMAP, setStates(readIn(dir, ROADMAP) || '', { [id]: '🟢' }), `${id}: parked — ${f.name}`)
   G.writePage(dir, now)
   return f
 }
@@ -619,7 +649,7 @@ export function idea(dir, words, now = new Date()) {
   const rm = readIn(dir, ROADMAP)
   if (!rm) throw new Error(`there is no ${ROADMAP} to note it in`)
   const out = addIdea(rm, words, day(now))
-  if (out.added) write(dir, ROADMAP, out.text)
+  if (out.added) writePlan(dir, ROADMAP, out.text, `Idea: ${clean(words).slice(0, 60)}`)
   const gdd = readIn(dir, G.GDD)
   if (gdd) write(dir, G.GDD, G.applyResult(gdd, { ideas: [clean(words)] }, null, { step: 'idea', stage: 'Develop', day: day(now) }).text)
   G.writePage(dir, now)

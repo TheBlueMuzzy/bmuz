@@ -228,7 +228,7 @@ test('prove: the builder\'s word is never enough — its named tests run and pas
 test('ready: 4.5\'s card word for word, 🎛️, the 🤖 tasks ticked, "Checked:" written, the work committed', () => {
   const dir = project(true)
   building(dir)
-  writeFileSync(join(dir, 'tests/turn.test.mjs'), builtTest)
+  ownWrite(dir, 'build', 'tests/turn.test.mjs', builtTest)
   journal(dir, [{ ev: 'flow.result', step: 'build', result: { tests: [{ rule: 'the turn passes', file: 'tests/turn.test.mjs', name: 'F01 the turn passes to the other player' }], changed: ['you can take a turn', 'the turn passes'], try: 'take one turn each' } }])
   const proof = S.prove(dir, script, NOW)
   const r = S.ready(dir, script, NOW)
@@ -239,6 +239,32 @@ test('ready: 4.5\'s card word for word, 🎛️, the 🤖 tasks ticked, "Checked
   assert.match(md, /Checked: \d+ tests? pass(es)? \(2026-11-11\)/)
   assert.match(spawnSync('git', ['log', '--format=%s'], { cwd: dir, encoding: 'utf8' }).stdout, /^F01: built — Turn engine/m)
   assert.equal(S.readRecord(dir).features[0].status, 'built')
+})
+
+test('review fix 6: a feature\'s commit takes only the files this run\'s own calls changed; the creative\'s are left out and said; SPRINT.md and ROADMAP.md are committed as sprint.mjs writes them', () => {
+  const dir = project(true)
+  building(dir)
+  const gitDirty = () => (spawnSync('git', ['status', '--porcelain'], { cwd: dir, encoding: 'utf8' }).stdout || '')
+  // sprint.mjs committed its own plan files as it wrote them
+  assert.doesNotMatch(gitDirty(), /SPRINT\.md|ROADMAP\.md/)
+  // the builder's own writes, and the creative's edit of another file mid-run
+  ownWrite(dir, 'build', 'tests/turn.test.mjs', builtTest)
+  ownWrite(dir, 'build', 'src/garden.js', read(dir, 'src/garden.js') + '// the turn\n')
+  writeFileSync(join(dir, 'src/play.mjs'), read(dir, 'src/play.mjs') + '// mine\n')
+  journal(dir, [{ ev: 'flow.result', step: 'build', result: { tests: [{ rule: 'the turn passes', file: 'tests/turn.test.mjs', name: 'F01 the turn passes to the other player' }], changed: ['a turn'] } }])
+  S.prove(dir, script, NOW)
+  S.ready(dir, script, NOW)
+  const files = spawnSync('git', ['show', '--name-only', '--format=', 'HEAD~1'], { cwd: dir, encoding: 'utf8' }).stdout + spawnSync('git', ['show', '--name-only', '--format=', 'HEAD'], { cwd: dir, encoding: 'utf8' }).stdout
+  const built = spawnSync('git', ['log', '--format=%s', '-5'], { cwd: dir, encoding: 'utf8' }).stdout
+  assert.match(built, /^F01: built — /m)
+  const builtFiles = spawnSync('git', ['show', '--name-only', '--format=', ':/F01: built'], { cwd: dir, encoding: 'utf8' }).stdout
+  assert.match(builtFiles, /src\/garden\.js/)
+  assert.match(builtFiles, /tests\/turn\.test\.mjs/)
+  assert.doesNotMatch(builtFiles, /src\/play\.mjs/)
+  assert.match(gitDirty(), /src\/play\.mjs/)
+  assert.match(read(dir, S.SPRINT), /Notes: left out of the commit \(changed by you, not by this run\): src\/play\.mjs/)
+  assert.doesNotMatch(gitDirty(), /SPRINT\.md|ROADMAP\.md/)
+  void files
 })
 
 test('approval: nothing is done without the creative\'s OK — an auto run can only wait; live needs their own answer to the box', () => {
