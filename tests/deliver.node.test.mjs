@@ -276,6 +276,54 @@ test('a failed live check puts the last good version back (rollback.mjs), pushed
   assert.equal(JSON.parse(readFileSync(join(here, '..', 'plugin', 'pipelines', 'deliver.json'), 'utf8')).steps.find(s => s.id === 'publish').retries, 0, 'publish blocks at once: no automatic retry')
 })
 
+test('review fix 3: a release the release script refuses leaves no "released" marks, no Log line, no notes; the next try writes the Log line once; going back to Develop clears every Deliver mark', () => {
+  const dir = garden()
+  shareSaid(dir)
+  const plan = () => [S.ROADMAP, '.planning/STATE.md', S.SPRINT].map(f => read(dir, f))
+  const before = plan()
+  withFake({ FAKE_RELEASE: 'fail' }, () => assert.throws(() => publishTest(dir), /version v0\.1\.0: ✗ release refused/))
+  assert.deepEqual(plan(), before, 'the roadmap, STATE and the sprint as they were')
+  assert.equal(read(dir, '.planning/archive/releases/v0.1.0.md'), null)
+  assert.ok(!/released/.test(read(dir, S.ROADMAP)))
+  publishTest(dir)
+  assert.equal((read(dir, '.planning/STATE.md').match(/Released v0\.1\.0:/g) || []).length, 1, 'one Log line')
+  // reopen: "✅ released …" and "✅ ready to deliver …" both go, "← current" comes back
+  const text = '# R\nRelease target: playable\n## v0.1 — Vertical slice  (→ playable)  ✅ released 2026-11-11 (v0.1.0)\n- ✅ F01 🧱 Turn engine — a — must:playable\n## v0.2 — Alpha  ← current  (→ alpha)\n'
+  assert.match(D.reopen(text, 'Vertical slice'), /^## v0\.1 — Vertical slice {2}← current {2}\(→ playable\)$/m)
+  assert.ok(!/✅ released|✅ ready/.test(D.reopen(text, 'Vertical slice')))
+})
+
+test('review fix 2: the version is bumped once: a release that tagged and then died (a timeout, a crash) is adopted on the next try, never bumped again', { todo: 'review fix 2: its fix comes in its own commit' }, () => {
+  const dir = garden()
+  shareSaid(dir)
+  // release.mjs tags v0.1.0, then exits 1 (as a timeout would)
+  const r = withFake({ FAKE_RELEASE: 'die-after-tag' }, () => publishTest(dir))
+  assert.equal(r.tag, 'v0.1.0')
+  assert.equal(JSON.parse(read(dir, 'version.json')).version, '0.1.0')
+  assert.equal(git(dir, ['tag']), 'v0.1.0')
+  assert.equal(calls(dir).filter(c => /^release /.test(c)).length, 1)
+  // a crash after release.mjs tagged but before the record knew it: the intended version is on record, so the next try adopts it
+  const two = garden()
+  shareSaid(two)
+  withFake({ FAKE_SMOKE_PASS: 'fail' }, () => assert.throws(() => publishTest(two), /the smoke pass/))
+  assert.deepEqual(D.readRecord(two).publish.intended, { tag: 'v0.1.0', version: '0.1.0' })
+  writeFileSync(join(two, D.RECORD), JSON.stringify({ ...D.readRecord(two), publish: { ...D.readRecord(two).publish, tag: undefined, version: undefined, smoke: undefined } }))
+  assert.equal(publishTest(two).tag, 'v0.1.0')
+  assert.equal(JSON.parse(read(two, 'version.json')).version, '0.1.0', 'not 0.2.0')
+  assert.equal(git(two, ['tag']), 'v0.1.0')
+  assert.equal(calls(two).filter(c => /^release /.test(c)).length, 1, 'release.mjs ran once')
+})
+
+test('review fix 5: the creative\'s own unsaved changes are never released with BMUZ\'s: publish refuses, naming them, before anything is merged', { todo: 'review fix 5: its fix comes in its own commit' }, () => {
+  const dir = garden()
+  shareSaid(dir)
+  appendFileSync(join(dir, '.planning', 'GDD.md'), '\nmy half-written note\n')
+  assert.throws(() => publishTest(dir), /You have unsaved changes in \.planning\/GDD\.md; they'd go out with the release\. Save or undo them, then say "bmuz retry" to share it\./)
+  assert.equal(git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']), 'dev/vertical-slice')
+  assert.equal(git(dir, ['tag']), '')
+  assert.deepEqual(calls(dir), [])
+})
+
 test('5.5 Playtest Notes: each feeling of GDD chapter 1 checked; tuning, bugs, rulebook questions and ideas land in the roadmap; the script\'s lines', () => {
   const dir = garden()
   D.prep(dir, NOW)

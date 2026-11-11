@@ -23,7 +23,7 @@
 //   node deliver.mjs notes-write             5.5 the notes into the roadmap (tuning, bugs, rulebook questions, ideas)
 //   (run in the project folder)
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as E from '../hooks/engine.js'
@@ -101,7 +101,9 @@ export function reopen(text, name) {
   if (!m) return before
   const lines = rm.lines
   for (const x of rm.milestones) if (x !== m) lines[x.line] = lines[x.line].replace(/\s{2}←\s*current/, '')
-  let h = lines[m.line].replace(/\s+✅ ready to deliver[^\n]*$/u, '')
+  // (review fix 3: every Deliver mark goes — "✅ ready to deliver …" and "✅ released …" — or the milestone would be
+  // skipped for good)
+  let h = lines[m.line].replace(/\s+✅ (ready to deliver|released)[^\n]*$/u, '')
   if (!/←\s*current/.test(h)) h = h.replace(/^(## v[\d.]+ — .+?)(\s*\(→ [^)]+\))?$/u, (all, a, b) => `${a}  ← current${b || ''}`)
   lines[m.line] = h
   return M.refreshMarks(before, lines.join('\n'))
@@ -513,7 +515,8 @@ export function stateFor(text, { game, tag, stage, milestone, head, when = day()
   // (what Deliver checked: Develop's separate reviewer read every feature; 5.3 checked keys and licences. The full
   // security review is a Beta / 1.0 checklist line, ticked by the creative.)
   section('Key facts', b => setKey(setKey(b, 'Reviewed through', `${head} — BMUZ Develop: every feature read by a separate reviewer`), 'Security reviewed', `${head} — BMUZ Deliver 5.3 (${stage}): no keys in the build, every asset licensed`))
-  section('Log', b => `- ${when} — Released ${tag}: ${milestone} (${stage})\n${b.replace(/^\n+/, '')}`)
+  // (review fix 3: one Log line per release, however many tries it takes)
+  section('Log', b => (b.includes(`Released ${tag}:`) ? b : `- ${when} — Released ${tag}: ${milestone} (${stage})\n${b.replace(/^\n+/, '')}`))
   return t.replace(/\n{3,}/g, '\n\n')
 }
 // The patch notes (release.mjs wants them finished, with Highlights, in the player's words): the milestone's goal and
@@ -590,18 +593,25 @@ function publishNow(dir, script, now) {
     const next = nextVersion((readJson(dir, 'version.json') || {}).version, stage.kind)
     const tag = `v${next}`
     const head = gitOut(dir, ['rev-parse', '--short', 'HEAD'])
-    write(dir, STATE_MD, stateFor(readIn(dir, STATE_MD) || '', { game: G.gameName(readIn(dir, G.GDD) || ''), tag, stage: stage.name, milestone: rec.milestone, head, when: day(now) }))
+    if (!version) B.commitFiles(dir, ['version.json'], 'version.json for the first release')
+    // (review fix 3: release.mjs reads the release's marks — STATE's Log line, ▶ RESUME HERE, the milestone ✅ released,
+    // the notes — before it changes anything, so they are written for it; when it refuses, every one is put back as it
+    // was, and nothing says "released")
     const notes = `.planning/archive/releases/${tag}.md`
+    const planFiles = [STATE_MD, ROADMAP, S.SPRINT, notes, G.PAGE]
+    const kept = Object.fromEntries(planFiles.map(f => [f, readIn(dir, f)]))
+    const putBack = () => { for (const [f, t] of Object.entries(kept)) { if (t === null) rmSync(join(dir, f), { force: true }); else write(dir, f, t) } }
+    write(dir, STATE_MD, stateFor(readIn(dir, STATE_MD) || '', { game: G.gameName(readIn(dir, G.GDD) || ''), tag, stage: stage.name, milestone: rec.milestone, head, when: day(now) }))
     if (!readIn(dir, notes)) write(dir, notes, notesFor(dir, rec, next))
     write(dir, ROADMAP, markReleased(readIn(dir, ROADMAP) || '', rec.milestone, tag, day(now)))
     // (the finished sprint is archived already — Develop's look-back did it — so SPRINT.md holds no running sprint)
     const sprint = readIn(dir, S.SPRINT)
     const archived = sprint && existsSync(join(dir, S.ARCHIVE)) && readdirSync(join(dir, S.ARCHIVE)).some(f => readIn(dir, `${S.ARCHIVE}/${f}`) === sprint)
     if (archived) write(dir, S.SPRINT, `# No sprint running\nThe last sprint is archived in ${S.ARCHIVE}/. Develop plans the next one.\n`)
-    if (!version) B.commitFiles(dir, ['version.json'], 'version.json for the first release')
     G.writePage(dir, now)
     const args = [stage.kind, `${rec.milestone}: the ${stage.key} build`, ...(stage.kind === 'stage' ? [`--stage=${stage.key}`] : [])]
-    step(`version ${tag}`, runTool(dir, 'release', args))
+    const made = runTool(dir, 'release', args)
+    if (!made.ok) { putBack(); step(`version ${tag}`, made) }
     p.tag = tag
     p.version = next
     saveRecord(dir, rec)
