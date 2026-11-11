@@ -6,6 +6,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import * as E from '../plugin/hooks/engine.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 // BMUZ_PROJECT: another test project folder (a background session only runs in a folder a person trusted once)
@@ -25,6 +26,20 @@ const claude = (prompt, extra = []) => {
   return (r.stdout || '') + (r.stderr || '')
 }
 const wait = ms => new Promise(res => setTimeout(res, ms))
+// F215: a headless run stopped as soon as `done()` says so (checked every 3 s), or at `maxMs`: the step-in scenario only
+// needs the step it went back to finished, not the rest of Design. Windows needs taskkill to stop claude's own children.
+const runUntil = async (dir, prompt, tools, done, maxMs) => {
+  const took = Date.now()
+  const child = spawn('claude', ['-p', prompt, ...base, '--allowedTools', tools], { cwd: dir, env: { ...env, BMUZ_TEST: '1' }, stdio: 'ignore' })
+  let ended = false
+  child.on('exit', () => { ended = true })
+  while (!ended && !done() && Date.now() - took < maxMs) await wait(3000)
+  if (!ended) {
+    if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'])
+    else child.kill('SIGTERM')
+  }
+  console.log(`      (${Math.round((Date.now() - took) / 1000)} s; ${ended ? 'ended by itself' : 'stopped once done'})`)
+}
 
 const results = []
 const check = (name, ok, detail = '') => {
@@ -475,6 +490,93 @@ const scenarios = {
     check('F232 (ideate): the game so far counts the file shared and says what couldn\'t be read', /from your idea and the \d+ files? you shared\./.test(so) && /I couldn't read: 1 Photoshop file/.test(so), so.slice(0, 900))
   },
 
+
+  // F215: the bug pipeline on a tiny game with a planted bug (tests/fixtures/bug-garden: the final score skips the first
+  // row; the full-row bonus copies the same mistake), its Design waiting at the Blueprint Review. Run 1, the creative
+  // steps in with the bug in plain words: logged in BUGS.md, the script's line word for word, the gate untouched. Run 2,
+  // "bmuz bug": the stage parks, the fix run goes pick → reproduce (the test fails first) → cause → fix (passes after)
+  // → matching places (the bonus fixed too, with its own test) → record (BUGS.md fixed + Guarded by, committed
+  // "Fix B001: …"), every fixed line word for word, then back to Design at the same gate.
+  async 'bug-garden'() {
+    const dir = gardenScratch('bmuz-garden-bug')
+    cpSync(join(here, 'fixtures', 'bug-garden'), dir, { recursive: true })
+    mkdirSync(join(dir, '.planning'), { recursive: true })
+    writeFileSync(join(dir, '.planning/GDD.md'), readFileSync(join(here, 'fixtures', 'garden-defined', 'GDD.md'), 'utf8'))
+    for (const args of [['init', '-q'], ['config', 'user.email', 'test@example.com'], ['config', 'user.name', 'BMUZ test'], ['add', '-A'], ['commit', '-q', '-m', 'the garden']]) spawnSync('git', args, { cwd: dir })
+    const design = JSON.parse(readFileSync(join(plugin, 'pipelines', 'design.json'), 'utf8'))
+    const review = design.steps.findIndex(s => s.id === 'review')
+    const entered = E.enterAt(design, E.freshState('design'), 'review', {}).state
+    mkdirSync(join(dir, '.bmuz'), { recursive: true })
+    writeFileSync(join(dir, '.bmuz/state.json'), JSON.stringify({ ...entered, current: 'review', status: 'waiting', startedAt: Date.now() }, null, 2))
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'design' }, null, 2))
+    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
+    const tools = `${TOOLS} Edit ToolSearch mcp__bmuz__say mcp__bmuz__bug`
+    // run 1: the step-in
+    // (only the final score's bloom points are reported: the full-row bonus is the copy the matching step must find)
+    const out1 = runIn(dir, 'Found a bug: the blooms in my first row never count toward the final score (one point per bloom). The other rows count fine. It happens every time.', tools, true)
+    let js = journalOf(dir)
+    const bug = js.find(j => j.ev === 'bug')
+    const logged = js.find(j => j.ev === 'line' && j.line === 'bug.logged')
+    check('F215 (bug): the step-in is logged as B001 in BUGS.md, and the script\'s line is in Claude\'s words word for word', !!bug && bug.id === 'B001' && !!logged && /^Logged as a bug: B001 · .+ · P[0-3] — .+\. It doesn't block what we're doing, so I'll fix it after Blueprint Review\.$/.test(logged.text) && plain(out1).includes(plain(logged.text)) && /^### B001 · P[0-3] · open · found \d{4}-\d\d-\d\d in Design · 10 of 10 · Blueprint Review$/m.test(read('.planning/BUGS.md') || ''), `${trailOf(js)} | ${(read('.planning/BUGS.md') || '').slice(0, 400)}`)
+    const st1 = JSON.parse(read('.bmuz/state.json') || '{}')
+    check('F215 (bug): the gate it stepped in at is untouched (waiting at the Blueprint Review, nothing finished or dropped)', st1.current === 'review' && st1.status === 'waiting' && st1.finished.length === review && !js.some(j => j.ev === 'retry' || j.ev === 'blocked'), JSON.stringify({ current: st1.current, status: st1.status, finished: st1.finished?.length }))
+    // run 2: the fix run
+    const out2 = runIn(dir, 'bmuz bug', tools, true)
+    writeFileSync(join(dir, 'run-output.txt'), `${out1}\n----\n${out2}`)
+    const runs = JSON.parse(read('.bmuz/bug-runs.json') || '[]')
+    const rec = runs[0] ? join(dir, runs[0].record.replace(/^\.bmuz\//, '.bmuz/')) : null
+    const bj = rec && existsSync(join(rec, 'journal.jsonl')) ? readFileSync(join(rec, 'journal.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)) : journalOf(dir)
+    const starts = [...new Set(bj.filter(j => j.ev === 'step.start').map(j => j.step))]
+    check('F215 (bug): the fix run went pick → reproduce → cause → fix → matching → matching fix → record, and finished', JSON.stringify(starts) === JSON.stringify(['pick', 'reproduce', 'repro-show', 'cause', 'fix', 'matching', 'matching-fix', 'record']) && bj.some(j => j.ev === 'pipeline.done'), trailOf(bj))
+    const proof = JSON.parse(read('.planning/bugs/B001.json') || '{}')
+    const reproRan = bj.filter(j => j.ev === 'check.ran' && j.step === 'reproduce').pop()
+    const fixRan = bj.filter(j => j.ev === 'check.ran' && j.step === 'fix').pop()
+    check('F215 (bug): the test failed first (a script ran it and recorded the failing exit) and passes after, unchanged', !!proof.repro && proof.repro.exitCode !== 0 && !!reproRan && reproRan.exitCode === 0 && !!fixRan && fixRan.exitCode === 0 && !!proof.verify && existsSync(join(dir, proof.repro.test)), JSON.stringify({ repro: proof.repro && { ...proof.repro, out: undefined }, reproRan, fixRan }))
+    const v = spawnSync('node', [join(here, 'fixtures', 'bug-garden-check.mjs'), dir], { encoding: 'utf8' })
+    const fixedHit = (proof.hits || []).find(h => h.action === 'fix' && /bonus/.test(h.where))
+    check('F215 (bug): both places fixed (the score and the copied mistake in the bonus, with its own test proven failing first)', /"ok":true/.test(v.stdout) && !!fixedHit && fixedHit.exitCode !== 0 && existsSync(join(dir, fixedHit.test)), `${v.stdout} ${JSON.stringify(proof.hits)}`)
+    const bugsMd = read('.planning/BUGS.md') || ''
+    const fixed = bugsMd.split('## Fixed (newest first)')[1] || ''
+    check('F215 (bug): BUGS.md right: B001 under Fixed with "fixed in" and Guarded by a real test, its cause, the Open count line', /^Open: \d+ \(P0 \d+ · P1 \d+ · P2 \d+ · P3 \d+\)$/m.test(bugsMd) && new RegExp(`### B001 · P[0-3] · fixed \\d{4}-\\d\\d-\\d\\d · .* · fixed in [0-9a-f]{7,} · Guarded by: ${proof.repro?.test?.replace(/[.]/g, '[.]')}$`, 'm').test(fixed) && /\nCause: /.test(fixed) && !/### B001/.test(bugsMd.split('## Fixed')[0]), bugsMd.slice(0, 1200))
+    const log = spawnSync('git', ['log', '--format=%s'], { cwd: dir, encoding: 'utf8' }).stdout
+    check('F215 (bug): committed "Fix B001: …" (and the report "Bug B001: …" before it)', /^Fix B001: .+$/m.test(log) && /^Bug B001: /m.test(log), log)
+    const shows = bj.filter(j => j.ev === 'show')
+    const missing = shows.filter(j => !plain(out2).includes(plain(read(j.path) || '~')))
+    check('F215 (bug): every fixed line of the fix run (Fixing a bug, Reproduced, Fixed) is in Claude\'s words word for word', shows.map(j => j.step).join(',') === 'pick,repro-show,record' && missing.length === 0, `${shows.map(j => j.step)} missing: ${missing.map(j => j.path)}`)
+    js = journalOf(dir)
+    const st2 = JSON.parse(read('.bmuz/state.json') || '{}')
+    check('F215 (bug): back to Design at the same gate, its record intact (the side trip\'s record kept in .bmuz/bug-runs/)', st2.pipeline === 'design' && st2.current === 'review' && st2.status === 'waiting' && st2.finished.length === review && js.some(j => j.ev === 'side.back' && j.bug === 'B001') && !existsSync(join(dir, '.bmuz/side.json')) && runs.length === 1, `${JSON.stringify({ pipeline: st2.pipeline, current: st2.current, status: st2.status })} | ${trailOf(js.slice(-6))}`)
+  },
+
+  // F215: a step-in during Design returns to the same step. Design is at The Rulebook's Flow (a talk step) from an earlier
+  // session; the creative says something's broken: logged, the script's line, the step's record untouched (no failed
+  // try). Then "bmuz go": the same step resumes and finishes on its first try (the run is stopped once it has).
+  async 'bug-stepin'() {
+    const dir = gardenScratch('bmuz-garden-bugstep')
+    mkdirSync(join(dir, '.planning'), { recursive: true })
+    writeFileSync(join(dir, '.planning/GDD.md'), readFileSync(join(here, 'fixtures', 'garden-defined', 'GDD.md'), 'utf8'))
+    const design = JSON.parse(readFileSync(join(plugin, 'pipelines', 'design.json'), 'utf8'))
+    const entered = E.enterAt(design, E.freshState('design'), 'flow', {}).state
+    mkdirSync(join(dir, '.bmuz'), { recursive: true })
+    writeFileSync(join(dir, '.bmuz/state.json'), JSON.stringify({ ...entered, current: 'flow', status: 'working', startedAt: Date.now() }, null, 2))
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'design', testAnswers: GARDEN_DESIGN }, null, 2))
+    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
+    const tools = `${TOOLS} Edit ToolSearch mcp__bmuz__say mcp__bmuz__bug`
+    const before = JSON.parse(read('.bmuz/state.json'))
+    const out = runIn(dir, 'the score text is cut off on my phone', tools, true)
+    writeFileSync(join(dir, 'run-output.txt'), out)
+    let js = journalOf(dir)
+    const logged = js.find(j => j.ev === 'line' && j.line === 'bug.logged')
+    const st = JSON.parse(read('.bmuz/state.json') || '{}')
+    check('F215 (step-in): during Design the bug is logged and its line said word for word ("fix it after The Rulebook")', js.some(j => j.ev === 'bug' && j.step === 'flow') && !!logged && /so I'll fix it after The Rulebook\.$/.test(logged.text) && plain(out).includes(plain(logged.text)), trailOf(js))
+    check('F215 (step-in): the step keeps its record: still The Rulebook\'s Flow, working, no failed try, nothing finished or dropped', st.current === 'flow' && st.status === 'working' && JSON.stringify(st.retries) === JSON.stringify(before.retries) && JSON.stringify(st.finished) === JSON.stringify(before.finished) && !js.some(j => j.ev === 'retry' || j.ev === 'blocked'), JSON.stringify({ current: st.current, status: st.status, retries: st.retries }))
+    // "bmuz go": the same step resumes and finishes on its first try; stopped there (the rest of Design is design-garden's)
+    await runUntil(dir, 'bmuz go', tools, () => journalOf(dir).some(j => j.ev === 'step.done' && j.step === 'flow'), 900_000)
+    js = journalOf(dir)
+    const resumed = js.find(j => j.ev === 'resume' && j.step === 'flow')
+    const done = js.find(j => j.ev === 'step.done' && j.step === 'flow')
+    check('F215 (step-in): "bmuz go" goes back to the same step and it finishes on its first try', !!resumed && !!done && !js.some(j => j.ev === 'retry' && j.step === 'flow') && js.filter(j => j.ev === 'step.start').every(j => j.step !== 'flow' || j.attempt === 1), trailOf(js.slice(-12)))
+  },
 
   // Check 16: motor B — "bmuz next" from a shell reads the same pipeline and state.
   async motorb() {

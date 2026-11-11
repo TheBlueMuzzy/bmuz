@@ -103,7 +103,8 @@ function tidy(text) {
   const at = out.findIndex(l => /^Open: \d+/.test(l))
   if (at >= 0) out[at] = line
   else out.splice(out.findIndex(l => /^# /.test(l)) + 1, 0, line)
-  const t = out.join('\n').replace(/\n{3,}/g, '\n\n')
+  // (one blank line before each section heading, never more than one anywhere)
+  const t = out.join('\n').replace(/([^\n])\n(## )/g, '$1\n\n$2').replace(/\n{3,}/g, '\n\n')
   return t.endsWith('\n') ? t : t + '\n'
 }
 
@@ -565,7 +566,8 @@ export function record(dir, now = new Date()) {
     commit, nogit: done.nogit || null, check: ['P0', 'P1'].includes(c.level) ? c.id : null,
     back: side.place || 'what we were doing',
   })
-  writeIn(dir, SAY.done, say + '\n')
+  // (a [[ … ]] part left out leaves its empty line behind: the closing line has no blank lines of its own)
+  writeIn(dir, SAY.done, say.replace(/\n{2,}/g, '\n') + '\n')
   refreshPage(dir)
   return { commit: done.hash || null, logged, also }
 }
