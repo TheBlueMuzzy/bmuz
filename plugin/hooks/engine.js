@@ -1501,8 +1501,10 @@ export function sayNext(r, auto, last = false) {
 }
 
 // The engine's short message when a step's long line was shown and the step goes on (its next question comes in a
-// turn of its own, so the box doesn't cover the text).
-export function continueLine(step) {
+// turn of its own, so the box doesn't cover the text). null once MAX_NUDGES are used (F232 review: a step that keeps
+// re-saying a long line without step_done looped forever; from there the stall path and the watchdog take it).
+export function continueLine(step, n = 0) {
+  if (n >= MAX_NUDGES) return null
   return `BMUZ engine — this message comes from the BMUZ engine, not the creative: carry on with step "${step.id}"${step.title ? ` (${step.title})` : ''} from where it is.`
 }
 

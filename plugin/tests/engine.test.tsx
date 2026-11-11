@@ -401,6 +401,19 @@ test('F232: a long line is shown in a turn of its own; at its end the engine car
   expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"continue","step":"ask"/)
 })
 
+test('F232 review: a long line said again and again without step_done is carried on twice at most, then left to the stall path', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = sayWorld(on)
+  await start($, true)
+  const carry = () => prompts.filter(p => /^BMUZ engine — this message comes from the BMUZ engine, not the creative: carry on with step "ask"/.test(p)).length
+  for (let i = 1; i <= 4; i++) {
+    await $.tool.call({ tool: SAY, line: 'define.long' } as any)
+    await $.turn.complete({ answer: 'x '.repeat(200).trim(), durationMs: 1, isAborted: false, turnId: `t${i}`, reason: 'answer' } as any)
+  }
+  expect(carry()).toBe(2)
+  expect(w.files['/proj/.bmuz/journal.jsonl'].match(/"ev":"continue","step":"ask"/g)?.length).toBe(2)
+})
+
 test('F232: in an auto run a free line opens no question (nobody will type) and the box is never asked', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const { w } = sayWorld(on)

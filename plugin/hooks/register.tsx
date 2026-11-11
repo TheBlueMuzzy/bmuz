@@ -27,6 +27,8 @@ let flowAskedHere = ''
 // (a plain-text question stalled a live run 18.6 minutes, until the watchdog). Counted per step try; an answered
 // box starts the count over. quietTurn: the creative's own "bmuz doctor / undo / …" turn, which ends open on purpose.
 let nudges = { key: '', n: 0 }
+// The same count for the "carry on" after a long line (F232 review: it had no cap and could loop forever).
+let continues = { key: '', n: 0 }
 // '' | 'declined' (the creative closed the last question box without answering): their next chat message is the
 // answer, so the turn's open end isn't nudged. (An open ask for links, state.paste, isn't nudged either.)
 let quietWait = ''
@@ -1109,7 +1111,7 @@ export const register: Register = on => {
       }
       // (answered or closed by the creative: the stall clock counts from now)
       if ((!res?.deny && !res?.isError) || E.isPersonDeclining(res)) await markActive($)
-      if (!res?.deny && !res?.isError) { nudges = { key: '', n: 0 }; quietWait = '' }
+      if (!res?.deny && !res?.isError) { nudges = { key: '', n: 0 }; continues = { key: '', n: 0 }; quietWait = '' }
       if ((res?.deny || res?.isError) && E.isPersonDeclining(res)) quietWait = 'declined'
       if ((res?.deny || res?.isError) && !E.isPersonDeclining(res)) {
         // F231: only "the tool can't be used here" means nobody can answer; a shape refusal (too few options) or any
@@ -1321,9 +1323,13 @@ export const register: Register = on => {
     // A long line was shown and the step goes on: its next question comes in a turn of its own (a box would cover it).
     if (!pending && wasLong && ctx.state.status === 'working' && !E.askOpen(ctx.state) && !(e as any).isAborted) {
       const step = E.stepById(ctx.pipeline, ctx.state.current)
-      if (step && step.kind === 'talk') {
+      const key = step ? `${step.id}#${ctx.state.retries[step.id] || 0}` : ''
+      if (continues.key !== key) continues = { key, n: 0 }
+      const text = step && step.kind === 'talk' ? E.continueLine(step, continues.n) : null
+      if (step && text) {
+        continues.n += 1
         await journal($, { ev: 'continue', step: step.id })
-        await $.prompt.submit({ text: E.continueLine(step) })
+        await $.prompt.submit({ text })
         quietTurn = false
         creativeTurn = false
         return r
