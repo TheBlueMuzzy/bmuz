@@ -1508,6 +1508,8 @@ export function renderLine(script, id, slots = {}) {
   const line = script && script.lines && script.lines[id]
   if (!line) return { error: `there is no line "${id}" in the script` }
   const s = slots && typeof slots === 'object' && !Array.isArray(slots) ? slots : {}
+  // (F219 review fix 10: "1 features" — one feature has its own line, wherever Plan the Sprint is said)
+  if (id === 'develop.plan' && String(s.count).trim() === '1') return { error: 'one feature: say "develop.plan.one" instead ("Here\'s what I\'d build next, 1 feature:")' }
   const nested = x => {
     const r = renderLine(script, x.line, x.slots || {})
     return r.error ? `[${r.error}]` : r.kind === 'box' ? `[${x.line} is a box]` : r.text

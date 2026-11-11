@@ -41,7 +41,7 @@
     {
       "id": "plan", "kind": "talk", "needs": ["propose"], "no": "4.3", "title": "Plan the Sprint",
       "description": "The plan card: what you'll see, done when, not doing yet, needs from you",
-      "tools": ["Read", "Glob", "Grep"], "lines": ["develop.plan"], "craft": "craft/develop-plan.md", "results": ["features", "goal"],
+      "tools": ["Read", "Glob", "Grep"], "lines": ["develop.plan", "develop.plan.one"], "craft": "craft/develop-plan.md", "results": ["features", "goal"],
       "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/sprint.mjs", "plan-check", "{features}"] }
     },
     {

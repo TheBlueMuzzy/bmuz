@@ -608,3 +608,13 @@ test('review fix 9: an unattended run\'s settings (auto-run.json, dontAsk) pre-a
   assert.ok(!allow.includes('Bash'))
   assert.ok(allow.includes('Workflow(bmuz:build-flow)'))
 })
+
+test('F219 review fix 10: Plan the Sprint\'s talk step says one feature in the singular too: "develop.plan" with a count of 1 is refused with the line to use, "develop.plan.one" is among the step\'s lines', () => {
+  const r = E.renderLine(script, 'develop.plan', { n: '2', milestone: 'Vertical slice', count: '1' })
+  assert.match(r.error || '', /one feature: say "develop\.plan\.one"/)
+  assert.equal(E.renderLine(script, 'develop.plan.one', { n: '2', milestone: 'Vertical slice' }).text, "**Plan the Sprint** · Sprint 2 · Vertical slice\nHere's what I'd build next, 1 feature:")
+  assert.match(E.renderLine(script, 'develop.plan', { n: '2', milestone: 'Vertical slice', count: '2' }).text, /2 features:$/)
+  const dev = JSON.parse(readFileSync(join(here, '..', 'plugin', 'pipelines', 'develop.json'), 'utf8'))
+  assert.deepEqual(dev.steps.find(s => s.id === 'plan').lines, ['develop.plan', 'develop.plan.one'])
+  assert.match(readFileSync(join(here, '..', 'plugin', 'craft', 'develop-plan.md'), 'utf8'), /develop\.plan\.one/)
+})
