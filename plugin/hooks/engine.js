@@ -1493,10 +1493,10 @@ export function sayNext(r, auto, last = false) {
     ? 'Auto run: nobody can answer the box. Take the creative\'s answer from the test answers (or the sensible default, listed in "asks") and carry on; don\'t call AskUserQuestion.'
     : 'Call AskUserQuestion now with exactly this box: the same question, header, options (label and description) and multiSelect, in this order. Nothing else written before it beyond one short line.'
   if (r.kind === 'free') return auto
-    ? 'Auto run: write exactly the "say" text, then take the creative\'s answer from the test answers (or the sensible default, listed in "asks") and carry on in this turn.'
+    ? 'Auto run: write exactly the "say" text now, as text in your reply before any other tool call; then take the creative\'s answer from the test answers (or the sensible default, listed in "asks") and carry on in this turn.'
     : 'Write exactly the "say" text as your whole reply — nothing before or after it, no question box — and end your turn. The creative\'s next chat message is the answer.'
   if (isLongSay(r.text) && !auto) return 'Write exactly the "say" text as your reply. It is long, so no question box in this turn (it would cover the text): end your turn after it (the engine carries the step on), or call step_done if the step is finished.'
-  return 'Write exactly the "say" text, then carry on with the step in this turn.'
+  return 'Write exactly the "say" text now, as text in your reply before any other tool call, then carry on with the step in this turn.'
 }
 
 // The engine's short message when a step's long line was shown and the step goes on (its next question comes in a

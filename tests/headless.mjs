@@ -186,6 +186,13 @@ function scriptChecks(dir, out, stage, js, mustSay) {
   const off = Object.entries(CHART[stage]).filter(([n, l]) => lv[n] !== l).map(([n, l]) => `${n}: ${lv[n] || '?'} (chart: ${l})`)
   check(`F232 (${stage}): the GDD's chapters end where the script's growth chart says`, off.length === 0, off.join(' · '))
 }
+// A stage's journal: its archived record once the project moved on (.bmuz/stages/<n>-<stage>/), else the current one.
+const stageJournal = (dir, stage) => {
+  const root = join(dir, '.bmuz', 'stages')
+  const arch = existsSync(root) ? readdirSync(root).filter(d => d.endsWith(`-${stage}`)).sort().pop() : null
+  const f = arch ? join(root, arch, 'journal.jsonl') : join(dir, '.bmuz/journal.jsonl')
+  return (existsSync(f) ? readFileSync(f, 'utf8') : '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l) } catch (e) { return {} } })
+}
 const trailOf = js => js.map(j => j.ev + (j.step ? ':' + j.step : '') + (j.line ? `[${j.line}]` : '') + (j.why ? ` (${String(j.why).slice(0, 140)})` : '')).join(' ')
 
 
@@ -383,7 +390,7 @@ const scenarios = {
     writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'ideate', testAnswers: GARDEN_IDEATE }, null, 2))
     const out = runIn(dir, 'bmuz go', `${TOOLS} ToolSearch mcp__bmuz__say`, true)
     writeFileSync(join(dir, 'run-output.txt'), out)
-    const js = journalOf(dir)
+    const js = stageJournal(dir, "ideate")
     const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
     const starts = [...new Set(js.filter(j => j.ev === 'step.start').map(j => j.step))]
     check('F232 (ideate): Ideate ran 1.1–1.7 in order and finished', JSON.stringify(starts) === JSON.stringify(['idea', 'material', 'fetch', 'read', 'so-far', 'next', 'next-gdd', 'feelings', 'feelings-gdd', 'open-ideas', 'open-gdd', 'sketches', 'sketch-gdd', 'page', 'ready', 'ready-gdd']) && js.some(j => j.ev === 'pipeline.done'), trailOf(js))
@@ -413,7 +420,7 @@ const scenarios = {
     }
     writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'ideate', testAnswers: answers }, null, 2))
     const out = runIn(dir, 'bmuz go', `${TOOLS} ToolSearch mcp__bmuz__say`, true)
-    const js = journalOf(dir)
+    const js = stageJournal(dir, "ideate")
     check('F232 (ideate, not sure yet): the spark questions were asked, word for word', js.some(j => j.ev === 'line' && j.line === 'ideate.spark') && /Three quick questions to find a spark/.test(out), trailOf(js.slice(0, 20)))
     const shared = readFileSync(join(dir, '.planning/research/shared.md'), 'utf8')
     check('F232 (ideate): the rulebook was read and the art listed by what it appears to be, not read', /\n- rules\.md \(\d+ characters/.test(shared) && /\n- art\/lamp\.psd — a Photoshop file \(art\)/.test(shared), shared.slice(0, 700))

@@ -45,6 +45,7 @@ let creativeTurn = false
 // them was long, so the step's next question comes in a turn of its own (the engine carries the step on).
 let turnSaid: { step: string, lines: { id: string, text: string }[] } = { step: '', lines: [] }
 let longSaid = false
+let unwrittenAsked = ''
 
 const SAFE_DENY = 'BMUZ engine hit an error in its own code, so it refused this action to be safe. Run /bmuz-doctor.'
 
@@ -437,7 +438,13 @@ async function offerNext($: any, go: boolean) {
     await $.prompt.submit({ text: `BMUZ engine: ${stageWords()} is done. ${E.notOnEngineLine(nx.pipeline)}. Tell the creative that in one or two plain lines, then end your turn.` })
     return false
   }
-  if (nx.ask && !go) {
+  // F232 (headless run 2026-11-11: an auto run picked "On to Define" at Ideate's "Ready for Define?" by itself): a
+  // stage the creative picks at a step ("next": "{onward}") is their call — an auto run moves on only with their
+  // answer for that step (a test run's stand-in); otherwise it asks the engine's way, which notes the question.
+  const hole = typeof ctx.pipeline.next?.pipeline === 'string' ? (ctx.pipeline.next.pipeline.match(/^\{(\w+)\}$/) || [])[1] : null
+  const chooser = hole ? ctx.pipeline.steps.find((s: any) => s.kind === 'talk' && (s.results || []).includes(hole)) : null
+  const pickedForThem = ctx.auto && !go && !nx.ask && chooser && !(ctx.cfg.testAnswers && ctx.cfg.testAnswers[chooser.id] !== undefined)
+  if ((nx.ask || pickedForThem) && !go) {
     const question = `${from} is done. On to ${to}?`
     const yes = `On to ${to}`
     let answer: string | null = null
@@ -831,7 +838,8 @@ async function sayTool($: any, e: any) {
     await save($)
     return { result: JSON.stringify({ say: '', then: 'Write nothing more and end your turn: the creative\'s next chat message is the answer.' }) }
   }
-  const ids: string[] = (Array.isArray(e.line) ? e.line : [e.line]).map((x: any) => String(x ?? ''))
+  // (an id sent with its own quotes, '"ideate.material"', is the same id: headless run 2026-11-11)
+  const ids: string[] = (Array.isArray(e.line) ? e.line : [e.line]).map((x: any) => String(x ?? '').trim().replace(/^["'“‘]+|["'”’]+$/g, ''))
   if (!ids.length || ids.some(id => !id)) return deny(`BMUZ engine: say which line: {"line": "<id>"} (this step's lines: ${step.lines.join(', ')}).`)
   const notHere = ids.filter(id => !step.lines.includes(id))
   if (notHere.length) return deny(`BMUZ engine: ${notHere.map(id => `"${id}"`).join(', ')} ${notHere.length > 1 ? "aren't" : "isn't"} one of this step's lines (${step.lines.join(', ')}).`)
@@ -845,7 +853,20 @@ async function sayTool($: any, e: any) {
   const bad = rendered.find((r: any) => r.error)
   if (bad) return deny(`BMUZ engine: ${bad.error}.`)
   const boxes = rendered.filter((r: any) => r.kind === 'box')
-  if (boxes.length && rendered.some((r: any) => r.kind !== 'box')) return deny('BMUZ engine: ask for a box on its own, after the words before it (a box covers text written in the same call).')
+  const words = rendered.filter((r: any) => r.kind !== 'box')
+  // Words before a box in one call are fine when they are short and none is a free question ("Got it: added to …"
+  // then "Another round?"); a long text or a free question gets a turn of its own (a box covers what's above it).
+  if (boxes.length && words.length) {
+    const before = words.map((r: any) => r.text).join('\n\n')
+    if (rendered.findIndex((r: any) => r.kind === 'box') < words.length || words.some((r: any) => r.kind === 'free') || E.isLongSay(before)) {
+      return deny('BMUZ engine: a box comes last, after at most a short line of words (no free question, nothing long: a box covers text written above it). Say the words on their own first.')
+    }
+  }
+  if (words.length) {
+    for (const r of words) await journal($, { ev: 'line', step: step.id, line: r.id, kind: r.kind, text: r.text })
+    if (turnSaid.step !== step.id) turnSaid = { step: step.id, lines: [] }
+    turnSaid.lines.push(...words.map((r: any) => ({ id: r.id, text: r.text })))
+  }
   // (each box handed out gets a number, so the same box can be asked twice: Scope's "[idea]: …?" per idea)
   let n = (ctx.state.boxes || []).reduce((m: number, b: any) => Math.max(m, b.n || 0), 0)
   if (boxes.length) {
@@ -854,14 +875,12 @@ async function sayTool($: any, e: any) {
     for (const r of boxes) await journal($, { ev: 'line', step: step.id, line: r.id, kind: 'box', box: r.box })
     await save($)
     const then = E.sayNext(boxes[0], ctx.auto)
-    return { result: JSON.stringify(boxes.length === 1 ? { box: boxes[0].box, then } : { boxes: boxes.map((r: any) => r.box), then: `${then} (All ${boxes.length} questions in one AskUserQuestion call, in this order.)` }) }
+    const say = words.length ? { say: words.map((r: any) => r.text).join('\n\n'), first: 'Write exactly the "say" text first.' } : {}
+    return { result: JSON.stringify(boxes.length === 1 ? { ...say, box: boxes[0].box, then } : { ...say, boxes: boxes.map((r: any) => r.box), then: `${then} (All ${boxes.length} questions in one AskUserQuestion call, in this order.)` }) }
   }
-  const text = rendered.map((r: any) => r.text).join('\n\n')
+  const text = words.map((r: any) => r.text).join('\n\n')
   const last = rendered[rendered.length - 1]
   const kind = rendered.some((r: any) => r.kind === 'free') ? 'free' : 'say'
-  for (const r of rendered) await journal($, { ev: 'line', step: step.id, line: r.id, kind: r.kind, text: r.text })
-  if (turnSaid.step !== step.id) turnSaid = { step: step.id, lines: [] }
-  turnSaid.lines.push(...rendered.map((r: any) => ({ id: r.id, text: r.text })))
   ctx.state = { ...ctx.state, opened: step.id, ...(kind === 'free' && !ctx.auto ? { ask: { step: step.id, line: last.kind === 'free' ? last.id : ids[ids.length - 1], text } } : {}) }
   if (kind === 'free' && !ctx.auto) await journal($, { ev: 'ask.open', step: step.id, line: last.id })
   if (kind === 'say' && E.isLongSay(text) && !ctx.auto) longSaid = true
@@ -1024,6 +1043,23 @@ export const register: Register = on => {
       const why = `BMUZ engine: this step opens with its script line first: call ${E.SAY_TOOL} with {"line": ${JSON.stringify(cur0.opening.length === 1 ? cur0.opening[0] : cur0.opening)}}.`
       await journal($, { ev: 'deviation', step: cur0.id, tool: call.tool, agentId: null, why })
       return { deny: why }
+    }
+    // F232 (headless run 2026-11-11: Claude asked for the lines, then finished the step without writing them): the
+    // script's words said this turn are written before the step finishes or a box opens. Once per set of lines; the
+    // turn's end checks again.
+    if ((call.tool === E.ENGINE_TOOL || call.tool === 'AskUserQuestion') && !call.agentId && turnSaid.lines.length && turnSaid.step === ctx.state.current) {
+      const key = `${turnSaid.step}:${turnSaid.lines.map(l => l.id).join(',')}:${turnSaid.lines.length}`
+      if (unwrittenAsked !== key) {
+        let rows: any = null
+        try { rows = await $.session.messages() } catch (err) { rows = null }
+        const missing = Array.isArray(rows) ? E.unsaid(turnSaid.lines, E.turnText(rows)) : []
+        if (missing.length) {
+          unwrittenAsked = key
+          const why = `BMUZ engine: write the script's words first, exactly as given, then ${call.tool === E.ENGINE_TOOL ? 'finish the step' : 'ask the box'}:\n\n${missing.map((l: any) => l.text).join('\n\n')}`
+          await journal($, { ev: 'deviation', step: turnSaid.step, tool: call.tool, agentId: null, why: `unwritten: ${missing.map((l: any) => l.id).join(', ')}` })
+          return { deny: why }
+        }
+      }
     }
     if (call.tool === E.ENGINE_TOOL) return stepDone($, e)
     if (call.tool === E.SAY_TOOL) return sayTool($, e)

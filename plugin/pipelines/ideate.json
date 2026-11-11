@@ -16,7 +16,7 @@
       "lines": ["ideate.welcome", "ideate.idea", "ideate.spark"],
       "opening": ["ideate.welcome", "ideate.idea"],
       "craft": "craft/ideate-idea.md",
-      "results": ["idea", "spark", "unsure", "name"]
+      "results": ["idea", "unsure"]
     },
     {
       "id": "material",
@@ -49,7 +49,7 @@
       "description": "Sorting it into the GDD's chapters: what's already clear, your ideas, what's still open (nothing asked)",
       "tools": ["Read", "Glob", "Grep"],
       "craft": "craft/ideate-read.md",
-      "results": ["sofar", "stands", "name"]
+      "results": ["sofar", "stands"]
     },
     {
       "id": "so-far",
@@ -72,7 +72,7 @@
       "lines": ["ideate.next", "ideate.correct"],
       "opening": ["ideate.next"],
       "craft": "craft/ideate-next.md",
-      "results": ["choice", "chapters"],
+      "results": ["choice"],
       "wrapTo": "page"
     },
     {
@@ -94,7 +94,7 @@
       "lines": ["ideate.feelings"],
       "opening": ["ideate.feelings"],
       "craft": "craft/ideate-feelings.md",
-      "results": ["chapters", "moments", "questions"]
+      "results": ["chapters", "moments"]
     },
     {
       "id": "feelings-gdd",
@@ -115,7 +115,7 @@
       "lines": ["ideate.open", "ideate.open.ask", "ideate.pool.mentioned", "ideate.pool.remember", "ideate.pool.where", "ideate.pool.end", "ideate.pool.skill", "ideate.pool.smallest", "ideate.pool.decided", "ideate.added", "ideate.round"],
       "opening": ["ideate.open", "ideate.open.ask"],
       "craft": "craft/ideate-open.md",
-      "results": ["chapters", "questions", "rounds"],
+      "results": ["chapters", "rounds"],
       "recap": ["sofar"]
     },
     {
@@ -172,7 +172,7 @@
       "lines": ["ideate.ready"],
       "opening": ["ideate.ready"],
       "craft": "craft/ideate-ready.md",
-      "results": ["onward", "chapters"]
+      "results": ["onward"]
     },
     {
       "id": "ready-gdd",

@@ -407,7 +407,7 @@ test('F232: in an auto run a free line opens no question (nobody will type) and 
   await start($, true)
   await $.prompt.submit({ text: 'bmuz auto' } as any)
   const r: any = await $.tool.call({ tool: SAY, line: 'ideate.material' } as any)
-  expect(said(r).then).toMatch(/^Auto run: write exactly the "say" text, then take the creative's answer from the test answers/)
+  expect(said(r).then).toMatch(/^Auto run: write exactly the "say" text now, as text in your reply before any other tool call; then take the creative.s answer from the test answers/)
   expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask ?? null).toBeNull()
   const b: any = await $.tool.call({ tool: SAY, line: 'define.pitch.how' } as any)
   expect(said(b).then).toMatch(/Auto run: nobody can answer the box/)
