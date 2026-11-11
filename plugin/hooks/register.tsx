@@ -195,7 +195,8 @@ async function finishSwitch($: any, dir: string, root: string, sw: any, sessionI
 // put back as it was, so its step resumes with its results, retries and lines said intact. .bmuz/side.json is written
 // first and carries the phase ("enter", "on", "leave"), so a crash half way is finished at the next start.
 async function recordFiles($: any, root: string, pipelineId: string) {
-  const files = ['state.json', 'journal.jsonl', 'last-card.md', 'last-shown.md']
+  // (F216 review fixes 5–6: own.json, what each step's own calls changed, belongs to the run too)
+  const files = ['state.json', 'journal.jsonl', 'last-card.md', 'last-shown.md', 'own.json']
   try {
     for (const s of (await loadPipeline($, root, pipelineId)).pipeline.steps || []) if (E.NAME_RE.test(String(s.id))) files.push(`checkpoint-${s.id}.json`)
   } catch (err) { /* a pipeline that won't load has no checkpoints to move */ }
@@ -652,20 +653,49 @@ async function matching($: any, pattern: string) {
   }
 }
 
+// ---- Own edits (F216 review fixes 5–6): .bmuz/own.json, { steps: { <step>: { <file>: entry } } } (engine.js ownEntry) ----
+async function readOwn($: any) {
+  const j = await readJson($, `${ctx.dir}/.bmuz/own.json`)
+  return j && typeof j === 'object' && j.steps && typeof j.steps === 'object' ? j : { steps: {} }
+}
+async function recordOwn($: any, stepId: string, file: string, before: string | null, after: string | null) {
+  if (before === after) return
+  const own = await readOwn($)
+  const mine = own.steps[stepId] || {}
+  mine[file] = E.ownEntry(mine[file] || null, before, after)
+  own.steps[stepId] = mine
+  await $.fs.write(`${ctx.dir}/.bmuz/own.json`, JSON.stringify(own, null, 2))
+}
+
 async function rollback($: any, step: any) {
   const text = await readText($, `${ctx.dir}/.bmuz/checkpoint-${step.id}.json`)
   if (text === null) return []
   let saved: any
   try { saved = JSON.parse(text) } catch (err) { return [] }
   const undone: string[] = []
+  // (F216 review fix 5: a talk or flow step changes files through its own Write / Edit calls, and those are recorded:
+  // only they are put back — a file it never touched, or a value the creative changed meanwhile, like a Dev Kit save,
+  // stays theirs. A step that may run Bash (Setup) can change files unseen, so it is put back the old way, whole.)
+  const ownOnly = (step.kind === 'talk' || step.kind === 'flow') && !(step.tools || []).includes('Bash') && !(step.agentTools || []).includes('Bash')
+  const own = ownOnly ? ((await readOwn($)).steps?.[step.id] || {}) : null
   for (const [f, body] of Object.entries(saved)) {
     // The checkpoint file can be hand-edited: re-check each path right before writing or deleting.
     if (!E.isSafePath(f)) continue
+    if (own && !(body && typeof body === 'object')) {
+      const r = E.ownRollback(own[f] || null, body === null ? null : String(body), await readText($, `${ctx.dir}/${f}`))
+      if (r.keep) { if (own[f]) await journal($, { ev: 'rollback.kept', step: step.id, file: f, why: 'changed by someone else since this step wrote it' }); continue }
+      if (r.remove) await $.process.run(['node', `${ctx.root}/scripts/rm.mjs`, `${ctx.dir}/${f}`])
+      else await $.fs.write(`${ctx.dir}/${f}`, String(r.text))
+      undone.push(f)
+      continue
+    }
     if (body && typeof body === 'object') {
       // a pattern: a file it matches now that wasn't there before the step was made by the step, so it goes
       const had = Array.isArray(body.pattern) ? body.pattern : []
       for (const g of await matching($, f)) {
         if (had.includes(g)) continue
+        // (review fix 5: only a file the step's own calls made, unchanged since)
+        if (own && !E.ownRollback(own[g] || null, null, await readText($, `${ctx.dir}/${g}`)).remove) continue
         await $.process.run(['node', `${ctx.root}/scripts/rm.mjs`, `${ctx.dir}/${g}`])
         undone.push(g)
       }
@@ -1651,6 +1681,18 @@ export const register: Register = on => {
       await journal($, { ev: 'flow.launched', step: step.id, workflow: step.workflow, args: want, taskId: res.taskId ?? null, runId: res.runId ?? null, deny: ran.deny ?? null })
       await save($)
       return ran
+    }
+    // F216 review fixes 5–6: a step's own Write / Edit (Claude's or a helper's): the file before and after is recorded
+    // (.bmuz/own.json), so an undo puts back only that and a commit takes only that
+    if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(call.tool) && ctx.state.status === 'working' && ctx.state.current) {
+      const rel = E.projectPath(ctx.dir, (e as any).file_path ?? (e as any).notebook_path)
+      if (rel) {
+        const stepId = ctx.state.current
+        const before = await readText($, `${ctx.dir}/${rel}`)
+        const res: any = await next(e)
+        if (!res?.deny && !res?.isError) await recordOwn($, stepId, rel, before, await readText($, `${ctx.dir}/${rel}`))
+        return res
+      }
     }
     return next(e)
   }).catch(($, e, next) => (next.called ? next(e) : { deny: SAFE_DENY }))

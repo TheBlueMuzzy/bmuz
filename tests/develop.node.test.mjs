@@ -277,20 +277,48 @@ test('review fix 1: only the picked option of this exact approve box counts, com
   assert.equal(S.boxAnswer(dir), 'approved')
 })
 
-test('tuned: exactly one setting changed (in content/), the suite still green; the rule route changes none and logs the rule', () => {
+// The step's own Write, as the engine records it (.bmuz/own.json: register.tsx recordOwn).
+function ownWrite(dir, step, file, text) {
+  const before = read(dir, file)
+  writeFileSync(join(dir, file), text)
+  const own = JSON.parse(read(dir, '.bmuz/own.json') || '{"steps":{}}')
+  own.steps[step] = own.steps[step] || {}
+  own.steps[step][file] = E.ownEntry(own.steps[step][file] || null, before, text)
+  writeFileSync(join(dir, '.bmuz/own.json'), JSON.stringify(own))
+}
+
+test('tuned: exactly one setting changed by the step itself (in content/), the suite still green; the rule route changes none and logs the rule', () => {
   const dir = project()
   building(dir)
   const g = read(dir, 'content/tuning/game.json')
   writeFileSync(join(dir, '.bmuz/checkpoint-tune.json'), JSON.stringify({ 'content/tuning/*.json': { pattern: ['content/tuning/game.json'] }, 'content/tuning/game.json': g }))
   assert.match(S.tunedProblem(dir, 'no'), /no setting changed/)
-  writeFileSync(join(dir, 'content/tuning/game.json'), g.replace('"weatherCardsPerHand": 2', '"weatherCardsPerHand": 1'))
+  ownWrite(dir, 'tune', 'content/tuning/game.json', g.replace('"weatherCardsPerHand": 2', '"weatherCardsPerHand": 1'))
   assert.equal(S.tunedProblem(dir, 'no'), null)
   assert.deepEqual(S.changedValues(dir), [{ file: 'content/tuning/game.json', key: 'weatherCardsPerHand', from: 2, to: 1 }])
-  writeFileSync(join(dir, 'content/tuning/game.json'), g.replace('"weatherCardsPerHand": 2', '"weatherCardsPerHand": 1').replace('"handSize": 3', '"handSize": 4'))
+  ownWrite(dir, 'tune', 'content/tuning/game.json', g.replace('"weatherCardsPerHand": 2', '"weatherCardsPerHand": 1').replace('"handSize": 3', '"handSize": 4'))
   assert.match(S.tunedProblem(dir, 'no'), /one setting at a time: 2 changed/)
-  writeFileSync(join(dir, 'content/tuning/game.json'), g)
+  ownWrite(dir, 'tune', 'content/tuning/game.json', g)
   assert.match(S.tunedProblem(dir, 'yes', null), /give "rulebook" with its "log"/)
   assert.equal(S.tunedProblem(dir, 'yes', { log: 'hail destroys one bloom, not the row' }), null)
+})
+
+test('review fix 5: a value the creative changes during the tune (their Dev Kit save) is theirs: not the tune\'s one setting, never recorded as the tuning', () => {
+  const dir = project(true)
+  building(dir)
+  const g = read(dir, 'content/tuning/game.json')
+  writeFileSync(join(dir, '.bmuz/checkpoint-tune.json'), JSON.stringify({ 'content/tuning/game.json': g }))
+  ownWrite(dir, 'tune', 'content/tuning/game.json', g.replace('"weatherCardsPerHand": 2', '"weatherCardsPerHand": 1'))
+  // the creative saves hand size 5 in the Dev Kit meanwhile (not one of the step's own calls)
+  writeFileSync(join(dir, 'content/tuning/game.json'), read(dir, 'content/tuning/game.json').replace('"handSize": 3', '"handSize": 5'))
+  assert.equal(S.tunedProblem(dir, 'no'), null)
+  assert.deepEqual(S.changedValues(dir), [{ file: 'content/tuning/game.json', key: 'weatherCardsPerHand', from: 2, to: 1 }])
+  // they change the step's own setting too: theirs now, so the tune changed nothing of its own
+  writeFileSync(join(dir, 'content/tuning/game.json'), read(dir, 'content/tuning/game.json').replace('"weatherCardsPerHand": 1', '"weatherCardsPerHand": 3'))
+  assert.match(S.tunedProblem(dir, 'no'), /no setting changed/)
+  state(dir, { pipeline: 'feature', given: { feature: 'F01' }, resultsBy: { approve: { answer: 'tune' }, tune: { setting: 'Weather cards per hand', cause: 'x', expect: 'y', rule: 'no' } } })
+  S.featureEnd(dir, NOW)
+  assert.doesNotMatch(read(dir, S.SPRINT), /handSize|2→3|2→5/)
 })
 
 test('feature-end: approved → ✅ and done; tuned → 🎛️ with the Tuning note (knob old→new); waiting → nothing changes', () => {
@@ -298,7 +326,7 @@ test('feature-end: approved → ✅ and done; tuned → 🎛️ with the Tuning 
   building(dir)
   const g = read(dir, 'content/tuning/game.json')
   writeFileSync(join(dir, '.bmuz/checkpoint-tune.json'), JSON.stringify({ 'content/tuning/game.json': g }))
-  writeFileSync(join(dir, 'content/tuning/game.json'), g.replace('"weatherCardsPerHand": 2', '"weatherCardsPerHand": 1'))
+  ownWrite(dir, 'tune', 'content/tuning/game.json', g.replace('"weatherCardsPerHand": 2', '"weatherCardsPerHand": 1'))
   state(dir, { pipeline: 'feature', given: { feature: 'F01' }, resultsBy: { approve: { answer: 'tune' }, tune: { setting: 'Weather cards per hand', cause: 'a pattern of play', expect: 'storms to land more often', rule: 'no' } } })
   assert.equal(S.featureEnd(dir, NOW).status, 'tuning')
   assert.match(read(dir, S.SPRINT), /Notes: Tuning: Weather cards per hand 2→1 — a pattern of play — expect storms to land more often/)

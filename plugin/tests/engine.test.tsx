@@ -1,5 +1,6 @@
 // The mod under `claude plugin test`: the real hooks, a fake project in memory beneath them.
 import { expect, mock, test } from 'claude-code/testing'
+import * as E from '../hooks/engine.js'
 
 const PIPE = {
   id: 'hello',
@@ -73,7 +74,12 @@ function world(on: any, files: Record<string, string>, onRun?: (argv: string[]) 
     const said = onRun ? onRun([...e.argv]) : { exitCode: 0, stdout: '{}' }
     return { value: { ...said, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
-  on('tool.call', (_: any, e: any) => { reached.push(String(e.tool)); return { result: 'ran' } })
+  on('tool.call', (_: any, e: any) => {
+    reached.push(String(e.tool))
+    // (F216 review fix 5: a Write really writes, so the engine sees the file before and after a step's own call)
+    if (e.tool === 'Write' && typeof e.file_path === 'string' && typeof e.content === 'string') files[key(e.file_path)] = e.content
+    return { result: 'ran' }
+  })
   files['/proj/bmuz.json'] = '{"pipeline":"hello","watchdogTickMs":3600000}'
   return { files, reached, runs }
 }
@@ -1067,6 +1073,8 @@ test('F217: a failing source check is a failed try (the check\'s words as the re
   const { w, result } = sourcedFlow(on, [1, 1, 1])
   w.files['/proj/.bmuz/checkpoint-research.json'] = JSON.stringify({ 'r.md': null }) // no report before the step
   w.files['/proj/r.md'] = '## Summary\n- a claim [2]\n'
+  // (F216 review fix 5: the helper wrote it with its own Write, which the engine records; an undo puts back only that)
+  w.files['/proj/.bmuz/own.json'] = JSON.stringify({ steps: { research: { 'r.md': E.ownEntry(null, null, w.files['/proj/r.md']) } } })
   await start($, false)
   await $.prompt.submit(result() as any)
   const j = () => w.files['/proj/.bmuz/journal.jsonl']
@@ -2067,4 +2075,26 @@ test('F216 review fix 3: endFeatureRun checks sprint.mjs status: when it fails, 
   await turn($, 't2')
   expect(events(w).find((j: any) => j.ev === 'side.status-failed')).toMatchObject({ feature: 'F01', status: 'parked' })
   expect(prompts.some(p => /couldn't mark F01 parked in the sprint: ✘ the sprint record is damaged/.test(p))).toBe(true)
+})
+
+test('F216 review fix 5: an undo puts back only what the step\'s own Write changed: a value the creative saved meanwhile (Dev Kit) stays, a file the step never touched stays', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  const p = JSON.parse(w.files.PIPELINE)
+  p.steps[0] = { ...p.steps[0], tools: ['Write'], writes: ['cfg.json', 'other.json'] }
+  w.files.PIPELINE = JSON.stringify(p)
+  const before = JSON.stringify({ speed: 2, hand: 3 }, null, 2) + String.fromCharCode(10)
+  w.files['/proj/cfg.json'] = before
+  w.files['/proj/other.json'] = '{"x":1}'
+  w.files['/proj/.bmuz/checkpoint-name.json'] = JSON.stringify({ 'cfg.json': before, 'other.json': '{"x":1}' })
+  await start($, false)
+  expect(refused(await $.tool.call({ tool: 'Write', file_path: '/proj/cfg.json', content: JSON.stringify({ speed: 1, hand: 3 }, null, 2) + String.fromCharCode(10) } as any))).toBe(false)
+  expect(JSON.parse(w.files['/proj/.bmuz/own.json']).steps.name['cfg.json'].keys).toEqual({ speed: { from: 2, to: 1 } })
+  // the creative saves hand 4 in the Dev Kit, and edits other.json, while the step runs
+  w.files['/proj/cfg.json'] = JSON.stringify({ speed: 1, hand: 4 }, null, 2)
+  w.files['/proj/other.json'] = '{"x":2}'
+  for (let i = 0; i < 3; i++) await $.tool.call({ tool: 'mcp__bmuz__step_done', result: {} } as any)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('blocked')
+  expect(JSON.parse(w.files['/proj/cfg.json'])).toEqual({ speed: 2, hand: 4 })
+  expect(w.files['/proj/other.json']).toBe('{"x":2}')
 })

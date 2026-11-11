@@ -538,24 +538,15 @@ export function approvalProblem(dir, answer, mode) {
 }
 
 // ---- 4.6 Tune & Revise: one setting at a time ----
-const leafs = (v, at = '') => (v && typeof v === 'object' ? Object.entries(v).flatMap(([k, x]) => leafs(x, at ? `${at}.${k}` : k)) : [[at, JSON.stringify(v)]])
-// The settings that changed since the tune step began (its checkpoint): [{ file, key, from, to }].
+// The settings the tune step changed: [{ file, key, from, to }].
+// (review fix 5: only the step's own changes — its own Write / Edit calls, as the engine records them in .bmuz/own.json —
+// that still stand: a value the creative changed during the step, like a Dev Kit save, is theirs and never counted)
 export function changedValues(dir, step = 'tune') {
-  const cp = readJson(dir, `.bmuz/checkpoint-${step}.json`) || {}
+  const own = (readJson(dir, '.bmuz/own.json') || {}).steps?.[step] || {}
   const out = []
-  const files = new Set(Object.keys(cp).filter(f => /^content\/.+\.json$/.test(f)))
-  // (a "writes" pattern, content/tuning/*.json: the files it matches now, so one the step made counts as changed)
-  for (const [k, v] of Object.entries(cp)) {
-    if (!(v && typeof v === 'object' && Array.isArray(v.pattern))) continue
-    const folder = k.replace(/\/\*\.json$/, '')
-    if (existsSync(join(dir, folder))) for (const f of readdirSync(join(dir, folder))) if (f.endsWith('.json')) files.add(`${folder}/${f}`)
-  }
-  for (const f of files) {
-    let was = {}, now = {}
-    try { was = JSON.parse(typeof cp[f] === 'string' ? cp[f] : 'null') ?? {} } catch (e) { was = {} }
-    try { now = JSON.parse(readIn(dir, f) ?? 'null') ?? {} } catch (e) { now = {} }
-    const a = new Map(leafs(was)), b = new Map(leafs(now))
-    for (const k of new Set([...a.keys(), ...b.keys()])) if (a.get(k) !== b.get(k)) out.push({ file: f, key: k, from: a.has(k) ? JSON.parse(a.get(k)) : null, to: b.has(k) ? JSON.parse(b.get(k)) : null })
+  for (const [f, entry] of Object.entries(own)) {
+    if (!/^content\/.+\.json$/.test(f)) continue
+    for (const c of E.ownChanges(entry, readIn(dir, f))) out.push({ file: f, ...c })
   }
   return out
 }

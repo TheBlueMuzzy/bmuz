@@ -1824,3 +1824,67 @@ export function projectPath(dir, path) {
   rel = rel.replace(/^\.\//, '')
   return isSafePath(rel) ? rel : null
 }
+
+// ---- Own edits (F216 review fixes 5–6): what a step's own Write / Edit calls changed ----
+// The engine reads a file before and after each Write / Edit a step makes (Claude's or a helper's) and keeps, per
+// step and file, the text it left ("after", a fingerprint) and, for a JSON file, each value it changed (key: from →
+// to). An undo then puts back only those (never a value the creative changed meanwhile, like a Dev Kit save), a
+// tune's "one setting" is counted from them, and a feature's commit takes only those files.
+export function textSha(text) {
+  // (FNV-1a, 32 bits: enough to tell "the text the step left" from "changed since")
+  let h = 0x811c9dc5
+  for (const ch of String(text ?? '')) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0 }
+  return h.toString(16).padStart(8, '0')
+}
+const parseJson = t => { try { const v = JSON.parse(String(t)); return v && typeof v === 'object' ? v : null } catch (err) { return null } }
+const leafMap = (v, at = '', out = new Map()) => {
+  if (v && typeof v === 'object') { for (const [k, x] of Object.entries(v)) leafMap(x, at ? `${at}.${k}` : k, out) } else out.set(at, JSON.stringify(v))
+  return out
+}
+// The record after one more own write: prev (or null), the text before the call, the text after it.
+export function ownEntry(prev, before, after) {
+  const created = prev ? !!prev.created : before === null
+  const a = parseJson(after)
+  const b = parseJson(before)
+  let keys = null
+  if (a && (b || before === null) && (!prev || prev.keys)) {
+    keys = { ...((prev && prev.keys) || {}) }
+    const was = leafMap(b || {})
+    const now = leafMap(a)
+    for (const k of new Set([...was.keys(), ...now.keys()])) {
+      if (was.get(k) === now.get(k)) continue
+      const from = k in keys ? keys[k].from : was.has(k) ? JSON.parse(was.get(k)) : null
+      const to = now.has(k) ? JSON.parse(now.get(k)) : null
+      if (JSON.stringify(from) === JSON.stringify(to)) delete keys[k]
+      else keys[k] = { from, to }
+    }
+  }
+  return { after: textSha(after), keys, created }
+}
+const valueAt = (obj, key) => key.split('.').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), obj)
+function setAt(obj, key, v) {
+  const parts = key.split('.')
+  let o = obj
+  for (const k of parts.slice(0, -1)) { if (!o[k] || typeof o[k] !== 'object') o[k] = {}; o = o[k] }
+  if (v === null || v === undefined) delete o[parts[parts.length - 1]]
+  else o[parts[parts.length - 1]] = v
+}
+// The step's own changes still standing in the file now: [{ key, from, to }] (a value changed again since is theirs).
+export function ownChanges(entry, now) {
+  if (!entry || !entry.keys) return []
+  const cur = parseJson(now)
+  return Object.entries(entry.keys).filter(([k, c]) => cur && JSON.stringify(valueAt(cur, k) ?? null) === JSON.stringify(c.to)).map(([key, c]) => ({ key, from: c.from, to: c.to }))
+}
+// What an undo does with one file: { text } (write it), { remove } (the step made it), { keep } (someone else's now).
+export function ownRollback(entry, checkpointText, now) {
+  if (!entry) return { keep: true }
+  if (now === null) return { keep: true }
+  if (textSha(now) === entry.after) return checkpointText === null ? { remove: true } : { text: checkpointText }
+  if (entry.created || !entry.keys) return { keep: true }
+  const cur = parseJson(now)
+  if (!cur) return { keep: true }
+  const mine = ownChanges(entry, now)
+  if (!mine.length) return { keep: true }
+  for (const c of mine) setAt(cur, c.key, c.from)
+  return { text: JSON.stringify(cur, null, 2) + '\n' }
+}
