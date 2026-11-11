@@ -669,11 +669,16 @@ async function look($: any, step: any, result: any) {
   const argv = E.checkRun(step, checkVars(step, result))
   let ran = null
   if (argv) {
+    // (F216 review fix 10: three test runs' worth of time, from bmuz.json "testTimeoutMs" or 10 minutes each; a check
+    // stopped at its limit says so plainly and is neither a pass nor a fail)
+    const limit = 3 * E.testTimeoutOf(ctx.cfg)
     try {
-      ran = await $.process.run(argv, { cwd: ctx.dir, timeoutMs: 180000 })
+      ran = await $.process.run(argv, { cwd: ctx.dir, timeoutMs: limit })
     } catch (err) {
-      ran = { exitCode: -1, stdout: `the check could not run: ${String(err).slice(0, 200)}` }
+      ran = /time/i.test(String(err)) ? { exitCode: null, timedOut: true, stdout: '' } : { exitCode: -1, stdout: `the check could not run: ${String(err).slice(0, 200)}` }
     }
+    const late = E.checkTimedOutWhy(ran, limit)
+    if (late) ran = { ...ran, exitCode: -1, stdout: late }
     await journal($, { ev: 'check.ran', step: step.id, exitCode: ran.exitCode, stdout: String(ran.stdout ?? '').trim().slice(0, 600) })
   }
   return { result, files, ran }

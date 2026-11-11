@@ -399,8 +399,8 @@ export function proofProblem(dir, built) {
   for (const file of files) {
     let argv
     try { argv = B.testCommand(dir, file) } catch (e) { return e.message }
-    const r = B.runIn(dir, argv, B.testLimitMs())
-    if (r.timedOut) return `${file} didn't finish in ${Math.round(B.testLimitMs() / 1000)} s`
+    const r = B.runIn(dir, argv, B.testLimitMs(dir))
+    if (r.timedOut) return `${file} didn't finish in ${Math.round(r.limitMs / 1000)} s and was stopped: that is neither a pass nor a fail ("testTimeoutMs" in bmuz.json gives the tests longer)`
     if (r.exitCode !== 0) return `${file} fails (${r.cmd}): ${r.out.slice(-400)}`
     ran[file] = { sha: sha(readIn(dir, file) || ''), passed: B.passedTests(argv, r) }
   }
@@ -408,7 +408,7 @@ export function proofProblem(dir, built) {
     const passed = ran[clean(t.file)].passed
     if (!passed.some(p => p === clean(t.name) || p.includes(clean(t.name)))) return `the test "${clean(t.name)}" (for ${clean(t.rule) || 'a rule'}) didn't run in ${clean(t.file)}: the runner reported ${passed.length ? passed.map(p => `"${p}"`).join(', ') : 'no passing tests'}`
   }
-  for (const s of B.suite(dir)) if (s.exitCode !== 0) return `"${s.cmd}" fails: ${s.out.slice(-400)}`
+  for (const s of B.suite(dir)) if (s.exitCode !== 0) return B.suiteWhy(s)
   if (hasUi(dir)) {
     const shots = listOf(built.screens)
     for (const size of ['phone', 'desktop']) {
@@ -569,7 +569,7 @@ export function tunedProblem(dir, rule, rulebook = null) {
     return null
   }
   if (ch.length !== 1) return ch.length ? `one setting at a time: ${ch.length} changed (${ch.map(c => `${c.file} ${c.key}`).join(', ')})` : 'no setting changed: change the one setting you named, in its content/ file'
-  for (const s of B.suite(dir)) if (s.exitCode !== 0) return `"${s.cmd}" fails after the change: ${s.out.slice(-300)}`
+  for (const s of B.suite(dir)) if (s.exitCode !== 0) return B.suiteWhy(s, ' after the change')
   return null
 }
 

@@ -747,6 +747,20 @@ export function answersNote(answers) {
 // What is wrong with a talk step's result against its "results" list (null = fine): every listed key
 // must be there (an empty list counts, an empty text doesn't), and a key some step names a file with
 // ("writes": ".../discover-{slug}.md") must be a slug, so the file stays where the pipeline says.
+// F216 review fix 10: how long one test run may take (a real game's suite can take minutes): 10 minutes, or the
+// project's bmuz.json "testTimeoutMs". A done-check that runs tests gets three of them (a test file, the suite, check:fast).
+export const TEST_TIMEOUT_MS = 600000
+export function testTimeoutOf(cfg) {
+  const n = cfg && cfg.testTimeoutMs
+  return Number.isInteger(n) && n > 0 ? n : TEST_TIMEOUT_MS
+}
+// A check that ran past its limit: said plainly, and never a pass nor a "fails first". null when it didn't.
+export function checkTimedOutWhy(ran, ms) {
+  if (!ran || !(ran.timedOut || ran.exitCode === null || ran.exitCode === undefined)) return null
+  const mins = Math.round(ms / 60000)
+  return `the check ran past its ${mins >= 1 ? `${mins} minute${mins === 1 ? '' : 's'}` : `${Math.round(ms / 1000)} s`} and was stopped: that is neither a pass nor a fail. If the tests really need longer, set "testTimeoutMs" in bmuz.json`
+}
+
 // The holes a talk step's done-check fills from: the results so far, the step's own result, and the engine's own holes,
 // which always win (F216 review fix 8: a result holding "auto": "live" could have let an auto run approve).
 export function checkVarsOf(base, result) {

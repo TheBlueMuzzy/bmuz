@@ -11,6 +11,7 @@ import * as E from '../plugin/hooks/engine.js'
 import * as S from '../plugin/scripts/sprint.mjs'
 import * as G from '../plugin/scripts/gdd.mjs'
 import * as M from '../plugin/scripts/marks.mjs'
+import * as B from '../plugin/scripts/bugs.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const script = E.parseScript(readFileSync(join(here, '..', 'plugin', 'script.md'), 'utf8'))
@@ -51,6 +52,21 @@ test('plan-check: only proposed features, every card field, 3–8 tasks, a check
   assert.ok(bad.some(p => /F03 isn't one of the ready features \(F01 — Turn engine, F02 — Seed cards\)/.test(p)), bad.join('|'))
   assert.ok(bad.some(p => /F01: the card's "see" is empty/.test(p)))
   assert.ok(bad.some(p => /F01: 1 tasks; a feature has 3 to 8/.test(p)))
+})
+
+test('review fix 10: tests get 10 minutes by default, bmuz.json "testTimeoutMs" changes it, and a run past it says so plainly — neither a pass nor a fail', () => {
+  assert.equal(E.testTimeoutOf({}), 600000)
+  assert.equal(E.testTimeoutOf({ testTimeoutMs: 1200000 }), 1200000)
+  assert.equal(E.testTimeoutOf({ testTimeoutMs: 'soon' }), 600000)
+  assert.match(E.checkTimedOutWhy({ exitCode: null, timedOut: true }, 600000), /ran past its 10 minutes and was stopped: that is neither a pass nor a fail/)
+  assert.equal(E.checkTimedOutWhy({ exitCode: 1 }, 600000), null)
+  const dir = project()
+  writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'feature', testTimeoutMs: 1500 }))
+  assert.equal(B.testLimitMs(dir), 1500)
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ type: 'module', scripts: { test: 'node -e "setTimeout(() => {}, 20000)"' } }))
+  writeFileSync(join(dir, 'tests/turn.test.mjs'), builtTest)
+  const p = S.proofProblem(dir, { tests: [{ rule: 'the turn passes', file: 'tests/turn.test.mjs', name: 'F01 the turn passes to the other player' }] })
+  assert.match(p, /"npm test" didn't finish in 2 s and was stopped: that is neither a pass nor a fail/)
 })
 
 test('review fix 8: a step\'s own result never overrides a built-in hole ({auto}, {project}, {plugin}): built-ins win, and such a key is refused', () => {

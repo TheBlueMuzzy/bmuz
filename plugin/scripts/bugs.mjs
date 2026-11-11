@@ -384,7 +384,11 @@ export function testCommand(dir, file) {
 }
 
 // How long one test file may run (BMUZ_BUG_TEST_MS: the tests' own short limit).
-export const testLimitMs = () => Number(process.env.BMUZ_BUG_TEST_MS) > 0 ? Number(process.env.BMUZ_BUG_TEST_MS) : 300000
+// (F216 review fix 10: else the project's bmuz.json "testTimeoutMs", else 10 minutes: a real game's tests can take a while)
+export const testLimitMs = (dir = null) => {
+  if (Number(process.env.BMUZ_BUG_TEST_MS) > 0) return Number(process.env.BMUZ_BUG_TEST_MS)
+  return E.testTimeoutOf(dir ? readJsonIn(dir, 'bmuz.json') : null)
+}
 
 // The tests the runner itself reported as failing (review fix 4): node's TAP "not ok N - <name>" (a whole file failing to
 // load or throwing at the top is reported under the file's own name, which isn't a test), vitest's and jest's summary
@@ -409,7 +413,7 @@ export function passedTests(argv, ran) {
 }
 // Why a test run doesn't prove the bug (null = it does: the runner ran a named test and reported it failing).
 export function reproProblem(test, argv, ran) {
-  if (ran.timedOut) return `${test} didn't finish in ${Math.round(testLimitMs() / 1000)} s, so it proves nothing: a test must end with a failure, not hang`
+  if (ran.timedOut) return `${test} didn't finish in ${Math.round((ran.limitMs ?? testLimitMs()) / 1000)} s and was stopped, so it proves nothing: a test must end with a failure, not hang`
   if (ran.exitCode === -1) return `${test} couldn't run (${ran.cmd}): ${String(ran.out).slice(-300)}`
   if (ran.exitCode === 0) return null
   if (crashedBeforeTesting(ran.all)) return `${test} crashed before testing anything, which proves nothing: ${String(ran.out).slice(-300)}`
@@ -427,12 +431,12 @@ export function runIn(dir, argv, timeout = 300000) {
   const r = spawnSync(argv[0], argv.slice(1), { cwd: dir, encoding: 'utf8', timeout, shell: win, env })
   const out = `${r.stdout || ''}${r.stderr || ''}${r.error && r.error.code !== 'ETIMEDOUT' ? `\n${r.error.message}` : ''}`.trim()
   const timedOut = !!(r.error && r.error.code === 'ETIMEDOUT') || (r.status === null && !!r.signal)
-  return { exitCode: r.status === null ? -1 : r.status, timedOut, out: out.slice(-1500), all: out, cmd: argv.map(a => (a === process.execPath ? 'node' : a)).join(' ') }
+  return { exitCode: r.status === null ? -1 : r.status, timedOut, limitMs: timeout, out: out.slice(-1500), all: out, cmd: argv.map(a => (a === process.execPath ? 'node' : a)).join(' ') }
 }
 // One test file, run with its limit.
 const runTest = (dir, test) => {
   const argv = testCommand(dir, test)
-  return { argv, ran: runIn(dir, argv, testLimitMs()) }
+  return { argv, ran: runIn(dir, argv, testLimitMs(dir)) }
 }
 
 // A test run that failed before testing anything (a typo, a missing file) proves nothing about the bug.
@@ -442,12 +446,17 @@ export function crashedBeforeTesting(out) {
 }
 
 // The suite: npm test and npm run check:fast, the ones package.json has. Returns [{ cmd, exitCode, out }].
+// Why a suite run doesn't count (F216 review fix 10: one stopped at its limit is neither a pass nor a fail).
+export function suiteWhy(s, after = '') {
+  if (s.timedOut) return `"${s.cmd}" didn't finish in ${Math.round(s.limitMs / 1000)} s and was stopped: that is neither a pass nor a fail ("testTimeoutMs" in bmuz.json gives the tests longer)`
+  return `"${s.cmd}" fails${after}: ${s.out.slice(-400)}`
+}
 export function suite(dir) {
   const pkg = readJsonIn(dir, 'package.json') || {}
   const s = pkg.scripts || {}
   const out = []
-  if (s.test) out.push(runIn(dir, ['npm', 'test']))
-  if (s['check:fast']) out.push(runIn(dir, ['npm', 'run', 'check:fast'], 900000))
+  if (s.test) out.push(runIn(dir, ['npm', 'test'], testLimitMs(dir)))
+  if (s['check:fast']) out.push(runIn(dir, ['npm', 'run', 'check:fast'], Math.max(900000, testLimitMs(dir))))
   return out
 }
 
@@ -496,12 +505,12 @@ export function sayRepro(dir) {
 function passesNow(dir, t) {
   if (!t || !t.sha || sha(readIn(dir, t.test) ?? '') !== t.sha) return `${t && t.test}: the test changed after it was shown failing. Fix the code, not the test: put the test back as it was when it failed`
   const { argv, ran } = runTest(dir, t.test)
-  if (ran.timedOut) return `${t.test} didn't finish in ${Math.round(testLimitMs() / 1000)} s`
+  if (ran.timedOut) return `${t.test} didn't finish in ${Math.round(ran.limitMs / 1000)} s and was stopped: that is neither a pass nor a fail`
   if (ran.exitCode !== 0) return `${t.test} still fails (${ran.cmd}): ${ran.out.slice(-400)}`
   return passedTests(argv, ran).length ? null : `${t.test} ran no test at all (${ran.cmd}), so it shows nothing passing`
 }
 function suiteProblem(dir) {
-  for (const s of suite(dir)) if (s.exitCode !== 0) return `"${s.cmd}" fails: ${s.out.slice(-400)}`
+  for (const s of suite(dir)) if (s.exitCode !== 0) return suiteWhy(s)
   return null
 }
 
@@ -514,7 +523,7 @@ export function verify(dir) {
   if (why) throw new Error(why)
   const runs = suite(dir)
   const bad = runs.find(s => s.exitCode !== 0)
-  if (bad) throw new Error(`"${bad.cmd}" fails: ${bad.out.slice(-400)}`)
+  if (bad) throw new Error(suiteWhy(bad))
   proof.verify = { at: new Date().toISOString(), test: proof.repro.test, suite: runs.map(s => ({ cmd: s.cmd, exitCode: s.exitCode })) }
   writeIn(dir, proofPath(c.id), JSON.stringify(proof, null, 2) + '\n')
   return proof.verify
