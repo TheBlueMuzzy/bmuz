@@ -716,7 +716,7 @@ async function settle($: any, step: any, verdict: any, result: any) {
 // else the plain-words reason it didn't move.
 async function switchStage($: any, to: string, at: string | null, given: any) {
   // (F215 review fix 7: a fix run holds the stage's record in .bmuz/parked/; moving on now would leave it there)
-  if (ctx.side) return 'finish or stop the bug fix first (bmuz bug stop)'
+  if (ctx.side) return ctx.side.feature !== undefined ? `finish building ${ctx.side.feature} first, or say "bmuz park" to set it aside` : 'finish or stop the bug fix first (bmuz bug stop)'
   if (!E.NAME_RE.test(String(to))) return E.notOnEngineLine(String(to))
   if (!ctx.mismatch && ctx.state.status === 'working') return `step "${ctx.state.current}" is still running; move on once it has finished or is BLOCKED`
   if (!(await $.fs.exists(`${ctx.root}/pipelines/${to}.json`))) return E.notOnEngineLine(to)
@@ -1740,6 +1740,8 @@ export const register: Register = on => {
       }
       if (bc.kind === 'stop') {
         if (!ctx.side) return say('BMUZ engine: no fix run is going on.')
+        // (F216 review fix 4: a feature run isn't a fix run; its way out is "bmuz park")
+        if (ctx.side.feature !== undefined) return say(`BMUZ engine: no bug fix is running; say "bmuz park" to set this feature aside (${ctx.side.feature}).`)
         const out = await endSide($, 'stopped')
         if (out) return say(`BMUZ engine: ${out.why}`)
         pending = 'resume'

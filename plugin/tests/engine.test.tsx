@@ -2014,3 +2014,18 @@ test('F216: while a pipeline runs, Bash stays inside the project (a helper\'s an
   expect(refused(await $.tool.call({ tool: 'Bash', command: 'rm .bmuz/state.json' } as any))).toBe(true)
   expect(refused(await $.tool.call({ tool: 'Bash', command: 'git push origin main' } as any))).toBe(true)
 })
+
+test('F216 review fix 4: during a feature run, "bmuz bug stop" is refused (no bug fix is running: "bmuz park" sets the feature aside), and "bmuz stage" names "bmuz park"', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = loopWorld(on, [{ start: { feature: 'F01', at: null } }, { done: true }])
+  w.files['PIPELINE:define'] = JSON.stringify({ id: 'define', version: 1, steps: [{ id: 'welcome', kind: 'talk', tools: ['Read'], craft: 'craft/name.md' }] })
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't1')
+  await $.prompt.submit({ text: 'bmuz bug stop' } as any)
+  expect(prompts[prompts.length - 1]).toMatch(/no bug fix is running; say "bmuz park" to set this feature aside/)
+  expect(JSON.parse(w.files['/proj/.bmuz/side.json'])).toMatchObject({ feature: 'F01', phase: 'on' })
+  expect(w.runs.some(a => String(a[1]).endsWith('sprint.mjs') && a[2] === 'status')).toBe(false)
+  await $.prompt.submit({ text: 'bmuz stage define' } as any)
+  expect(prompts[prompts.length - 1]).toMatch(/finish building F01 first, or say "bmuz park" to set it aside/)
+})
