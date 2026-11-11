@@ -127,7 +127,11 @@ export function chapterText(v) {
     return items.length ? items.map(x => `- ${x}`).join('\n') : null
   }
   if (typeof v === 'object') return chapterText(v.text ?? v.lines ?? null)
-  const t = nl(v).trim()
+  // (F227: a step that hands back a whole chapter as the file shows it brings its heading, its "what it holds" line,
+  // its Level line and BMUZ's marks along; those belong to the file, not the text — kept, they made a second chapter)
+  const lines = nl(v).split('\n')
+  const out = lines.filter((l, i) => !/^###\s+\d+\s*·/.test(l) && !/^Level:\s/.test(l) && !/^<!-- \/?bmuz /.test(l) && !(i > 0 && /^###\s+\d+\s*·/.test(lines[i - 1]) && /^\*.*\*$/.test(l)))
+  const t = out.join('\n').trim()
   return t ? t : null
 }
 
@@ -417,13 +421,15 @@ export function writePage(dir, now = new Date()) {
 }
 export const STAGE_NAMES = { ideate: 'Ideate', define: 'Define', design: 'Design', develop: 'Develop' }
 
-export function stepWrite(dir, stepId, level, now = new Date()) {
+// chapter (F227): the one chapter a step writes; a result whose "chapters" is plain text, not { "<n>": … }, goes there.
+export function stepWrite(dir, stepId, level, now = new Date(), chapter = null) {
   if (!/^[a-z][a-z0-9-]*$/.test(String(stepId || ''))) return { ok: false, say: `✘ say which step's result to write, like: node gdd.mjs step feelings chosen` }
   if (levelIndex(level) < 0) return { ok: false, say: `✘ "${level}" isn't a level (${LEVELS.join(', ')})` }
   let state
   try { state = JSON.parse(readFileIn(dir, '.bmuz/state.json') || 'null') } catch (e) { state = null }
   if (!state) return { ok: false, say: '✘ no .bmuz/state.json: this runs inside a BMUZ stage' }
-  const result = (state.resultsBy && state.resultsBy[stepId]) || null
+  let result = (state.resultsBy && state.resultsBy[stepId]) || null
+  if (result && chapter && typeof result.chapters === 'string') result = { ...result, chapters: { [chapter]: result.chapters } }
   const by = { step: stepId, stage: STAGE_NAMES[state.pipeline] || state.pipeline, day: now.toISOString().slice(0, 10) }
   const out = applyResult(readFileIn(dir, GDD) || newGdd(result && result.name), result || {}, level, by)
   writeFile(dir, GDD, out.text)
@@ -433,10 +439,10 @@ export function stepWrite(dir, stepId, level, now = new Date()) {
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])
 if (isMain) {
-  const [cmd, a, b] = process.argv.slice(2)
+  const [cmd, a, b, c] = process.argv.slice(2)
   const dir = process.cwd()
   if (cmd === 'step') {
-    const r = stepWrite(dir, a, b)
+    const r = stepWrite(dir, a, b, new Date(), chapterName(c) ? Number(c) : null)
     console.log(r.say)
     process.exit(r.ok ? 0 : 1)
   } else if (cmd === 'page') {

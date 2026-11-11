@@ -103,7 +103,27 @@ test('every chapter ends Design where the script\'s growth chart says: 1–2 cho
   assert.deepEqual(lv, Object.fromEntries(Object.entries(CHART).map(([n, l]) => [n, l])))
   // the pipeline's own commands write those same levels
   assert.deepEqual(step('screens-gdd').run.slice(2), ['gdd', 'screens', 'worked out', '14=loose'])
-  for (const id of ['flow-check-gdd', 'time-gdd', 'scope2-gdd', 'scope2-report-gdd', 'players-gdd', 'look-gdd']) assert.equal(step(id).run.slice(-1)[0], 'worked out', id)
+  for (const id of ['flow-check-gdd', 'time-gdd', 'scope2-gdd', 'scope2-report-gdd', 'players-gdd', 'look-gdd']) assert.equal(step(id).run[4], 'worked out', id)
+  // a step writing one chapter names it, so a result with "chapters" as plain text still lands there (headless run 1)
+  assert.deepEqual([step('flow-check-gdd').run[5], step('time-gdd').run[5], step('look-gdd').run[5]], ['4', '10', '12'])
+})
+
+test('a chapter handed back as the file shows it (heading, Level line, marks) is written as its text only; plain-text "chapters" goes to the step\'s one chapter', () => {
+  const dir = project()
+  const before = readFileSync(join(dir, G.GDD), 'utf8')
+  const whole = before.split('\n').slice(before.split('\n').findIndex(l => l.startsWith('### 4 ·')), before.split('\n').findIndex(l => l.startsWith('### 5 ·'))).join('\n') + '- **The Flow:** 4 steps'
+  setState(dir, { 'flow-check': { chapters: { 4: whole } }, 'look-pick': { chapters: '- **The look:** A: Picture book' } })
+  G.stepWrite(dir, 'flow-check', 'worked out', new Date(), 4)
+  G.stepWrite(dir, 'look-pick', 'worked out', new Date(), 12)
+  const gdd = readFileSync(join(dir, G.GDD), 'utf8')
+  assert.equal((gdd.match(/^### 4 ·/gm) || []).length, 1)
+  const ch = G.readGdd(gdd)
+  assert.equal(ch[4].level, 'worked out')
+  assert.match(ch[4].text, /^\*\*You draw → you plant or play weather → you score → \(again\)\*\*\n- \*\*The Flow:\*\* 4 steps$/)
+  assert.equal(ch[12].level, 'worked out')
+  assert.equal(ch[12].text, '- **The look:** A: Picture book')
+  // a list slot's items that bring their own numbers or bullets don't get two
+  assert.equal(E.renderLine(script, 'design.rulebook.flow.here', { flow: ['1. Draw two cards.', '2) Play one card.', '· Score.'] }).text.split('\n').slice(1, 4).join('|'), '1. Draw two cards.|2. Play one card.|3. Score.')
   assert.deepEqual(step('sections-rb').run.slice(2), ['step', 'sections', 'worked out'])
   assert.deepEqual(step('content-fill').run.slice(2), ['step', 'content', 'worked out'])
 })

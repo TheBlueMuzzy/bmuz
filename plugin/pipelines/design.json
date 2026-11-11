@@ -152,7 +152,7 @@
       "description": "The Flow as written: is that how a turn goes?",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["design.rulebook.flow.here", "design.rulebook.flow.ok"],
-      "opening": ["design.rulebook.flow.here"],
+      "opening": ["design.rulebook.flow.here", "design.rulebook.flow.ok"],
       "craft": "craft/design-flow-check.md",
       "results": ["chapters"]
     },
@@ -169,7 +169,7 @@
       "kind": "script",
       "needs": ["flow-check-rb"],
       "description": "The core loop, worked out from the Flow, into the GDD",
-      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "flow-check", "worked out"],
+      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "flow-check", "worked out", "4"],
       "writes": [".planning/GDD.md", ".planning/project-page.html"]
     },
     {
@@ -264,7 +264,7 @@
       "kind": "script",
       "needs": ["time"],
       "description": "Change Over Time, worked out, into the GDD",
-      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "time", "worked out"],
+      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "time", "worked out", "10"],
       "writes": [".planning/GDD.md", ".planning/project-page.html"]
     },
     {
@@ -406,7 +406,7 @@
       "kind": "script",
       "needs": ["look-pick"],
       "description": "Look & Sound, worked out, into the GDD",
-      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "look-pick", "worked out"],
+      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "look-pick", "worked out", "12"],
       "writes": [".planning/GDD.md", ".planning/project-page.html"]
     },
     {

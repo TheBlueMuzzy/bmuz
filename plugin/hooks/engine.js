@@ -1349,7 +1349,8 @@ function fillTemplate(t, slots, nested) {
     const v = name === '.' ? ctx : ctx && typeof ctx === 'object' && !Array.isArray(ctx) && ctx[name] !== undefined ? ctx[name] : slots[name]
     if (!filled(v)) { missing.push(name); return '' }
     const item = x => (x && typeof x === 'object' && typeof x.line === 'string' ? nested(x) : typeof x === 'object' ? String(x.text ?? '') : String(x))
-    if (Array.isArray(v)) return v.map((x, i) => `${numbered ? `${i + 1}.` : '·'} ${item(x).trim()}`).join('\n')
+    // (an item that already carries its own number or bullet loses it: "1. 1. Draw two cards", F227)
+    if (Array.isArray(v)) return v.map((x, i) => `${numbered ? `${i + 1}.` : '·'} ${item(x).trim().replace(/^(\d+[.)]|[-·•])\s+/, '')}`).join('\n')
     return item(v)
   }
   // [[ … ]]: said only when every slot inside it is filled
