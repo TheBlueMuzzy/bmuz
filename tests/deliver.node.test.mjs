@@ -81,10 +81,32 @@ test('5.1 not ready: an open must and a P0 bug are named in the script\'s "Not r
   assert.match(say, /✗ 2 of 3 musts for this stage are done\n✗ blocking bugs: B001 \(P0\)\n✓ every check passes/)
   assert.match(say, /\n\nNot ready yet: F03 — Weather cards, B001 — Hail freezes the game isn't done\. Want to finish it first, or move it to the next stage\?\n$/)
   // the answer: an auto run may only finish; "move" is the creative's call
-  assert.match(D.choiceProblem(dir, 'move it to the next stage', 'auto'), /creative's call/)
-  assert.equal(D.choiceProblem(dir, 'move it to the next stage', 'live'), null)
+  assert.match(D.choiceProblem(dir, 'Move it to the next stage', 'auto'), /creative's call/)
   assert.equal(D.choiceProblem(dir, 'Finish it first', 'auto'), null)
-  assert.match(D.choiceProblem(dir, 'maybe', 'live'), /must be "finish"/)
+})
+
+test('review fix 8: the not-ready answer is the option the creative picked in the script\'s box, matched exactly: "don\'t move it, finish it first" is no "move"', () => {
+  const dir = garden()
+  writeFileSync(join(dir, S.ROADMAP), read(dir, S.ROADMAP).replace('- ✅ F03 🎮 Weather cards', '- 🎛️ F03 🎮 Weather cards'))
+  D.prep(dir, NOW)
+  writeFileSync(join(dir, D.RECORD), JSON.stringify({ ...D.readRecord(dir), check: { musts: { done: 2, all: 3, open: ['F03'] }, bugs: [], checks: [], missing: ['F03 — Weather cards'] } }))
+  const box = E.renderLine(script, 'deliver.notready.box', {}).box
+  assert.deepEqual(box.options.map(o => o.label), ['Finish it first', 'Move it to the next stage'])
+  assert.equal(D.choiceOf("don't move it, finish it first"), null)
+  assert.equal(D.choiceOf('Move it to the next stage'), 'move')
+  const asked = (picked) => journal(dir, [
+    { ev: 'step.start', step: 'notready' },
+    { ev: 'line', step: 'notready', line: 'deliver.notready.box', kind: 'box', box: { question: box.question } },
+    { ev: 'answer', step: 'notready', text: `User has answered your questions: "${box.question}"="${picked}". You can now continue.` },
+  ])
+  asked('Finish it first')
+  assert.equal(D.choiceProblem(dir, 'Finish it first', 'live'), null)
+  assert.match(D.choiceProblem(dir, 'Move it to the next stage', 'live'), /the creative picked "Finish it first"/)
+  assert.match(D.choiceProblem(dir, "don't move it, finish it first", 'live'), /must be exactly "Finish it first" or "Move it to the next stage"/)
+  asked('Move it to the next stage')
+  assert.equal(D.choiceProblem(dir, 'Move it to the next stage', 'live'), null)
+  journal(dir, [{ ev: 'step.start', step: 'notready' }])
+  assert.match(D.choiceProblem(dir, 'Finish it first', 'live'), /no answer to the box/)
 })
 
 test('"move it to the next stage": the must moves to Alpha with its tag and its graph node, the roadmap says so; a bug left still sends it back', async () => {
@@ -94,7 +116,7 @@ test('"move it to the next stage": the must moves to Alpha with its tag and its 
   spawnSync('git', ['commit', '-qam', 'F03 back to tuning'], { cwd: dir })
   D.prep(dir, NOW)
   await D.check(dir, script)
-  const rec = D.notReady(dir, 'move', script, NOW)
+  const rec = D.notReady(dir, 'Move it to the next stage', script, NOW)
   assert.equal(rec.go, true)
   const rm = read(dir, S.ROADMAP)
   const ms = S.readRoadmap(rm).milestones

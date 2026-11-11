@@ -251,18 +251,37 @@ export async function check(dir, script = loadScript()) {
   return rec
 }
 
-// The not-ready answer: "finish" (back to Develop) or "move" (the open musts to the next stage). An auto run can only
-// finish: moving a must changes the plan, the creative's call.
-export const choiceOf = words => {
-  const w = clean(words).toLowerCase()
-  if (/move|next stage/.test(w)) return 'move'
-  if (/finish|first|develop/.test(w)) return 'finish'
+// The not-ready answer: the option picked in the script's box, matched exactly (review fix 8; F216's fix 1 for the
+// approve box): "Finish it first" (back to Develop) or "Move it to the next stage" (the open musts move on). Words
+// that only mention one ("don't move it, finish it first") are neither. An auto run can only finish: moving a must
+// changes the plan, the creative's call.
+export const CHOICES = { 'Finish it first': 'finish', 'Move it to the next stage': 'move' }
+export const choiceOf = words => CHOICES[clean(words)] || null
+// The creative's own pick in this try's not-ready box, from the journal (the question as handed out, the label exact).
+export function boxPick(dir, step, lineId, labels) {
+  const js = (readIn(dir, '.bmuz/journal.jsonl') || '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l) } catch (e) { return {} } })
+  let from = -1
+  js.forEach((j, i) => { if (j.ev === 'step.start' && j.step === step) from = i })
+  if (from < 0) return null
+  const rest = js.slice(from)
+  const box = rest.filter(j => j.ev === 'line' && j.line === lineId && j.box && j.box.question).pop()
+  if (!box) return null
+  const asked = `"${box.box.question}"="`
+  for (const t of rest.filter(j => j.ev === 'answer' && j.step === step).map(j => String(j.text || '')).filter(t => t.includes(asked)).reverse()) {
+    const picked = t.slice(t.lastIndexOf(asked) + asked.length)
+    for (const label of labels) if (picked.startsWith(`${label}"`)) return label
+  }
   return null
 }
 export function choiceProblem(dir, words, mode) {
   const c = choiceOf(words)
-  if (!c) return `the answer must be "finish" (finish it first) or "move" (move it to the next stage), not "${clean(words)}"`
-  if (c === 'move' && mode === 'auto' && !testAnswered(dir, 'notready')) return 'moving a must to the next stage changes the plan: that is the creative\'s call, so an auto run can only answer "finish"'
+  if (!c) return `the answer must be exactly "Finish it first" or "Move it to the next stage" (the option picked in the box), not "${clean(words)}"`
+  if (mode !== 'auto') {
+    const picked = boxPick(dir, 'notready', 'deliver.notready.box', Object.keys(CHOICES))
+    if (!picked) return 'there is no answer to the box "Finish it first, or move it to the next stage?" in this try: ask it, and hand back the option the creative picked'
+    if (picked !== clean(words)) return `the creative picked "${picked}", not "${clean(words)}"`
+  }
+  if (c === 'move' && mode === 'auto' && !testAnswered(dir, 'notready')) return 'moving a must to the next stage changes the plan: that is the creative\'s call, so an auto run can only answer "Finish it first"'
   const rec = readRecord(dir)
   if (c === 'move' && rec && rec.check && !rec.check.musts.open.length) return 'nothing to move: every must for this stage is done (what is missing is a bug or a check, so it is "finish")'
   return null

@@ -25,7 +25,8 @@
     {
       "id": "notready", "kind": "talk", "needs": ["check"], "when": "{missing}", "no": "5.1", "title": "Release Check",
       "description": "Not ready yet: finish it first, or move it to the next stage?",
-      "tools": ["Read"], "lines": ["deliver.notready"], "craft": "craft/deliver-notready.md", "results": ["choice"],
+      "tools": ["AskUserQuestion", "ToolSearch", "Read"], "lines": ["deliver.notready.box"], "opening": ["deliver.notready.box"], "must": ["deliver.notready.box"],
+      "craft": "craft/deliver-notready.md", "results": ["choice"],
       "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/deliver.mjs", "choice", "{choice}", "{auto}"] }
     },
     {

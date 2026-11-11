@@ -834,6 +834,12 @@ The checks grow with each stage. After every build, playtest notes go back into 
 ## deliver.notready · free
 Not ready yet: {missing} isn't done. Want to finish it first, or move it to the next stage?
 
+## deliver.notready.box · box · added
+? Finish it first, or move it to the next stage?
+header: Not ready
+- Finish it first — back to Develop
+- Move it to the next stage — only a must can move
+
 ## deliver.standins · say
 **Polish & Stand-ins**
 These are still placeholders: {standins}. For a {stage} build, placeholders are usually fine.

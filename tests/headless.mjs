@@ -762,7 +762,7 @@ const scenarios = {
     writeFileSync(join(nr, '.planning/ROADMAP.md'), readFileSync(join(nr, '.planning/ROADMAP.md'), 'utf8').replace('- ✅ F03 🎮 Weather cards', '- 🎛️ F03 🎮 Weather cards').replace('F03[✅ F03', 'F03[🎛️ F03'))
     spawnSync('git', ['commit', '-qam', 'F03 waits for its OK'], { cwd: nr })
     finishedDevelop(nr)
-    writeFileSync(join(nr, 'bmuz.json'), JSON.stringify({ pipeline: 'develop', testAnswers: { notready: { 'Finish it first, or move it to the next stage?': 'Finish it first.' } } }, null, 2))
+    writeFileSync(join(nr, 'bmuz.json'), JSON.stringify({ pipeline: 'develop', testAnswers: { notready: { 'Finish it first, or move it to the next stage?': 'Finish it first' } } }, null, 2))
     const out3 = await runCollect(nr, 'bmuz go', null, () => (JSON.parse(readFileSync(join(nr, 'bmuz.json'), 'utf8')).pipeline === 'develop' && existsSync(join(nr, '.bmuz/stages.json')) && /deliver/.test(readFileSync(join(nr, '.bmuz/stages.json'), 'utf8'))), 900_000, extra)
     writeFileSync(`${nr}-run-output.txt`, out3)
     const js3 = allJournals(nr)
