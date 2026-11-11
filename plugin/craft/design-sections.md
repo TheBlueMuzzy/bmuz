@@ -4,7 +4,7 @@ Read .planning/design/RULEBOOK.md, .planning/GDD.md (every chapter) and .plannin
 For each section below, in this order, one at a time:
   a. Say its line (free): your whole reply; their next message is the answer.
   b. Write that section from their answer, in their words, short rules. "TBD", "X" and "Rule A / Rule B, to test" are fine. Don't polish.
-  c. Say "design.rulebook.section" with "section" = the section's name and "text" = what you wrote (at most 4 short lines; the rest is on the page), and in the same call the box "design.rulebook.ok". "Change something": {"wait": true}, change it, show it again.
+  c. Say "design.rulebook.section" with "section" = the section's name and "text" = what you wrote (at most 4 short lines; the rest is on the page); then, in a second call, the box "design.rulebook.ok" (a box never shares a call with a long line), and ask it. "Change something": {"wait": true}, change it, show it again.
 The sections and their lines:
 1. How to Win and Game End: "design.rulebook.win".
 2. Setup: "design.rulebook.setup".

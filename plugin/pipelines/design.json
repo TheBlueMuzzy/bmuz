@@ -152,7 +152,7 @@
       "description": "The Flow as written: is that how a turn goes?",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["design.rulebook.flow.here", "design.rulebook.flow.ok"],
-      "opening": ["design.rulebook.flow.here", "design.rulebook.flow.ok"],
+      "opening": ["design.rulebook.flow.here"],
       "craft": "craft/design-flow-check.md",
       "results": ["chapters"]
     },
