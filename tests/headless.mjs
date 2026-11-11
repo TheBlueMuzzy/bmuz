@@ -216,9 +216,9 @@ const GARDEN_DESIGN = {
 // F216: the creative's Develop answers for the garden race (run 2 of develop-garden): F01 tuned once, then approved.
 const GARDEN_DEVELOP = {
   approve: {
-    'Did … feel like …? — F01, the first time it is asked (no "Tuning:" note for F01 in .planning/SPRINT.md yet)': 'Close, needs tuning',
-    'Did … feel like …? — F01, once SPRINT.md has its "Tuning:" note': 'Yes, approve it',
-    'Did … feel like …? — every other feature': 'Yes, approve it',
+    'Read .planning/SPRINT.md first. The feature being asked is F01 — Turn engine and its section has NO line starting "Notes: Tuning:"': 'Close, needs tuning',
+    'The feature being asked is F01 — Turn engine and its section HAS a line starting "Notes: Tuning:"': 'Yes, approve it',
+    'The feature being asked is any other feature (F02 — Seed cards, F03 …)': 'Yes, approve it',
   },
   tune: { "In your words, what's wrong with it?": 'A turn drags: drawing two cards every turn makes my hand too big. Try drawing one.' },
   lookback: { 'Your three lines (your words win)': 'Fine, keep your draft.' },
@@ -639,7 +639,9 @@ const scenarios = {
     const proved = js.filter(j => j.ev === 'check.ran' && (j.step === 'build' || j.step === 'fix'))
     check('F216 (develop): the tests were proven green by the engine\'s script (sprint.mjs prove ran them), fingerprinted under .bmuz/develop/', proofs.every(p => p && p.tests.length > 0 && p.tests.every(t => t.sha && existsSync(join(dir, t.file)))) && proved.some(j => j.exitCode === 0) && spawnSync('npm', ['test'], { cwd: dir, encoding: 'utf8', shell: process.platform === 'win32' }).status === 0, JSON.stringify(proofs.map(p => p && p.tests)))
     check('F216 (develop): every feature shown ready to check (4.5\'s card) and its approval left as a question: nothing approved, the waiting line said', rec1.features.every(f => f.status === 'built') && js.filter(j => j.ev === 'show' && j.step === 'ready').length >= cards.length && /waiting for your OK/.test(read('.bmuz/questions.md') || '') && js.some(j => j.ev === 'loop.waiting') && !/✅ F0/.test(read('.planning/ROADMAP.md') || ''), `${JSON.stringify(rec1.features.map(f => [f.id, f.status]))} | ${trailOf(js.slice(-10))}`)
-    check('F216 (develop): the builders ran only through the engine\'s run tool (no Bash), with nothing allowed but the pre-approvals of auto-run.json', js.some(j => j.ev === 'run') && !js.some(j => j.ev === 'deviation' && j.tool === 'Bash' && j.agentId), trailOf(js.filter(j => j.ev === 'run' || (j.ev === 'deviation' && j.agentId))))
+    // (a helper reaching for Bash is refused by the engine — journaled as a deviation — so every Bash try is a refused one)
+    const helperBash = js.filter(j => j.ev === 'deviation' && j.tool === 'Bash' && j.agentId)
+    check('F216 (develop): the builders ran only through the engine\'s run tool, every Bash try of theirs refused, with nothing allowed but the pre-approvals of auto-run.json', js.some(j => j.ev === 'run') && helperBash.every(j => /may not use Bash/.test(j.why)), trailOf(js.filter(j => j.ev === 'run' || (j.ev === 'deviation' && j.agentId))))
     check('F216 (develop): the auto run never stalled: it ended by itself, no watchdog stop, no BLOCK left standing', !js.some(j => j.ev === 'watchdog' || j.ev === 'watchdog.stopped') && !js.some(j => j.ev === 'blocked' && !runs1.some(r => r.outcome === 'blocked')), trailOf(js.filter(j => /watchdog|blocked|retry/.test(j.ev))))
     // every fixed line the engine handed out in run 1, and every file it showed, in Claude's words word for word
     const lines1 = js.filter(j => j.ev === 'line' && j.kind !== 'box')
