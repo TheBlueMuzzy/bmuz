@@ -1,0 +1,4 @@
+[
+  { "name": "the sounds", "paths": ["public/sounds/"], "source": "stand-in: made with ZzFX", "licence": "own work", "standIn": true },
+  { "name": "the card art", "paths": ["public/cards/"], "source": "stand-in: drawn with shapes", "licence": "own work", "standIn": true }
+]

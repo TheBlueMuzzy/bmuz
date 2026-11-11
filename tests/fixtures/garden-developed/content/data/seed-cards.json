@@ -1,0 +1,29 @@
+{
+  "name": "Seed cards",
+  "columns": [
+    "Name",
+    "Kind",
+    "Cost",
+    "Blooms in",
+    "Qty",
+    "Value"
+  ],
+  "rows": [
+    {
+      "Name": "Sunflower",
+      "Kind": "Seed",
+      "Cost": 1,
+      "Blooms in": 1,
+      "Qty": 6,
+      "Value": 2
+    },
+    {
+      "Name": "Rose",
+      "Kind": "Seed",
+      "Cost": 2,
+      "Blooms in": 2,
+      "Qty": 4,
+      "Value": 2.5
+    }
+  ]
+}

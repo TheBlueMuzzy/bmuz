@@ -1,0 +1,14 @@
+{
+  "name": "garden-race",
+  "private": true,
+  "type": "module",
+  "description": "The garden race at Develop's end (F219's fixture): v0.1's musts approved, ready to deliver. Its host is a stand-in on this machine (scripts/fake-deploy.mjs): nothing here ever reaches anything real.",
+  "scripts": {
+    "test": "node --test",
+    "play": "node src/play.mjs",
+    "build": "node scripts/build.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:live": "node scripts/smoke-live.mjs",
+    "deploy": "node scripts/fake-deploy.mjs"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "handSize": 3,
+  "drawPerTurn": 1,
+  "bloomsToScore": 3,
+  "rows": 3,
+  "weatherCardsPerHand": 2
+}
