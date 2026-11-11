@@ -1723,6 +1723,16 @@ export const register: Register = on => {
       if (rel) {
         const stepId = ctx.state.current
         const before = await readText($, `${ctx.dir}/${rel}`)
+        // (F216 review fix 2b: a protected step's helper — Develop's builder — can't change the plan files,
+        // package.json's scripts, or empty an existing test)
+        const cur = E.stepById(ctx.pipeline, stepId)
+        if (call.agentId && cur && cur.kind === 'flow' && cur.protect === true) {
+          const why = E.protectProblem(rel, before, E.editedText({ ...(e as any), tool: call.tool }, before))
+          if (why) {
+            await journal($, { ev: 'deviation', step: stepId, tool: call.tool, agentId: call.agentId, why })
+            return { deny: `BMUZ engine: ${why}` }
+          }
+        }
         const res: any = await next(e)
         if (!res?.deny && !res?.isError) await recordOwn($, stepId, rel, before, await readText($, `${ctx.dir}/${rel}`))
         return res

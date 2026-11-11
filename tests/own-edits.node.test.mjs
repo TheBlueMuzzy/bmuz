@@ -45,3 +45,21 @@ test('undo puts back only the step\'s own changes: the whole file when nobody el
   assert.equal(E.ownRollback(n, null, 'new').remove, true)
   assert.equal(E.ownRollback(n, null, 'theirs').keep, true)
 })
+
+// F216 review fix 2b: the builder's Write / Edit may not touch the plan files, package.json's scripts, or empty an
+// existing test (feature status changes only through sprint.mjs; the proof can't be weakened from here).
+test('review fix 2b: a protected step\'s helper may not write .planning/, change package.json\'s scripts or empty an existing test', () => {
+  assert.match(E.protectProblem('.planning/SPRINT.md', 'x', 'y'), /\.planning/)
+  assert.match(E.protectProblem('.planning/ROADMAP.md', null, 'y'), /\.planning/)
+  const pkg = JSON.stringify({ scripts: { test: 'node --test' }, dependencies: {} })
+  assert.match(E.protectProblem('package.json', pkg, JSON.stringify({ scripts: { test: 'echo ok' }, dependencies: {} })), /scripts/)
+  assert.equal(E.protectProblem('package.json', pkg, JSON.stringify({ scripts: { test: 'node --test' }, dependencies: { a: '1' } })), null)
+  assert.match(E.protectProblem('tests/turn.test.mjs', 'test(1)', '  '), /empties the existing test/)
+  assert.equal(E.protectProblem('tests/turn.test.mjs', null, 'test(1)'), null)
+  assert.equal(E.protectProblem('src/garden.js', 'a', ''), null)
+  // the text an Edit / MultiEdit would leave
+  assert.equal(E.editedText({ tool: 'Edit', old_string: 'a', new_string: 'b' }, 'a a'), 'b a')
+  assert.equal(E.editedText({ tool: 'Edit', old_string: 'a', new_string: 'b', replace_all: true }, 'a a'), 'b b')
+  assert.equal(E.editedText({ tool: 'MultiEdit', edits: [{ old_string: 'a', new_string: 'b' }, { old_string: 'b a', new_string: 'c' }] }, 'a a'), 'c')
+  assert.equal(E.editedText({ tool: 'Write', content: 'new' }, 'old'), 'new')
+})

@@ -2118,3 +2118,21 @@ test('F216 review fix 2a: the builder helper runs only through the engine\'s run
   expect(refused(await $.tool.call({ tool: 'Bash', agentId: 'helper-1', command: 'npm install' } as any))).toBe(true)
   expect(refused(await $.tool.call({ tool: 'mcp__bmuz__run', agentId: 'helper-1', what: 'git' } as any))).toBe(true)
 })
+
+test('F216 review fix 2b: in a protected step the builder helper can\'t write the plan files, change package.json\'s scripts or empty a test; its other writes go through', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({}))
+  const p = JSON.parse(w.files.PIPELINE)
+  p.steps[2] = { id: 'plan', kind: 'flow', needs: ['approve'], workflow: 'bmuz:hello-flow', agentTools: ['Read', 'Write', 'Edit'], protect: true }
+  w.files.PIPELINE = JSON.stringify(p)
+  w.files['/proj/.bmuz/state.json'] = state({ current: 'plan', status: 'working', finished: ['name', 'approve'], flow: { args: {}, toolUseId: 'tu1', taskId: 'wf1' } })
+  w.files['/proj/package.json'] = JSON.stringify({ scripts: { test: 'node --test' } })
+  w.files['/proj/tests/a.test.mjs'] = "test('x', () => {})"
+  await start($, false)
+  const h = { agentId: 'helper-1' }
+  expect(why(await $.tool.call({ tool: 'Write', ...h, file_path: '/proj/.planning/SPRINT.md', content: 'all done' } as any))).toMatch(/plan file/)
+  expect(why(await $.tool.call({ tool: 'Edit', ...h, file_path: '/proj/package.json', old_string: 'node --test', new_string: 'echo ok' } as any))).toMatch(/"scripts"/)
+  expect(why(await $.tool.call({ tool: 'Write', ...h, file_path: '/proj/tests/a.test.mjs', content: '' } as any))).toMatch(/empties the existing test/)
+  expect(refused(await $.tool.call({ tool: 'Write', ...h, file_path: '/proj/src/turn.js', content: 'export const x = 1' } as any))).toBe(false)
+  expect(w.files['/proj/package.json']).toBe(JSON.stringify({ scripts: { test: 'node --test' } }))
+})

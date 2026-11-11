@@ -100,7 +100,8 @@ const STEP_KEYS = {
   // results (F216 review fix 11): keys the script hands back in its last line of JSON ({"results": {…}}), for a later "when"
   script: ['run', 'writes', 'done', 'show', 'loop', 'results'],
   // stuck (F216): a .md file the done-check writes when the step is stuck twice; said before the last try
-  flow: ['workflow', 'args', 'agentTools', 'writes', 'craft', 'done', 'stuck'],
+  // protect (F216 review fix 2b): true = its helpers can't change the plan files, package.json's scripts, or empty a test
+  flow: ['workflow', 'args', 'agentTools', 'writes', 'craft', 'done', 'stuck', 'protect'],
 }
 const DONE_KEYS = {
   'result-has': ['type', 'key'],
@@ -235,6 +236,7 @@ export function checkPipeline(p) {
     }
     if (s.kind === 'gate' && s.auto !== undefined && !['stop', 'carry'].includes(s.auto)) problems.push(`${at} (gate): "auto" must be "stop" (an auto run stops at the gate, the default) or "carry" (it notes the question and carries on with the plan as it stands)`)
     if (s.kind === 'script' && s.loop !== undefined && !(typeof s.loop === 'string' && NAME_RE.test(s.loop))) problems.push(`${at} (script): "loop" must be the name of the pipeline it runs for each item, like "feature"`)
+    if (s.kind === 'flow' && s.protect !== undefined && typeof s.protect !== 'boolean') problems.push(`${at} (flow): "protect" must be true or false`)
     if (s.kind === 'flow' && s.stuck !== undefined && !(isShowPath(s.stuck) && s.stuck.endsWith('.md'))) problems.push(`${at} (flow): "stuck" must be a .md file the done-check writes, like .bmuz/develop/say-stuck.md`)
     if (s.show !== undefined && !(isShowPath(s.show) && s.show.endsWith('.md') && !/\{/.test(s.show))) problems.push(`${at}: "show" must be a .md file inside the project with no {holes}, like .planning/research/so-far.md`)
     if (s.when !== undefined && !(typeof s.when === 'string' && /^\{\w+\}$/.test(s.when))) problems.push(`${at}: "when" must be one {hole}: a result of a talk step this step needs, like "{priorArt}"`)
@@ -1890,4 +1892,35 @@ export function ownRollback(entry, checkpointText, now) {
   if (!mine.length) return { keep: true }
   for (const c of mine) setAt(cur, c.key, c.from)
   return { text: JSON.stringify(cur, null, 2) + '\n' }
+}
+
+// ---- Protected writes (F216 review fix 2b): Develop's builder can't change what proves its work ----
+// A test file, as the proof counts them: under tests/, test/ or __tests__/, or named *.test.* / *.spec.*.
+export const isTestFile = f => /(^|\/)(tests?|__tests__)\//.test(String(f)) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(String(f))
+// The text a Write / Edit / MultiEdit would leave in a file whose text is `before` (null: not there yet).
+export function editedText(call, before) {
+  const one = (text, e) => {
+    const from = String(e.old_string ?? '')
+    if (!from) return String(e.new_string ?? '')
+    return e.replace_all ? text.split(from).join(String(e.new_string ?? '')) : text.replace(from, () => String(e.new_string ?? ''))
+  }
+  if (call.tool === 'Write') return String(call.content ?? '')
+  if (call.tool === 'Edit') return one(String(before ?? ''), call)
+  if (call.tool === 'MultiEdit') return (Array.isArray(call.edits) ? call.edits : []).reduce(one, String(before ?? ''))
+  return null
+}
+// Why a protected step's helper may not make this change (null = it may): the plan files (.planning/: the roadmap, the
+// sprint and the plans change only through sprint.mjs), package.json's "scripts" (the test command is the proof's), and
+// an existing test emptied.
+export function protectProblem(rel, before, after) {
+  const f = String(rel || '')
+  if (/^\.planning\//.test(f)) return `${f} is a plan file: the roadmap, the sprint and the plans change only through the engine`
+  if (f === 'package.json' && before !== null && after !== null) {
+    const a = parseJson(before)
+    const b = parseJson(after)
+    if (!b) return 'package.json would no longer be valid JSON'
+    if (JSON.stringify((a && a.scripts) || {}) !== JSON.stringify(b.scripts || {})) return 'package.json\'s "scripts" (the test command among them) are not the builder\'s to change'
+  }
+  if (isTestFile(f) && before !== null && String(after ?? '').trim() === '') return `this empties the existing test ${f}: a test is never deleted to make the build pass`
+  return null
 }
