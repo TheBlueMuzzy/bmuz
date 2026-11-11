@@ -641,7 +641,8 @@ export function featureEnd(dir, now = new Date()) {
   const f = featureOf(dir, rec)
   // (review fix 2c: every test the proof ran is still the test it ran, as F215's record checks)
   const proof = readJson(dir, `${DEV}/${f.id}.json`)
-  for (const t of listOf(proof && proof.tests)) if (t && t.sha && E.textSha(readIn(dir, t.file)) !== t.sha) throw new Error(`${t.file} changed after it was proven: run the build's proof again (bmuz undo build), never keep a test changed after its proof`)
+  // (the same fingerprint prove took: sha, not the engine's own-edit textSha)
+  for (const t of listOf(proof && proof.tests)) if (t && t.sha && sha(readIn(dir, t.file) || '') !== t.sha) throw new Error(`${t.file} changed after it was proven: run the build's proof again (bmuz undo build), never keep a test changed after its proof`)
   const st = readState(dir)
   const a = answerOf(resultOf(st, 'approve').answer) || 'waiting'
   const tune = resultOf(st, 'tune')

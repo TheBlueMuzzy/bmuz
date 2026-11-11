@@ -264,9 +264,12 @@ test('review fix 2c: the proof can\'t be weakened — a changed test command is 
   writeFileSync(join(dir, 'tests/garden.test.mjs'), old)
   const ok = S.prove(dir, script, NOW)
   assert.deepEqual(ok.changedTests, [])
+  // (headless 2026-11-11: the end compared the proof's fingerprint with another kind of fingerprint, so every feature
+  // blocked there) unchanged since the proof, the feature ends
+  state(dir, { pipeline: 'feature', given: { feature: 'F01' }, resultsBy: { approve: { answer: 'waiting' } } })
+  assert.equal(S.featureEnd(dir, NOW).feature, 'F01')
   // a proven test changed after the proof: the feature's end is refused
   writeFileSync(join(dir, 'tests/garden.test.mjs'), old + '\n// later\n')
-  state(dir, { pipeline: 'feature', given: { feature: 'F01' }, resultsBy: { approve: { answer: 'waiting' } } })
   assert.throws(() => S.featureEnd(dir, NOW), /tests\/garden\.test\.mjs changed after it was proven/)
 })
 
