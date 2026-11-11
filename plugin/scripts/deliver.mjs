@@ -573,7 +573,12 @@ const nextVersion = (v, kind) => {
 // scripts run they are hidden from git on this machine only (.git/info/exclude, put back as it was after), never by
 // changing the project's .gitignore. A bmuz.json git already keeps is committed as the engine left it (a stage move
 // rewrites it).
-function withBmuzHidden(dir, fn) {
+// (review fix 6) Before .git/info/exclude is changed, its words go into a restore note in .bmuz/deliver/; a run stopped
+// before it put them back (the 10-minute cap, a closed window) is put right by the next start or the doctor
+// (`deliver.mjs restore-exclude`, which the engine runs when the note is there). Returns the putting back.
+export const EXCLUDE_NOTE = `${DIR}/exclude-restore.json`
+export function hideBmuz(dir) {
+  restoreExclude(dir)
   const gitDir = gitOut(dir, ['rev-parse', '--git-dir'])
   const file = gitDir ? join(resolve(dir, gitDir), 'info', 'exclude') : null
   const before = file && existsSync(file) ? readFileSync(file, 'utf8') : null
@@ -581,8 +586,23 @@ function withBmuzHidden(dir, fn) {
   if (tracked && B.dirtyFiles(dir).includes('bmuz.json')) B.commitFiles(dir, ['bmuz.json'], 'BMUZ: the stage as the engine left it')
   const have = (before || '').split('\n').map(l => l.trim())
   const hide = ['/.bmuz/', ...(tracked ? [] : ['/bmuz.json'])].filter(p => !have.includes(p))
-  if (file && hide.length) { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, `${(before || '').replace(/\n*$/, '\n')}${hide.join('\n')}\n`) }
-  try { return fn() } finally { if (file) { if (before === null) writeFileSync(file, ''); else writeFileSync(file, before) } }
+  if (!file || !hide.length) return () => {}
+  write(dir, EXCLUDE_NOTE, JSON.stringify({ file, before }, null, 2) + '\n')
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, `${(before || '').replace(/\n*$/, '\n')}${hide.join('\n')}\n`)
+  return () => restoreExclude(dir)
+}
+// Puts .git/info/exclude back from the restore note, if there is one, and removes the note. → true when it did.
+export function restoreExclude(dir) {
+  const note = readJson(dir, EXCLUDE_NOTE)
+  if (!note || typeof note.file !== 'string') return false
+  writeFileSync(note.file, note.before === null ? '' : String(note.before))
+  rmSync(join(dir, EXCLUDE_NOTE), { force: true })
+  return true
+}
+function withBmuzHidden(dir, fn) {
+  const putBack = hideBmuz(dir)
+  try { return fn() } finally { putBack() }
 }
 
 // 5.4 "Share it": merge the work branch (merge.mjs), the records, version + tag (release.mjs), the smoke pass, push,
@@ -787,6 +807,9 @@ if (isMain) {
   const say = (ok, text) => { console.log(text); process.exit(ok ? 0 : 1) }
   const results = r => JSON.stringify({ results: r })
   try {
+    // (review fix 6: a git exclude left changed by a stopped publish is put back first, whatever runs)
+    const restored = restoreExclude(dir)
+    if (mode === 'restore-exclude') say(true, restored ? '✔ .git/info/exclude put back as it was before the release scripts ran' : '✔ nothing to put back')
     if (mode === 'prep') {
       const r = prep(dir)
       say(true, `✔ delivering ${r.rec.title} as a ${stageOf(r.rec.stage).name} build${r.first ? ' (the first time)' : ''}\n${results({ first: yes(r.first) })}`)

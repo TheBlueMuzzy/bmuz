@@ -555,7 +555,18 @@ async function startEngine($: any) {
   // A background session says it is interactive (headless check 15, 2026-11-08) but has no question
   // tool, so "can anyone answer?" is read from the tool list, not from the session's word.
   ctx.auto = !ctx.interactive || !ctx.canAsk || ctx.cfg.auto === true || sessionAuto
+  if (!ctx.broken) await restoreGitExclude($)
   return !ctx.broken
+}
+
+// F219 review fix 6: Deliver hides the engine's own files from git while the release scripts run (.git/info/exclude,
+// with a restore note in .bmuz/deliver/ first). A run stopped there (the 10-minute cap, a closed window) leaves the
+// note; the next start and the doctor put the file back as it was.
+async function restoreGitExclude($: any) {
+  if (!(await $.fs.exists(`${ctx.dir}/.bmuz/deliver/exclude-restore.json`))) return
+  let ran: any = null
+  try { ran = await $.process.run(['node', `${ctx.root}/scripts/deliver.mjs`, 'restore-exclude'], { cwd: ctx.dir, timeoutMs: 60000 }) } catch (err) { ran = { exitCode: -1, stdout: String(err) } }
+  await journal($, { ev: 'exclude.restored', exitCode: ran?.exitCode ?? null, stdout: String(ran?.stdout ?? '').trim().slice(0, 200) })
 }
 
 // Started with settings/auto-run.json? It sets BMUZ_AUTO=1 in the session's environment, which a
@@ -1295,6 +1306,7 @@ function undoMenu() {
 }
 
 async function doctorNow($: any) {
+  await restoreGitExclude($)
   const report = await runDoctor($, ctx)
   if (report.fixed) {
     ctx.state = report.state

@@ -2254,3 +2254,13 @@ test('F219: Develop\'s look-back says "onward": deliver and its write hands back
   const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
   expect([st.pipeline, st.finished, st.skipped || []]).toEqual(['deliver', ['prep'], []])
 })
+
+test('F219 review fix 6: a git exclude left changed by a stopped Deliver publish is put back at the next start (deliver.mjs restore-exclude) and journaled', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({}))
+  w.files['/proj/.bmuz/deliver/exclude-restore.json'] = '{"file": "/proj/.git/info/exclude", "before": ""}'
+  await start($, true)
+  const run = w.runs.find((r: string[]) => r[2] === 'restore-exclude')
+  expect(run && /scripts\/deliver[.]mjs$/.test(run[1].split(String.fromCharCode(92)).join('/'))).toBe(true)
+  expect(events(w).find((j: any) => j.ev === 'exclude.restored')).toMatchObject({ exitCode: 0 })
+})

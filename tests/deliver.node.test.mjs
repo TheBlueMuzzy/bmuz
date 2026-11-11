@@ -351,6 +351,24 @@ test('review fix 4: the scan reads what ships — the build folder (here build/,
   assert.equal(D.shipDir(dir), 'www')
 })
 
+test('review fix 6: a publish stopped while the engine\'s files are hidden from git (the 600 s cap) leaves a restore note; the next start or the doctor (deliver.mjs restore-exclude) puts .git/info/exclude back', () => {
+  const dir = garden()
+  const exclude = join(dir, '.git', 'info', 'exclude')
+  writeFileSync(exclude, '# mine\n*.tmp\n')
+  D.hideBmuz(dir) // (hidden, and never put back: the process was stopped here)
+  assert.match(read(dir, '.git/info/exclude'), /\/\.bmuz\//)
+  assert.deepEqual(JSON.parse(read(dir, D.EXCLUDE_NOTE)).before, '# mine\n*.tmp\n')
+  const r = spawnSync(process.execPath, [join(here, '..', 'plugin', 'scripts', 'deliver.mjs'), 'restore-exclude'], { cwd: dir, encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stdout)
+  assert.equal(readFileSync(exclude, 'utf8'), '# mine\n*.tmp\n')
+  assert.equal(read(dir, D.EXCLUDE_NOTE), null, 'the note is gone')
+  // a whole publish leaves no note behind
+  shareSaid(dir)
+  publishTest(dir)
+  assert.equal(read(dir, D.EXCLUDE_NOTE), null)
+  assert.equal(readFileSync(exclude, 'utf8'), '# mine\n*.tmp\n')
+})
+
 test('5.5 Playtest Notes: each feeling of GDD chapter 1 checked; tuning, bugs, rulebook questions and ideas land in the roadmap; the script\'s lines', () => {
   const dir = garden()
   D.prep(dir, NOW)
