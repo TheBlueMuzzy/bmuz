@@ -2,7 +2,7 @@
 
 Every fixed line BMUZ says lives here, and only here (F232). The engine sends them: Claude asks for a line by its id,
 the engine fills its slots and hands back the exact words, and checks they were said unchanged. The wording is the
-approved script's (framework .planning/research/bmuz-vision/bmuz-design-doc.html, Stages 1–3); a test compares every
+approved script's (framework .planning/research/bmuz-vision/bmuz-design-doc.html, Stages 1–4); a test compares every
 fixed part of the script with this file.
 
 How an entry reads:
@@ -686,6 +686,131 @@ From here we start building. That's a loop: build a few pieces, you play them, w
 header: Build?
 - Not yet: change something — next, tell me what
 - Approve: start building
+
+# Stage 4 · Develop
+
+## develop.welcome · say
+**Welcome to Develop**
+Now we build. From here on it's a loop:
+1. **Plan the sprint**: a few features, each with what you'll see when it's done
+2. **Build & prove**: I build and test them
+3. **Play & approve**: you play each one; nothing is done without your OK
+4. **Tune & revise**: we adjust until it feels right
+5. **Look back**: three lines on how it went
+…then the next sprint.
+
+You can step in any time. Here's how I handle what you bring:
+· **A tweak** to what we're building ("make it a bit faster"): I do it now.
+· **A new idea**: it goes on Ideas for Later and comes back at the milestone where it fits, so we stay focused without losing it.
+· **Something broken**: say so, or type /bug. If it blocks what we're doing, I fix it now; otherwise it's logged and fixed in order.
+· **"Stop"** or **"go back"**: always works. Everything is saved after every step.
+
+Your project page shows the roadmap and every milestone's progress. Each time a milestone is ready, we make a build you can play and share. That's Stage 5, Deliver, and then we come back here.
+
+## develop.setup · say
+**Setup**
+Now that we know what the game needs, I'll set up the project, the tools and any accounts. I'll check the current setup steps for each one first, since these services change often.
+
+## develop.setup.needs · say
+The game needs: {needs}. Most of it I can do myself. These need you to log in: {logins}. I'll walk you through each, one step at a time.
+
+## develop.setup.nologin · say · added
+The game needs: {needs}. I can do all of it myself: nothing needs you to log in.
+
+## develop.setup.step · free
+Step {n} of {total}: {what}. Say "done" when you're in.
+
+## develop.roadmap · say
+**The Roadmap**
+The whole journey ahead, on your project page: {link}
+· Milestones, in order: {milestones}
+· Each one's features, and what each needs first
+· A % for each milestone, which can drop when we add something; that's normal
+· Ideas for Later, kept apart so nothing is lost
+
+We'll look at it together at the start of each milestone, and whenever something big changes.
+
+## develop.roadmap.box · box
+? Start with {first}?
+header: Start
+- Change the order first — next, tell me what
+- Yes, start building
+
+## develop.plan · say
+**Plan the Sprint** · Sprint {n} · {milestone}
+Here's what I'd build next, {count} features:
+
+## develop.plan.feature · say
+**{feature}**
+· You'll see: {see}
+· Done when: {done}
+· Not doing yet: {notyet}
+· Needs from you: {needs}
+
+## develop.plan.box · box
+? Build this sprint?
+header: Sprint
+- Change it — next, tell me what
+- Yes, build it
+
+## develop.progress · say
+⏳ {time}: building {feature} (feature {n} of {total}). Next update when it's done.
+
+## develop.stuck · say
+{piece} isn't working, and two tries haven't fixed it. Here's what I know: {know}. I'll {plan} unless you'd rather I park it.
+
+## develop.ready · say
+**{feature} — ready for you to check**
+· What changed: {changed}
+· Try it: {pc} · {phone}
+· Try this: {try}
+· Checked: {checked}
+
+## develop.approve.box · box
+? Did {moment} feel like {feeling}?
+header: Approve?
+- Yes, approve it
+- Close, needs tuning
+- Not right — next, tell me what feels off
+
+## develop.waiting · say · added
+Every feature of this sprint I could build is built. Waiting for your OK on: {features}. Say "bmuz go" when you're back, and I'll show you each one.
+
+## develop.tune · free
+**Tune & Revise**
+Let's find what feels off. In your words, what's wrong with it?
+
+## develop.tune.try · say
+I think it's {cause}. One setting to try: {setting}. I expect {expect}. It's in the Dev Kit's Tuning tab, so you can move it while the game runs.
+
+## develop.tune.keep · say
+Values you save in the Dev Kit are decisions: I'll keep them.
+
+## develop.tune.rule · free
+No setting will fix this; it's the rule itself. Want to look at the rule together? It goes back to the rulebook, with a dev log entry.
+
+## develop.lookback · free
+**Sprint {n} done** · {milestone} is {pct} done.
+Three lines on how it went: what went well, what went wrong, and what we change next time. Here's my draft; your words win:
+{draft}
+
+## develop.lookback.updated · say
+I've updated the GDD, the rulebook and the technical plan to match what we built. Next sprint: {next}.
+
+## develop.teaching · say
+**Teaching**
+Now that the game plays and people have tried it, we can design how a new player learns it. Studios do this late on purpose: you can only teach well once you've seen where people get stuck.
+
+## develop.teaching.ask · free
+1. In the playtests, where did people get stuck, or ask "what do I do?"
+2. What must a new player understand in the first minute?
+3. Could the first game teach it with no text at all?
+
+## develop.teaching.plan · say
+Here's the tutorial I'd build: {steps}. Each one teaches one thing, in the order players meet it.
+
+## develop.idea · say · added
+Noted on Ideas for Later: {idea}. It comes back at the milestone where it fits.
 
 # Any stage
 
