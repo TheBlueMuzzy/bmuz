@@ -293,7 +293,7 @@ test('review fix 3: a release the release script refuses leaves no "released" ma
   assert.ok(!/✅ released|✅ ready/.test(D.reopen(text, 'Vertical slice')))
 })
 
-test('review fix 2: the version is bumped once: a release that tagged and then died (a timeout, a crash) is adopted on the next try, never bumped again', { todo: 'review fix 2: its fix comes in its own commit' }, () => {
+test('review fix 2: the version is bumped once: a release that tagged and then died (a timeout, a crash) is adopted on the next try, never bumped again', () => {
   const dir = garden()
   shareSaid(dir)
   // release.mjs tags v0.1.0, then exits 1 (as a timeout would)

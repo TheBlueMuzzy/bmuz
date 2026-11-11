@@ -587,13 +587,31 @@ function publishNow(dir, script, now) {
     saveRecord(dir, rec)
   }
   // 2. the records and 3. version + tag
+  // (review fix 2: the version this run releases is on record before release.mjs runs; a try after a timeout or a
+  // crash that came after its tag adopts that release, and the version is never bumped twice)
+  const adoptRelease = () => {
+    const { tag, version: next } = p.intended
+    if (gitOut(dir, ['rev-parse', '--verify', '--quiet', `refs/tags/${tag}`]) === null) return false
+    const have = (readJson(dir, 'version.json') || {}).version
+    if (have !== next) throw new Error(`the tag ${tag} is there, but version.json says ${have}: look at \`git log\` before anything is released again`)
+    p.tag = tag
+    p.version = next
+    saveRecord(dir, rec)
+    return true
+  }
   if (!p.tag) {
     const version = (readJson(dir, 'version.json') || {}).version
     if (!version) write(dir, 'version.json', JSON.stringify({ name: G.gameName(readIn(dir, G.GDD) || '') || 'game', version: '0.0.0', build: 0, history: [] }, null, 2) + '\n')
-    const next = nextVersion((readJson(dir, 'version.json') || {}).version, stage.kind)
-    const tag = `v${next}`
-    const head = gitOut(dir, ['rev-parse', '--short', 'HEAD'])
     if (!version) B.commitFiles(dir, ['version.json'], 'version.json for the first release')
+    if (!p.intended) {
+      const v = nextVersion((readJson(dir, 'version.json') || {}).version, stage.kind)
+      p.intended = { tag: `v${v}`, version: v }
+      saveRecord(dir, rec)
+    }
+  }
+  if (!p.tag && !adoptRelease()) {
+    const { tag, version: next } = p.intended
+    const head = gitOut(dir, ['rev-parse', '--short', 'HEAD'])
     // (review fix 3: release.mjs reads the release's marks — STATE's Log line, ▶ RESUME HERE, the milestone ✅ released,
     // the notes — before it changes anything, so they are written for it; when it refuses, every one is put back as it
     // was, and nothing says "released")
@@ -611,7 +629,8 @@ function publishNow(dir, script, now) {
     G.writePage(dir, now)
     const args = [stage.kind, `${rec.milestone}: the ${stage.key} build`, ...(stage.kind === 'stage' ? [`--stage=${stage.key}`] : [])]
     const made = runTool(dir, 'release', args)
-    if (!made.ok) { putBack(); step(`version ${tag}`, made) }
+    // (it tagged, then failed — a timeout, a crash: that release stands and is adopted; else everything goes back)
+    if (!made.ok && !adoptRelease()) { putBack(); step(`version ${tag}`, made) }
     p.tag = tag
     p.version = next
     saveRecord(dir, rec)
