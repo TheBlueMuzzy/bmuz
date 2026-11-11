@@ -1448,3 +1448,23 @@ test('F228 review: "the game so far" shown in its own turn, then the next step\'
   expect(refused(r)).toBe(false)
   expect(w.files['/proj/.bmuz/journal.jsonl']).not.toMatch(/came before this question box/)
 })
+
+test('F232: an "onBack" step is skipped on the way through; "Not yet" at the gate runs it, told what the creative answered', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(String.fromCharCode(10))); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  on('tool.call', { tool: 'AskUserQuestion' }, (_: any, e: any) => ({ result: { questions: e.questions, answers: { [e.questions[0].question]: 'Not yet: change something' } } }))
+  const w = world(on, base({ current: null, status: 'idle', finished: ['name'] }))
+  w.files.SCRIPT = ['## define.lock.box · box', '? Lock the concept?', 'header: Lock', '- Not yet: change something — next, tell me what', '- Lock it: on to Design', ''].join(String.fromCharCode(10))
+  w.files.PIPELINE = JSON.stringify({ ...PIPE, steps: [PIPE.steps[0],
+    { id: 'change', kind: 'talk', needs: ['name'], onBack: true, tools: ['Read'], craft: 'craft/name.md', results: ['chapters'] },
+    { id: 'lock', kind: 'gate', needs: ['change'], line: 'define.lock.box', approve: 'Lock it: on to Design', backTo: 'change' }] })
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't1')
+  const js = () => w.files['/proj/.bmuz/journal.jsonl'].split('\n').filter(Boolean).map((l: string) => JSON.parse(l))
+  expect(js().find((j: any) => j.ev === 'step.skip' && j.step === 'change')).toMatchObject({ onBack: true })
+  expect(js().find((j: any) => j.ev === 'gate.back')).toMatchObject({ step: 'lock', back: { step: 'change', answer: 'Not yet: change something' } })
+  expect(prompts.some(p => /^BMUZ step "change"/.test(p) && /The creative answered "Not yet: change something" at "define\.lock\.box", so this step runs again/.test(p))).toBe(true)
+})
