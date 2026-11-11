@@ -21,7 +21,7 @@ export function specFragments(html) {
   const out = []
   for (const m of html.matchAll(/<article class="step[^"]*">([\s\S]*?)<\/article>/g)) {
     const num = (m[1].match(/class="num">([^<]+)/) || [])[1]
-    if (!num || !/^[12]\./.test(num)) continue
+    if (!num || !/^[123]\./.test(num)) continue
     const parts = []
     // (slots out first: a slot's own </span> would end an inline message early)
     const body = m[1].replace(/<span class="slot">[^<]*<\/span>/g, '\u0001')
@@ -31,7 +31,8 @@ export function specFragments(html) {
       parts.push(...txt(raw.replace(/only shown when the material already covers it:/, '')).split('\u0001'))
     }
     for (const p of parts) {
-      const w = E.plainWords(p).replace(/^[.:,\s]+|[\s]+$/g, '')
+      // (a "·" right before a list slot is the slot's own bullet: a list fills as "· " lines — Design's 3.1, 3.3, 3.9)
+      const w = E.plainWords(p).replace(/^[.:,\s]+|[\s]+$/g, '').replace(/\s+·$/, '')
       if (w.length >= 3) out.push({ num, words: w })
     }
   }
@@ -48,18 +49,18 @@ test('the script file reads: no problems, every box 2–4 options with a short h
   }
 })
 
-test('every fixed part of the approved script (Stages 1–2) is in script.md word for word', { skip: !existsSync(SPEC) && 'the framework repo is not beside this one' }, () => {
+test('every fixed part of the approved script (Stages 1–3) is in script.md word for word', { skip: !existsSync(SPEC) && 'the framework repo is not beside this one' }, () => {
   const frags = specFragments(readFileSync(SPEC, 'utf8'))
   assert.ok(frags.length > 150, `${frags.length} fragments`)
   const mine = E.plainWords(scriptText.split('# Stage 1 · Ideate')[1])
   const missing = frags.filter(f => !mine.includes(f.words))
   assert.deepEqual(missing.map(f => `${f.num}: ${f.words.slice(0, 90)}`), [])
   // every step of the spec's Stages 1–2 is covered (1.0 – 1.7, 2.0 – 2.8)
-  assert.deepEqual([...new Set(frags.map(f => f.num))], ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '2.0', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '2.8'])
+  assert.deepEqual([...new Set(frags.map(f => f.num))], ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '2.0', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '2.8', '3.0', '3.1', '3.2', '3.3', '3.4', '3.5', '3.6', '3.7', '3.8', '3.9', '3.10'])
 })
 
 test('lines not in the approved script are marked "added" (each one has an Ask Muzzy line)', () => {
-  assert.deepEqual(Object.values(script.lines).filter(l => l.added).map(l => l.id).sort(), ['any.keep', 'define.feelings.eight'])
+  assert.deepEqual(Object.values(script.lines).filter(l => l.added).map(l => l.id).sort(), ['any.keep', 'define.feelings.eight', 'design.rulebook.ok', 'design.rulebook.section', 'design.sketches.none', 'design.time.notrap'])
 })
 
 test('filling a line: slots, lists as · lines, numbered lists, [[ … ]] only when filled, numbered questions left out and renumbered, another line inside', () => {

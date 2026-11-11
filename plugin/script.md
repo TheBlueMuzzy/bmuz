@@ -2,7 +2,7 @@
 
 Every fixed line BMUZ says lives here, and only here (F232). The engine sends them: Claude asks for a line by its id,
 the engine fills its slots and hands back the exact words, and checks they were said unchanged. The wording is the
-approved script's (framework .planning/research/bmuz-vision/bmuz-design-doc.html, Stages 1–2); a test compares every
+approved script's (framework .planning/research/bmuz-vision/bmuz-design-doc.html, Stages 1–3); a test compares every
 fixed part of the script with this file.
 
 How an entry reads:
@@ -415,6 +415,279 @@ Locking means Design builds on this page. You can still change it later; every c
 header: Lock
 - Not yet: change something — next, tell me what
 - Lock it: on to Design
+
+# Stage 3 · Design
+
+## design.welcome · say
+**Welcome to Design**
+The concept is locked. Now we work the game out in detail, in two halves.
+
+**The game itself**
+1. **Sketches**: we build the sketches on your list and play them
+2. **The Rulebook**: the rules, written like a real rulebook
+3. **Content & Balance**: every card, unit, ability and number, in tables
+4. **Change Over Time**: what changes within a game and between games
+5. **Scope & Risks, second pass**: the rulebook always adds things, so we size it up again
+
+**The digital game around it**
+6. **Players & Opponents**: the computer opponent, online play, saving
+7. **Look & Sound**: the style, tested at real size
+8. **Screens & Menus**: every screen and what's on it
+9. **The Build Plan**: how it all gets built, and in what order
+
+This is the longest stage, usually a few sittings. The rulebook is the heart of it and gets rewritten many times; that's how good rulebooks are made. You can stop after any step, and everything is saved.
+
+## design.sketches · say
+**Sketches, Round 1**
+Time to build the sketches on your list. A reminder: these are only sketches, small throwaway pages that each answer one question. We won't build the game from them, only from what they prove.
+
+## design.sketches.list · say
+Your list: {list}. Before I build each one, here's how we'll know the answer:
+{tests}
+
+## design.sketches.none · say · added
+Your sketch list is empty, so there's nothing to build in this round. A new sketch can be added any time.
+
+## design.sketches.order · box
+? Build them in this order?
+header: Order
+- Yes, build them
+- Change the order or the tests — next, tell me what
+
+## design.sketch.ready · say
+**{name}** is ready: {link}
+It answers: {question}
+Try moving: {knobs}. When a setting feels right, press "Copy values for Claude" and paste them here.
+
+## design.sketch.answered · box
+? Did {sketch} answer the question?
+header: Answered?
+- Yes, keep what it showed — paste your values if you have them
+- Partly, try another way — next, tell me what to change
+- No, rethink it — it goes back to Open Questions
+
+## design.sketch.sim · say
+{name} is a numbers question, so I ran {how} instead of a sketch: {found}.
+
+## design.rulebook · say
+**The Rulebook**
+The rules, written like a real rulebook. This becomes the single truth: the game, the tests and the tutorial all follow it.
+
+This is a first pass, so we capture every rule and don't polish. "TBD", "X" for a number we don't know yet, and two rival rules side by side ("Rule A / Rule B, to test") are all fine. It'll be rewritten many times, and a dated development log at the end records what changed and why.
+
+The structure, the same order your own rulebooks use:
+Overview · Components · How to Win · Setup · Gameplay (the Flow, then each action) · Game End · Scoring · Keywords · Development Log
+
+## design.rulebook.research · box
+? Before we start, want me to read the rulebooks of the closest games, for how they explain similar rules?
+header: Research
+- Yes, research first (Recommended) — about 5 minutes, sources on your project page
+- No, start now
+
+## design.rulebook.flow · free
+We start with the heart: the Flow. Your core loop was: **{loop}**.
+Walk me through one turn, step by step, as if you were teaching a friend at the table.
+
+## design.rulebook.flow.here · say
+Here's the Flow as I've written it:
+{flow#}
+The full rulebook is on your project page now, as its own tab.
+
+## design.rulebook.flow.ok · box
+? Is that how a turn goes?
+header: The Flow
+- Yes
+- Change something — next, tell me what
+
+## design.rulebook.win · free
+How do you win, and how does a game end?
+
+## design.rulebook.setup · free
+How is the game set up, before the first turn?
+
+## design.rulebook.pieces · free
+What are all the pieces? Here's what I have so far: {pieces}. Anything missing?
+
+## design.rulebook.action · free
+For {action}: what exactly happens, and what can't you do?
+
+## design.rulebook.edge · free
+What happens when {edge}?
+
+## design.rulebook.secret · free
+What's secret, from whom, and until when?
+
+## design.rulebook.names · free
+What do players call each thing and each action? I'll keep one name per thing, everywhere.
+
+## design.rulebook.section · say · added
+Here's {section} as I've written it:
+{text}
+
+## design.rulebook.ok · box · added
+? Is that right?
+header: Rulebook
+- Yes
+- Change something — next, tell me what
+
+## design.rulebook.done · say
+First pass done. {tbd} rules are marked TBD and {ab} is a Rule A / Rule B to test. I've added a first Development Log entry:
+{entry}
+You can read and edit it any time, on your project page or in Obsidian. I keep your edits.
+
+## design.content · say
+**Content & Balance**
+Every card, unit, ability, level and number, in tables: the second document beside the rulebook. One table per kind of thing, one row each. In the finished game these tables are the files the game reads, so you can tune them live later.
+
+## design.content.kinds · free
+From the rulebook, the game has these kinds of things: {kinds}. Anything missing?
+
+## design.content.columns · free
+For {kind}, here are the columns I'd use: {columns}. Change any, then tell me the ones you already have in mind, even rough.
+
+## design.content.balance · free
+I've worked out a balance value for each row, from {basis}. These stand out:
+{standouts}
+Want me to suggest fixes, or would you rather adjust them yourself?
+
+## design.content.playtest · say
+There's also a Playtesting table for every test game: date, players, start, end, length, scores. I'll fill it in as you play.
+
+## design.time · free
+**Change Over Time**
+What changes during a game and between games, and how fast. This is what keeps the hundredth game from feeling like the first.
+
+1. What's different at the end of a game compared with the start?
+2. What changes from one game to the next, if anything?
+3. If there's a longer journey (levels, unlocks, ranks): how long is it, and does each step bring something new?
+4. What decides when a player moves up?
+
+## design.time.trap · free
+I checked for the common traps. {trap} Want to keep that, or soften it?
+
+## design.time.notrap · say · added
+I checked for the common traps and didn't find one: {why}.
+
+## design.scope2 · say
+**Scope & Risks, Second Pass**
+The rulebook always turns up new pieces, new problems and new questions. So we size it all up again, with what we know now.
+
+## design.scope2.added · say
+The rulebook added these: {added}.
+
+## design.scope2.report · say
+The effort vs impact chart is redrawn on your project page. What moved: {moved}.
+The vertical slice is now: {slice}.
+New risks: {risks}. New sketches, added as round 2: {sketches}.
+
+## design.scope2.pitch · box
+? Does the pitch still say it right?
+header: The pitch
+- Yes
+- Rework the pitch — back to The Pitch, then here again
+
+## design.players · say
+**Players & Opponents**
+Now the digital game around the rules, starting with who you play with and against. Knowing the gameplay first makes these choices much easier. This also starts the technical plan, the TDD.
+
+## design.players.read · say
+I read how similar games handle this first:
+{found}
+Sources are on your project page.
+
+## design.players.ai · free
+How should the computer opponent play: what does it go for, how does it change by difficulty, and how does it still try to win?
+
+## design.players.online · free
+Online: what happens when someone leaves, goes quiet, comes back or joins late? Can the room play again?
+
+## design.players.length · free
+How long is one game? Can it be paused or saved halfway?
+
+## design.players.needs · box
+? Which of these does the game need? (pick any)
+header: Needs
+many: yes
+- Accounts — players sign in
+- Friends or invites
+- Leaderboards
+- None of these
+
+## design.look · say
+**Look & Sound**
+The style of the game, tested at the size it'll actually be played, before the full build.
+
+## design.look.refs · free
+Share any pictures or games whose look you love: paste links, or describe them.
+
+## design.look.sketches · say
+From your references, here are {n} look sketches, side by side at real phone size: {link}.
+
+## design.look.pick · box
+? Which look is closest?
+header: The look
+- [each looks] {.}
+- None yet — next, tell me what's missing
+
+## design.look.motion · free
+How do the pieces move: slide, snap, fly, bounce?
+
+## design.look.sound · free
+What should it sound like? And is a simple placeholder sound good enough for the first playable version? Most games start that way.
+
+## design.screens · say
+**Screens & Menus**
+Every screen in the game, and what's on each one.
+
+## design.screens.map · free
+Here's the screen map: {map}. Anything missing?
+
+## design.screens.eyes · free
+During play, where are the player's eyes? What must they see at a glance?
+
+## design.screens.choose · free
+What do players choose before a game, and what's a setting they change once?
+
+## design.screens.end · free
+At the end of a game, what does the screen show, and what does it celebrate?
+
+## design.screens.style · box
+? Which UI style fits? (all seven shown side by side on your project page)
+header: UI style
+- [each styles] {.}
+
+## design.screens.teach · say
+I'll also note what a new player will need to learn. The tutorial itself comes much later, after people have played it.
+
+## design.plan · say
+**The Build Plan**
+Everything so far, turned into a plan for building. The technical choices are mine, so I won't ask you about them; I'll tell you what I picked and why, in plain words.
+
+## design.plan.how · say
+Here's how it'll be built:
+{how}
+The full technical plan, the TDD, is on your project page.
+
+## design.plan.roadmap · say
+And here's the roadmap, the order we'll build in:
+{milestones#}
+Each milestone lists its features and what each one needs first.
+
+## design.review · say
+**Blueprint Review**
+Before anything is built, one full read-through. Everything is on your project page:
+· The GDD, start to end
+· The rulebook and the content tables
+· The technical plan (TDD)
+· The roadmap, with the first sprint it would start with: {sprint}
+
+From here we start building. That's a loop: build a few pieces, you play them, we tune, and again. You can still change anything; changes are logged, and big ones may move the roadmap.
+
+## design.review.box · box
+? Ready to build?
+header: Build?
+- Not yet: change something — next, tell me what
+- Approve: start building
 
 # Any stage
 
