@@ -114,6 +114,7 @@
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["ideate.open", "ideate.open.ask", "ideate.pool.mentioned", "ideate.pool.remember", "ideate.pool.where", "ideate.pool.end", "ideate.pool.skill", "ideate.pool.smallest", "ideate.pool.decided", "ideate.added", "ideate.round"],
       "opening": ["ideate.open", "ideate.open.ask"],
+      "must": ["ideate.added", "ideate.round"],
       "craft": "craft/ideate-open.md",
       "results": ["chapters", "rounds"],
       "recap": ["sofar"]
@@ -136,6 +137,7 @@
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["ideate.sketch", "ideate.sketch.pick", "ideate.sketch.more", "ideate.sketch.added"],
       "opening": ["ideate.sketch"],
+      "must": ["ideate.sketch.more", "ideate.sketch.added"],
       "craft": "craft/ideate-sketches.md",
       "results": ["sketches"]
     },

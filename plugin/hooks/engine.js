@@ -88,8 +88,9 @@ const STEP_KEYS = {
   // no + title (F232): the script's step number ("2.3") and name ("The Pitch"), for the band ("Define · 3 of 8 · The
   // Pitch"); onBack: the step runs only when a gate sent the creative back to it (Define's Concept Lock "Not yet")
   common: ['id', 'kind', 'needs', 'description', 'timeoutMs', 'always', 'retries', 'when', 'no', 'title', 'onBack'],
-  // lines (F232): the script lines the step may say (plugin/script.md); opening: the ones it must say first
-  talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results', 'wrapTo', 'recap', 'lines', 'opening'],
+  // lines (F232): the script lines the step may say (plugin/script.md); opening: the ones it must say first;
+  // must: the ones it always says, so step_done is refused until each was handed out (the rest depend on the game)
+  talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results', 'wrapTo', 'recap', 'lines', 'opening', 'must'],
   // line (F232): the gate's question and options come from that script box
   gate: ['question', 'options', 'approve', 'backTo', 'line'],
   // show: a .md file the script wrote; after the step passes, the engine shows it to the creative word for word
@@ -200,6 +201,10 @@ export function checkPipeline(p) {
     if (s.onBack !== undefined && typeof s.onBack !== 'boolean') problems.push(`${at}: "onBack" must be true or false`)
     if (s.lines !== undefined && !(isList(s.lines) && s.lines.every(id => /^[a-z][a-z0-9.-]*$/.test(id)))) problems.push(`${at}: "lines" must be a list of script line ids, like ["define.pitch"]`)
     if (s.opening !== undefined && !(isList(s.opening) && s.opening.length)) problems.push(`${at}: "opening" must be a list of the line ids the step says first`)
+    if (s.must !== undefined) {
+      if (!(isList(s.must) && s.must.length)) problems.push(`${at}: "must" must be a list of the line ids the step always says`)
+      else for (const id of s.must) if (!(s.lines || []).includes(id)) problems.push(`${at}: "must" line "${id}" isn't one of the step's "lines"`)
+    }
     if (s.kind === 'gate' && s.line !== undefined) {
       if (typeof s.line !== 'string' || !/^[a-z][a-z0-9.-]*$/.test(s.line)) problems.push(`${at} (gate): "line" must be a script box id`)
       if (s.question !== undefined || s.options !== undefined) problems.push(`${at} (gate): a gate with a script "line" takes its question and options from it; leave out "question" and "options"`)
@@ -293,7 +298,7 @@ function dropSteps(state, drop) {
   const finished = state.finished.filter(id => !drop.has(id))
   const resultsBy = Object.fromEntries(Object.entries(state.resultsBy || {}).filter(([id]) => !drop.has(id)))
   const retries = Object.fromEntries(Object.entries(state.retries || {}).filter(([id]) => !drop.has(id)))
-  const out = { ...state, finished, resultsBy, retries, ask: null, boxes: [], opened: null, results: state.resultsBy ? mergeResults(finished, resultsBy) : state.results }
+  const out = { ...state, finished, resultsBy, retries, ask: null, boxes: [], opened: null, said: null, results: state.resultsBy ? mergeResults(finished, resultsBy) : state.results }
   // A skipped step taken off the finished list runs for real next time.
   if (state.skipped) out.skipped = state.skipped.filter(id => !drop.has(id))
   return out
@@ -1096,6 +1101,7 @@ export function finish(state, step, result) {
     ask: null, // nor a talk step's open free question, its script boxes or its opening mark (F232)
     boxes: [],
     opened: null,
+    said: null, // (the lines this step handed out, for its "must")
     back: state.back && state.back.step === step.id ? null : state.back || null,
     current: null,
     status: 'idle',
@@ -1146,7 +1152,19 @@ export function unblock(state) {
 
 export function begin(state, step, now) {
   const status = step.kind === 'gate' ? 'waiting' : 'working'
-  return { ...state, current: step.id, status, startedAt: now }
+  // (the script lines handed out in this step, for its "must"; a restart of the same step keeps them)
+  const said = state.said && state.said.step === step.id ? state.said : { step: step.id, lines: [] }
+  return { ...state, current: step.id, status, startedAt: now, said }
+}
+
+// A talk step's "must" lines not handed out yet (state.said): step_done is refused, naming them, until each was said
+// (headless design-garden 2026-11-11: Players & Opponents finished after its opening alone). null = fine.
+export function mustProblem(step, state) {
+  const had = state && state.said && state.said.step === step.id && Array.isArray(state.said.lines) ? state.said.lines : []
+  const left = (isList(step.must) ? step.must : []).filter(id => !had.includes(id))
+  if (!left.length) return null
+  const many = left.length > 1
+  return `the step isn't finished: the script's line${many ? 's' : ''} ${left.map(id => `"${id}"`).join(', ')} ${many ? 'were' : 'was'} never said. Say ${many ? 'each' : 'it'} with ${SAY_TOOL} {"line": "<id>"} the way the craft note says (an auto run too: take the answer from the test answers), then call ${ENGINE_TOOL} again`
 }
 
 // Gate answer: the `approve` option approves; any other sends the creative back to
@@ -1273,7 +1291,7 @@ export function doctor(p, stateText, journalLines, lock, sessionId, now) {
     lines.push(`The state file disagreed with the journal (state: ${kept.status} at ${kept.current || 'no step'}, ${kept.finished.length} finished; journal: ${rebuilt.status} at ${rebuilt.current || 'no step'}, ${rebuilt.finished.length} finished): went with the journal.`)
     fixed = true
   }
-  const state = fixed ? { ...rebuilt, flow: kept && kept.flow, ask: kept && kept.ask, boxes: (kept && kept.boxes) || [], opened: kept && kept.opened } : kept
+  const state = fixed ? { ...rebuilt, flow: kept && kept.flow, ask: kept && kept.ask, boxes: (kept && kept.boxes) || [], opened: kept && kept.opened, said: (kept && kept.said) || null } : kept
   if (lock && lock.step && !lock.closed && lock.session !== sessionId) lines.push(`The last session (${String(lock.session).slice(0, 8)}) ended without closing, during step "${lock.step}" (${lock.status}).`)
   if (state.status === 'blocked' && state.blocked) lines.push(`Step "${state.blocked.step}" is BLOCKED: ${state.blocked.why}. Say "bmuz retry" to give it 2 more tries, or "bmuz undo" to go back further.`)
   for (const [id, n] of Object.entries(state.retries || {})) if (n && !(state.blocked && state.blocked.step === id)) lines.push(`Step "${id}" has used ${n} of its ${MAX_RETRIES} retries.`)

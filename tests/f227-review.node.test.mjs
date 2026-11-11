@@ -80,6 +80,30 @@ test('A6: the content steps\' "writes" cover content/data/*.json; a pattern is a
 })
 
 // ---- after the review: what let design-garden's players step through (headless 2026-11-11, 8/10) ----
+test('must: a talk step\'s "must" lines are checked against the lines handed out this step; the pipeline check keeps them inside "lines"', async () => {
+  const E = await import('../plugin/hooks/engine.js')
+  const { readFileSync } = await import('node:fs')
+  const D = JSON.parse(readFileSync(new URL('../plugin/pipelines/design.json', import.meta.url), 'utf8'))
+  const players = D.steps.find(s => s.id === 'players')
+  assert.deepEqual(players.must, ['design.players.length', 'design.players.needs'])
+  for (const p of ['ideate', 'define', 'design']) {
+    const P = JSON.parse(readFileSync(new URL(`../plugin/pipelines/${p}.json`, import.meta.url), 'utf8'))
+    assert.deepEqual(E.checkPipeline(P), [], p)
+  }
+  const bad = { id: 'p', version: 1, steps: [{ id: 'a', kind: 'talk', tools: ['Read'], lines: ['x.one'], must: ['x.two'] }] }
+  assert.ok(E.checkPipeline(bad).some(p => /"must" line "x.two" isn't one of the step's "lines"/.test(p)))
+  // nothing said yet: both named; one said: the other named; another step's record doesn't count
+  assert.match(E.mustProblem(players, { said: null }), /"design\.players\.length", "design\.players\.needs" were never said/)
+  assert.match(E.mustProblem(players, { said: { step: 'players', lines: ['design.players.read', 'design.players.length'] } }), /line "design\.players\.needs" was never said[^]*mcp__bmuz__say/)
+  assert.ok(E.mustProblem(players, { said: { step: 'look', lines: ['design.players.length', 'design.players.needs'] } }))
+  assert.equal(E.mustProblem(players, { said: { step: 'players', lines: ['design.players.length', 'design.players.needs'] } }), null)
+  // a step's record starts with it and ends when it finishes
+  const s1 = E.begin({ finished: [], said: { step: 'look', lines: ['a'] } }, players, 1)
+  assert.deepEqual(s1.said, { step: 'players', lines: [] })
+  assert.deepEqual(E.begin({ ...s1, said: { step: 'players', lines: ['b'] } }, players, 2).said, { step: 'players', lines: ['b'] }, 'a restart keeps what was said')
+  assert.equal(E.finish({ ...s1, results: {}, retries: {} }, players, {}).said, null)
+})
+
 test('chapters: a chapter-writing step\'s result with a chapter number outside "chapters" is refused with the expected shape', async () => {
   const E = await import('../plugin/hooks/engine.js')
   const { readFileSync } = await import('node:fs')

@@ -26,6 +26,7 @@
       "description": "The one or two feelings that are this game, how we'd know, and what it won't have",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["define.feelings", "define.feelings.moments", "define.feelings.own", "define.feelings.match", "define.feelings.right", "define.feelings.eight", "define.feelings.know", "define.feelings.not", "any.keep"],
+      "must": ["define.feelings.know", "define.feelings.not"],
       "opening": ["define.feelings"],
       "craft": "craft/define-feelings.md",
       "results": ["chapters", "feelings", "feeling"]
@@ -47,6 +48,7 @@
       "description": "Three short rules that settle arguments later",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["define.pillars", "define.pillars.take", "define.pillars.own", "define.pillars.test", "define.pillars.slogan", "any.keep"],
+      "must": ["define.pillars.take", "define.pillars.test"],
       "opening": ["define.pillars"],
       "craft": "craft/define-pillars.md",
       "results": ["chapters", "pillars"]
@@ -102,6 +104,7 @@
       "description": "Your take or mine: 3–5 lines written to \"you\", and one line",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["define.pitch.found", "define.pitch.take", "define.pitch.write", "define.pitch.mine", "define.pitch.how", "define.pitch.different", "define.pitch.meets", "define.pitch.breath", "any.keep"],
+      "must": ["define.pitch.take", "define.pitch.breath"],
       "craft": "craft/define-pitch.md",
       "results": ["chapters", "oneliner"],
       "recap": ["research"]
@@ -123,6 +126,7 @@
       "description": "What you do, over and over: the heartbeat of the game",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["define.loop", "define.loop.steps", "define.loop.time", "define.loop.verbs", "define.loop.here", "define.loop.ok", "any.keep"],
+      "must": ["define.loop.here", "define.loop.ok"],
       "opening": ["define.loop"],
       "craft": "craft/define-loop.md",
       "results": ["chapters", "loop"]
@@ -144,6 +148,7 @@
       "description": "Where it's played first, and who with",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["define.platform", "define.platform.where", "define.platform.first", "define.platform.someday", "define.platform.who", "define.platform.ai", "any.keep"],
+      "must": ["define.platform.where", "define.platform.first", "define.platform.someday", "define.platform.who"],
       "opening": ["define.platform"],
       "craft": "craft/define-platform.md",
       "results": ["chapters", "platform"]
@@ -211,6 +216,7 @@
       "description": "Must / Should / Could / Won't, effort vs impact",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["define.scope", "define.scope.smallest", "define.scope.idea", "define.scope.wont"],
+      "must": ["define.scope.smallest"],
       "opening": ["define.scope"],
       "craft": "craft/define-scope.md",
       "results": ["chapters", "musts"]
@@ -232,6 +238,7 @@
       "description": "The chart, the vertical slice, and my first report",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["define.scope.chart", "define.scope.slice", "define.scope.slice.ok", "define.scope.report"],
+      "must": ["define.scope.slice", "define.scope.slice.ok", "define.scope.report"],
       "opening": ["define.scope.chart"],
       "craft": "craft/define-slice.md",
       "results": ["chapters", "slice"]

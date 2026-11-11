@@ -152,6 +152,7 @@
       "description": "The Flow as written: is that how a turn goes?",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["design.rulebook.flow.here", "design.rulebook.flow.ok"],
+      "must": ["design.rulebook.flow.ok"],
       "opening": ["design.rulebook.flow.here"],
       "craft": "craft/design-flow-check.md",
       "results": ["chapters"]
@@ -181,6 +182,7 @@
       "description": "Then outward, one section at a time: winning, setup, the pieces, each action, edge cases, secrets, names",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["design.rulebook.win", "design.rulebook.setup", "design.rulebook.pieces", "design.rulebook.action", "design.rulebook.edge", "design.rulebook.secret", "design.rulebook.names", "design.rulebook.section", "design.rulebook.ok"],
+      "must": ["design.rulebook.section", "design.rulebook.ok"],
       "craft": "craft/design-sections.md",
       "results": ["rulebook"]
     },
@@ -213,6 +215,7 @@
       "description": "Every kind of thing in the game, one table each",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["design.content", "design.content.kinds", "design.content.columns"],
+      "must": ["design.content.kinds", "design.content.columns"],
       "opening": ["design.content"],
       "craft": "craft/design-content.md",
       "results": ["tables"]
@@ -234,6 +237,7 @@
       "description": "The balance values: what stands out, and fixes if you want them",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["design.content.balance", "design.content.playtest"],
+      "must": ["design.content.playtest"],
       "opening": ["design.content.balance"],
       "craft": "craft/design-balance.md",
       "results": ["tables"]
@@ -276,6 +280,7 @@
       "description": "What the rulebook added, each sized: Must / Should / Could / Won't",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["design.scope2", "design.scope2.added", "define.scope.idea"],
+      "must": ["design.scope2.added"],
       "opening": ["design.scope2"],
       "craft": "craft/design-scope2.md",
       "results": ["chapters", "added"]
@@ -339,6 +344,7 @@
       "description": "The computer opponent, online people, a game's length and saving, accounts",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["design.players.read", "design.players.ai", "design.players.online", "design.players.length", "design.players.needs"],
+      "must": ["design.players.length", "design.players.needs"],
       "opening": ["design.players.read"],
       "craft": "craft/design-players.md",
       "results": ["chapters", "needs"],
@@ -396,6 +402,7 @@
       "description": "Which look is closest; how the pieces move; how it sounds",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["design.look.sketches", "design.look.pick", "design.look.motion", "design.look.sound"],
+      "must": ["design.look.motion", "design.look.sound"],
       "opening": ["design.look.sketches"],
       "craft": "craft/design-look-pick.md",
       "results": ["chapters"],
@@ -418,6 +425,7 @@
       "description": "Every screen and what's on it; the UI style; what a new player must learn",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["design.screens", "design.screens.map", "design.screens.eyes", "design.screens.choose", "design.screens.end", "design.screens.style", "design.screens.teach"],
+      "must": ["design.screens.eyes", "design.screens.choose", "design.screens.end", "design.screens.style", "design.screens.teach"],
       "opening": ["design.screens", "design.screens.map"],
       "craft": "craft/design-screens.md",
       "results": ["chapters", "style"]

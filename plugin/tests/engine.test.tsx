@@ -414,6 +414,26 @@ test('F232 review: a long line said again and again without step_done is carried
   expect(w.files['/proj/.bmuz/journal.jsonl'].match(/"ev":"continue","step":"ask"/g)?.length).toBe(2)
 })
 
+// (headless design-garden 2026-11-11: Players & Opponents finished after its opening, its other lines never said)
+for (const live of [true, false]) {
+  test(`F232 review: step_done before the step's "must" lines were said is refused, naming them (${live ? 'live' : 'auto'} run); said, it passes`, async ($, on) => {
+    mock.clock(on, { now: 1000 })
+    const { w } = sayWorld(on)
+    const p = JSON.parse(w.files.PIPELINE)
+    p.steps[0].must = ['define.pitch', 'define.pitch.how']
+    w.files.PIPELINE = JSON.stringify(p)
+    await start($, live)
+    await $.tool.call({ tool: SAY, line: 'define.pitch' } as any)
+    const early: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { priorArt: 'no' } } as any)
+    expect(String(early.result)).toMatch(/^Not done: the step isn't finished: the script's line "define\.pitch\.how" was never said\. Say it with mcp__bmuz__say/)
+    expect(JSON.parse(w.files['/proj/.bmuz/state.json']).finished).toEqual([])
+    await $.tool.call({ tool: SAY, line: 'define.pitch.how' } as any)
+    const ok: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { priorArt: 'no' } } as any)
+    expect(String(ok.result)).toMatch(/^Recorded/)
+    expect(JSON.parse(w.files['/proj/.bmuz/state.json']).said).toBe(null)
+  })
+}
+
 test('F232: in an auto run a free line opens no question (nobody will type) and the box is never asked', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const { w } = sayWorld(on)

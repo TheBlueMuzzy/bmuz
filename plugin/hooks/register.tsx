@@ -772,7 +772,9 @@ async function stepDone($: any, e: any) {
   const cardVerdict = step.handoff ? E.checkCard(card, decisions) : { ok: true }
   // Every key in the step's "results" list must come back (a slug that names a file must be a slug).
   const missing = E.resultProblems(ctx.pipeline, step, result)
-  const firstVerdict = !cardVerdict.ok ? cardVerdict : missing ? { ok: false, why: missing } : null
+  // The lines the step always says ("must") were all handed out, live or auto (a wrap-up is the creative's choice).
+  const unsaid = wrap === true ? null : E.mustProblem(step, ctx.state)
+  const firstVerdict = unsaid ? { ok: false, why: unsaid } : !cardVerdict.ok ? cardVerdict : missing ? { ok: false, why: missing } : null
   const verdict = firstVerdict ?? E.doneCheck(step, vars(), await look($, step, result))
   const next = await settle($, step, verdict, result)
   if (next === 'next' && step.wrapTo && wrap === true) await wrapUp($, step)
@@ -891,6 +893,9 @@ async function sayTool($: any, e: any) {
       return deny('BMUZ engine: a box comes last, after at most a short line of words (no free question, nothing long: a box covers text written above it). Say the words on their own first.')
     }
   }
+  // (the lines handed out in this step, for its "must"; saved with the rest of this call below)
+  const had = ctx.state.said && ctx.state.said.step === step.id && Array.isArray(ctx.state.said.lines) ? ctx.state.said.lines : []
+  ctx.state = { ...ctx.state, said: { step: step.id, lines: [...new Set([...had, ...ids])] } }
   if (words.length) {
     for (const r of words) await journal($, { ev: 'line', step: step.id, line: r.id, kind: r.kind, text: r.text })
     if (turnSaid.step !== step.id) turnSaid = { step: step.id, lines: [] }
