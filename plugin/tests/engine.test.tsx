@@ -1539,3 +1539,180 @@ test('F232: an "onBack" step is skipped on the way through; "Not yet" at the gat
   expect(js().find((j: any) => j.ev === 'gate.back')).toMatchObject({ step: 'lock', back: { step: 'change', answer: 'Not yet: change something' } })
   expect(prompts.some(p => /^BMUZ step "change"/.test(p) && /The creative answered "Not yet: change something" at "define\.lock\.box", so this step runs again/.test(p))).toBe(true)
 })
+
+// ---- F215: stepping in with a bug (a side trip that leaves the step as it was) and the fix run beside the stage ----
+const NL = String.fromCharCode(10)
+const BUG_LINES = [
+  '## bug.logged · say', "Logged as a bug: {bug}. It doesn't block what we're doing, so I'll fix it {when}.", '',
+  '## bug.now · say · added', "Logged as a bug: {bug}. It blocks what we're doing, so I'll fix it now.", '',
+  '## bug.often · box · added', '? Does it happen every time, or just once?', 'header: How often', '- Every time', '- Just once', '- Not sure', '',
+  '## bug.none · say · added', 'Nothing to fix: there are no open bugs.', '',
+  '## bug.how · say', "**Something broken**: say so, or type /bug. If it blocks what we're doing, I fix it now; otherwise it's logged and fixed in order.", '',
+].join(NL)
+const B004 = 'B004 · Score cut off on phone · P2 — annoying, not blocking'
+const REPORT = { tool: 'mcp__bmuz__bug', title: 'Score cut off on phone', level: 'P2', steps: ['Open it on a phone'], expected: 'the whole score', actual: 'the last digit is cut off' }
+const LOGGED = `Logged as a bug: ${B004}. It doesn't block what we're doing, so I'll fix it after F07.`
+// bugs.mjs as the fake disk answers it: "add" logs B004, "next" hands B004 out (or nothing, when none = true).
+function bugRuns(none = false) {
+  return (argv: string[]) => {
+    if (!/bugs[.]mjs$/.test(String(argv[1] ?? ''))) return { exitCode: 0, stdout: '{}' }
+    if (argv[2] === 'add') return { exitCode: 0, stdout: JSON.stringify({ ok: true, id: 'B004', bug: B004 }) }
+    if (argv[2] === 'next') return { exitCode: 0, stdout: JSON.stringify(none ? { ok: false, none: true } : { ok: true, id: 'B004', level: 'P2', bug: B004 }) }
+    return { exitCode: 0, stdout: JSON.stringify({ ok: true, bug: B004 }) }
+  }
+}
+function bugWorld(on: any, over: Record<string, unknown> = {}, opts: { none?: boolean } = {}) {
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(NL)); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, base(over), bugRuns(opts.none))
+  const p = JSON.parse(w.files.PIPELINE)
+  p.steps[0] = { ...p.steps[0], lines: ['define.pitch', 'define.pitch.how'], done: undefined, results: ['name'] }
+  w.files.PIPELINE = JSON.stringify(p)
+  w.files.SCRIPT = SCRIPT + NL + BUG_LINES
+  w.files['/proj/.planning/SPRINT.md'] = ['# Sprint 3', '## F06 Seeds', '- [x] done', '## F07 Weather cards', '- [ ] 1. the hail card'].join(NL)
+  return { w, prompts }
+}
+const keep = (s: any) => ({ current: s.current, status: s.status, results: s.results, retries: s.retries, said: s.said, finished: s.finished, opened: s.opened })
+const PITCH_BOX = { question: "How's that?", header: 'The pitch', multiSelect: false, options: [{ label: 'Keep it', description: '' }, { label: 'Change something', description: 'next, tell me what' }] }
+const talked = (prompts: string[]) => prompts.filter(p => /step "name"/.test(p)).length
+
+test('F215: a bug that comes as the answer to a question box is logged; the line comes back word for word; the step\'s record is untouched and the box is asked again', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = bugWorld(on, { current: 'name', status: 'working', retries: { name: 1 } })
+  await start($, true)
+  const box: any = await $.tool.call({ tool: SAY, line: 'define.pitch.how' } as any)
+  expect(refused(box)).toBe(false)
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [PITCH_BOX] } as any)
+  const before = keep(JSON.parse(w.files['/proj/.bmuz/state.json']))
+  const r: any = await $.tool.call(REPORT as any)
+  expect(refused(r)).toBe(false)
+  const out = JSON.parse(String(r.result))
+  expect(out.say).toBe(LOGGED)
+  expect(out.then).toMatch(/carry on with step "name" exactly where it was: the bug came in place of an answer, so ask the step's open question again/)
+  expect(w.runs.some(a => /bugs[.]mjs$/.test(a[1]) && a[2] === 'add' && JSON.parse(a[3]).report.title === 'Score cut off on phone')).toBe(true)
+  expect(keep(JSON.parse(w.files['/proj/.bmuz/state.json']))).toEqual(before)
+  expect(events(w).find((j: any) => j.ev === 'bug')).toMatchObject({ id: 'B004', level: 'P2', now: false, step: 'name' })
+  // said word for word at the turn's end: no correction; asked again, the box passes the script check
+  await $.turn.complete({ answer: out.say, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(events(w).filter((j: any) => j.ev === 'said').pop()).toMatchObject({ lines: ['bug.logged'], missing: [] })
+  expect(prompts.some(p => /was not written word for word/.test(p))).toBe(false)
+  await $.tool.call({ tool: SAY, line: 'define.pitch.how' } as any)
+  const again: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [PITCH_BOX] } as any)
+  expect(refused(again)).toBe(false)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).retries).toEqual({ name: 1 })
+})
+
+test('F215: a bug typed while a free question is open: told to ask that question again; "bmuz bug <words>" is the same step-in and leaves the question open', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = bugWorld(on, { current: 'name', status: 'working' })
+  const p = JSON.parse(w.files.PIPELINE)
+  p.steps[0].lines = ['ideate.idea', 'define.pitch']
+  w.files.PIPELINE = JSON.stringify(p)
+  await start($, true)
+  await $.tool.call({ tool: SAY, line: 'ideate.idea' } as any)
+  await $.turn.complete({ answer: `Your Idea${NL}Tell me about your game in your own words.`, durationMs: 1, isAborted: false, turnId: 't0', reason: 'answer' } as any)
+  await $.prompt.submit({ text: 'the score text is cut off on my phone' } as any)
+  expect(prompts[prompts.length - 1]).toMatch(/if this message reports something broken, it is a step-in, not an answer to the step/)
+  const r: any = await $.tool.call(REPORT as any)
+  expect(JSON.parse(String(r.result)).then).toMatch(/ask the step's open question again, the way you asked it/)
+  await $.turn.complete({ answer: JSON.parse(String(r.result)).say, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  await $.tool.call({ tool: SAY, line: 'ideate.idea' } as any)
+  await $.prompt.submit({ text: 'bmuz bug the menu button overlaps' } as any)
+  expect(prompts[prompts.length - 1]).toMatch(/the creative stepped in to report a bug: "the menu button overlaps"/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask).toMatchObject({ line: 'ideate.idea' })
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).current).toBe('name')
+})
+
+test('F215: an auto run\'s turn that ends on a step-in is no failed try: a step this session started carries on; one waiting from an earlier session stays as it was', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = bugWorld(on, { current: 'name', status: 'working' })
+  await start($, false)
+  await $.tool.call(REPORT as any)
+  await $.turn.complete({ answer: LOGGED, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  let st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(st).toMatchObject({ current: 'name', status: 'working', retries: {} })
+  expect(events(w).some((j: any) => j.ev === 'stepin.left' && j.step === 'name')).toBe(true)
+  expect(events(w).some((j: any) => j.ev === 'retry')).toBe(false)
+  // a step started in this session: the step-in's turn end carries it on (its instructions again), still no failed try
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't2')
+  const n = talked(prompts)
+  await $.tool.call(REPORT as any)
+  await $.turn.complete({ answer: LOGGED, durationMs: 1, isAborted: false, turnId: 't3', reason: 'answer' } as any)
+  st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(st).toMatchObject({ current: 'name', status: 'working', retries: {} })
+  expect(events(w).some((j: any) => j.ev === 'stepin.back' && j.step === 'name')).toBe(true)
+  expect(talked(prompts)).toBeGreaterThan(n)
+})
+
+// A tiny bug pipeline for the side trip: a script step, then a talk step.
+const BUG_PIPE = { id: 'bug', version: 1, steps: [
+  { id: 'pick', kind: 'script', needs: [], run: ['node', 'pick.mjs'] },
+  { id: 'fix', kind: 'talk', needs: ['pick'], tools: ['Read'], craft: 'craft/review.md', results: ['files'] },
+] }
+
+test('F215: "bmuz bug" parks the stage where it is, runs the bug pipeline, and comes back to the same step with its record intact', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = bugWorld(on, { current: 'name', status: 'working', retries: { name: 1 }, said: { step: 'name', lines: ['define.pitch'] }, opened: 'name' })
+  w.files['PIPELINE:bug'] = JSON.stringify(BUG_PIPE)
+  w.files['/proj/.bmuz/checkpoint-name.json'] = '{"x.txt":null}'
+  await start($, true)
+  const before = keep(JSON.parse(w.files['/proj/.bmuz/state.json']))
+  await $.prompt.submit({ text: 'bmuz bug' } as any)
+  expect(prompts[prompts.length - 1]).toMatch(/fixing B004 · Score cut off on phone · P2 — annoying, not blocking now/)
+  await turn($, 't1')
+  // parked: the stage's record, as it was; the bug run has its own
+  expect(keep(JSON.parse(w.files['/proj/.bmuz/parked/state.json']))).toEqual(before)
+  expect(w.files['/proj/.bmuz/parked/checkpoint-name.json']).toBe('{"x.txt":null}')
+  expect(w.files['/proj/.bmuz/checkpoint-name.json']).toBeUndefined()
+  expect(JSON.parse(w.files['/proj/.bmuz/side.json'])).toMatchObject({ pipeline: 'bug', bug: 'B004', from: 'hello', phase: 'on', n: 1 })
+  let st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(st).toMatchObject({ pipeline: 'bug', current: 'fix', status: 'working', given: { bug: 'B004' }, finished: ['pick'] })
+  expect(w.runs.some(a => a[1] === 'pick.mjs')).toBe(true)
+  expect(prompts.some(p => /^BMUZ step "fix"/.test(p))).toBe(true)
+  // the fix run finishes: its record is kept, the stage's is back, and its step carries on
+  const done: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { files: ['src/score.js'] } } as any)
+  expect(refused(done)).toBe(false)
+  await turn($, 't2')
+  st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(keep(st)).toEqual(before)
+  expect(w.files['/proj/.bmuz/side.json']).toBeUndefined()
+  expect(w.files['/proj/.bmuz/parked/state.json']).toBeUndefined()
+  expect(w.files['/proj/.bmuz/checkpoint-name.json']).toBe('{"x.txt":null}')
+  expect(JSON.parse(w.files['/proj/.bmuz/bug-runs/1-B004/state.json'])).toMatchObject({ pipeline: 'bug', status: 'done', finished: ['pick', 'fix'] })
+  expect(JSON.parse(w.files['/proj/.bmuz/bug-runs.json'])).toMatchObject([{ n: 1, bug: 'B004', from: 'hello', outcome: 'done' }])
+  const js = events(w)
+  expect(js.find((j: any) => j.ev === 'side.back')).toMatchObject({ bug: 'B004', outcome: 'done', step: 'name' })
+  expect(js.find((j: any) => j.ev === 'resume')).toMatchObject({ step: 'name' })
+  expect(prompts[prompts.length - 1]).toMatch(/step "name"/)
+})
+
+test('F215: a fix-now report (P0) says the "fix it now" line and the fix starts at the turn\'s end; "bmuz bug stop" puts it aside and the stage carries on', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = bugWorld(on, { current: 'name', status: 'working' })
+  w.files['PIPELINE:bug'] = JSON.stringify(BUG_PIPE)
+  await start($, true)
+  const r: any = await $.tool.call({ ...REPORT, level: 'P0' } as any)
+  expect(JSON.parse(String(r.result)).say).toBe(`Logged as a bug: ${B004}. It blocks what we're doing, so I'll fix it now.`)
+  await $.turn.complete({ answer: JSON.parse(String(r.result)).say, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'bug', current: 'fix' })
+  await $.prompt.submit({ text: 'bmuz bug stop' } as any)
+  expect(w.runs.some(a => a[2] === 'status' && a[3] === 'B004' && a[4] === 'open')).toBe(true)
+  await turn($, 't2')
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'hello', current: 'name', status: 'working' })
+  expect(JSON.parse(w.files['/proj/.bmuz/bug-runs.json'])[0]).toMatchObject({ outcome: 'stopped' })
+  expect(prompts[prompts.length - 1]).toMatch(/step "name"/)
+})
+
+test('F215: "bmuz bug" with nothing open says the script\'s two lines; the bug tool works at a gate too, leaving it waiting', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = bugWorld(on, { current: 'approve', status: 'waiting', finished: ['name'] }, { none: true })
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz bug' } as any)
+  expect(prompts[prompts.length - 1]).toMatch(/Nothing to fix: there are no open bugs\.\n\n\*\*Something broken\*\*: say so, or type \/bug\./)
+  const r: any = await $.tool.call(REPORT as any)
+  expect(refused(r)).toBe(false)
+  expect(JSON.parse(String(r.result)).then).toMatch(/Then end your turn\./)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ current: 'approve', status: 'waiting' })
+})

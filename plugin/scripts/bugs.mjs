@@ -20,6 +20,7 @@
 //   node bugs.mjs status B004 <status> [guarded-by-file]
 //   node bugs.mjs list                  the open bugs, counted
 //   (run in the project folder)
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -281,7 +282,26 @@ export function addIn(dir, r, by = {}) {
   const out = addBug(readIn(dir, BUGS) || newBugs(gameName(dir)), r, { day: today(), name: gameName(dir), ...by }, readIn(dir, ARCHIVE) || '')
   writeIn(dir, BUGS, out.text)
   refreshPage(dir)
-  return { ok: true, id: out.id, header: out.header, bug: bugWords(out.text, out.id) }
+  // (the /bug skill commits a report on its own: "Bug B014: <title>", only BUGS.md, whatever else is staged)
+  const c = commitFiles(dir, [BUGS], `Bug ${out.id}: ${clean(r.title)}`)
+  return { ok: true, id: out.id, header: out.header, bug: bugWords(out.text, out.id), commit: c.hash || null, nogit: c.nogit || null }
+}
+
+// ---- git ----
+const git = (dir, args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8', timeout: 60000 })
+export const isGitRepo = dir => git(dir, ['rev-parse', '--is-inside-work-tree']).stdout?.trim() === 'true'
+// Commits exactly these project files (nothing else that happens to be staged). Returns { hash } or { nogit } or
+// { nothing: true } when they didn't change. Every path is checked to stay inside the project.
+export function commitFiles(dir, files, message) {
+  if (!isGitRepo(dir)) return { nogit: "this folder isn't a git repository" }
+  const safe = [...new Set(files.filter(f => E.isSafePath(f) && existsSync(join(dir, f))))]
+  if (!safe.length) return { nothing: true }
+  const add = git(dir, ['add', '--', ...safe])
+  if (add.status !== 0) throw new Error(`git add failed: ${(add.stderr || add.stdout || '').trim().slice(0, 200)}`)
+  if (git(dir, ['diff', '--cached', '--quiet', '--', ...safe]).status === 0) return { nothing: true }
+  const c = git(dir, ['commit', '-q', '-m', message, '--', ...safe])
+  if (c.status !== 0) throw new Error(`git commit failed: ${(c.stderr || c.stdout || '').trim().slice(0, 200)}`)
+  return { hash: git(dir, ['rev-parse', '--short', 'HEAD']).stdout.trim() }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {

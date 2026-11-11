@@ -48,6 +48,15 @@ let creativeTurn = false
 let turnSaid: { step: string, lines: { id: string, text: string }[] } = { step: '', lines: [] }
 let longSaid = false
 let unwrittenAsked = ''
+// F215: stepping in. stepInTurn: a bug was reported in this turn, so the turn's open end isn't the step stalling.
+// askedThisTurn: a question box was answered in this turn (a bug that came as its answer means asking it again).
+// pendingFix: the bug to fix at this turn's end, on a side trip ({ id: null } = the next in order; sweep = all P0–P2).
+// talkStartedHere: the talk step try this session started ("flow#0"): only that one is carried on after a step-in.
+let stepInTurn = false
+let askedThisTurn = false
+let askClosedThisTurn = false
+let pendingFix: null | { id: string | null, sweep: boolean } = null
+let talkStartedHere = ''
 
 const SAFE_DENY = 'BMUZ engine hit an error in its own code, so it refused this action to be safe. Run /bmuz-doctor.'
 
@@ -175,6 +184,139 @@ async function finishSwitch($: any, dir: string, root: string, sw: any, sessionI
   await $.process.run(['node', `${root}/scripts/rm.mjs`, `${bmuz}/switch.json`])
 }
 
+// ---- Side trips (F215): the bug pipeline runs beside the stage, then the stage carries on where it was ----
+// Going in: the stage's record (state, journal, last card / shown file, checkpoints) moves to .bmuz/parked/ and the bug
+// run starts its own; coming back: the bug run's record is kept in .bmuz/bug-runs/<n>-<bug>/ and the stage's record is
+// put back as it was, so its step resumes with its results, retries and lines said intact. .bmuz/side.json is written
+// first and carries the phase ("enter", "on", "leave"), so a crash half way is finished at the next start.
+async function recordFiles($: any, root: string, pipelineId: string) {
+  const files = ['state.json', 'journal.jsonl', 'last-card.md', 'last-shown.md']
+  try {
+    for (const s of (await loadPipeline($, root, pipelineId)).pipeline.steps || []) if (E.NAME_RE.test(String(s.id))) files.push(`checkpoint-${s.id}.json`)
+  } catch (err) { /* a pipeline that won't load has no checkpoints to move */ }
+  return files
+}
+
+// (state.json goes last: its copy is the mark that the whole record got there, which a crash re-run reads)
+async function moveFiles($: any, root: string, from: string, to: string, files: string[], keep: string[] = []) {
+  for (const f of [...files.filter(x => x !== 'state.json'), ...files.filter(x => x === 'state.json')]) {
+    const text = await readText($, `${from}/${f}`)
+    if (text === null) continue
+    await $.fs.write(`${to}/${f}`, text)
+    if (!keep.includes(f)) await $.process.run(['node', `${root}/scripts/rm.mjs`, `${from}/${f}`])
+  }
+}
+
+async function enterSide($: any, dir: string, root: string, side: any, sessionId: string | null = null) {
+  const bmuz = `${dir}/.bmuz`
+  await $.fs.write(`${bmuz}/side.json`, JSON.stringify({ ...side, phase: 'enter' }))
+  // (copied once: a second pass after a crash must not park the bug run's new state over the stage's)
+  if (!(await $.fs.exists(`${bmuz}/parked/state.json`))) {
+    await journalQueue
+    // (a parked journal always exists, even empty, so coming back never leaves the bug run's journal in its place)
+    if (!(await $.fs.exists(`${bmuz}/journal.jsonl`))) await $.fs.write(`${bmuz}/parked/journal.jsonl`, '')
+    await moveFiles($, root, bmuz, `${bmuz}/parked`, await recordFiles($, root, side.from), ['state.json', 'journal.jsonl'])
+  } else {
+    for (const f of (await recordFiles($, root, side.from)).slice(2)) if (await $.fs.exists(`${bmuz}/${f}`)) await $.process.run(['node', `${root}/scripts/rm.mjs`, `${bmuz}/${f}`])
+  }
+  const state = { ...E.freshState(side.pipeline), given: { bug: side.bug } }
+  await $.fs.write(`${bmuz}/state.json`, JSON.stringify(state, null, 2))
+  await $.fs.write(`${bmuz}/journal.jsonl`, JSON.stringify({ t: await $.clock.now(), session: sessionId, ev: 'stage.enter', side: true, from: side.from, to: side.pipeline, bug: side.bug, place: side.place ?? null, state }) + '\n')
+  await $.fs.write(`${bmuz}/side.json`, JSON.stringify({ ...side, phase: 'on' }))
+}
+
+async function leaveSide($: any, dir: string, root: string, side: any, outcome: string = 'done') {
+  const bmuz = `${dir}/.bmuz`
+  await $.fs.write(`${bmuz}/side.json`, JSON.stringify({ ...side, phase: 'leave', outcome: side.outcome ?? outcome }))
+  const record = `bug-runs/${side.n}-${side.bug}`
+  await journalQueue
+  const mine = await recordFiles($, root, side.pipeline)
+  if (!(await $.fs.exists(`${bmuz}/${record}/state.json`))) await moveFiles($, root, bmuz, `${bmuz}/${record}`, mine, ['state.json', 'journal.jsonl'])
+  else for (const f of mine.slice(2)) if (await $.fs.exists(`${bmuz}/${f}`)) await $.process.run(['node', `${root}/scripts/rm.mjs`, `${bmuz}/${f}`])
+  // the stage's record, put back as it was (the parked copy goes once it is back)
+  await moveFiles($, root, `${bmuz}/parked`, bmuz, await recordFiles($, root, side.from))
+  const runs = (await readJson($, `${bmuz}/bug-runs.json`)) || []
+  if (Array.isArray(runs) && !runs.some((r: any) => r.n === side.n)) {
+    const old = await readJson($, `${bmuz}/${record}/state.json`)
+    runs.push({ n: side.n, bug: side.bug, from: side.from, status: old?.status ?? null, outcome: side.outcome ?? outcome, record: `.bmuz/${record}`, at: await $.clock.now() })
+    await $.fs.write(`${bmuz}/bug-runs.json`, JSON.stringify(runs, null, 2))
+  }
+  await $.process.run(['node', `${root}/scripts/rm.mjs`, `${bmuz}/side.json`])
+}
+
+// bugs.mjs in the project folder; its answer is one JSON line ({ ok, … }), or plain words when it says something else.
+async function runBugs($: any, args: string[]) {
+  try {
+    const ran: any = await $.process.run(['node', `${ctx.root}/scripts/bugs.mjs`, ...args], { cwd: ctx.dir, timeoutMs: 60000 })
+    const out = String(ran?.stdout ?? '').trim()
+    try { return JSON.parse(out.split('\n').pop() || '{}') } catch (err) { return { ok: ran?.exitCode === 0, text: out } }
+  } catch (err) {
+    return { ok: false, say: `bugs.mjs could not run (${String(err).slice(0, 160)})` }
+  }
+}
+
+// Starts a fix run: the stage parks, the bug pipeline runs. id = the bug to fix (null = the next in order: P0 → P3).
+// Returns null when it started, { none: true } when nothing is open, else { why } in plain words.
+async function startSide($: any, id: string | null, sweep: boolean) {
+  if (ctx.side) return { why: `already fixing ${ctx.side.bug}; say "bmuz bug stop" to put it aside` }
+  const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
+  if (step && step.kind === 'flow' && ctx.state.status === 'working') return { why: `the "${step.id}" helpers are still working; the fix can start once they're done` }
+  if (!(await $.fs.exists(`${ctx.root}/pipelines/bug.json`))) return { why: 'the bug pipeline is missing from the plugin' }
+  const next = await runBugs($, ['next', ...(id ? [id] : [])])
+  if (next.none) return { none: true }
+  if (!next.ok) return { why: next.say || next.text || 'bugs.mjs said no' }
+  const runs = (await readJson($, `${ctx.dir}/.bmuz/bug-runs.json`)) || []
+  const side = { pipeline: 'bug', bug: next.id, from: ctx.pipeline.id, n: (Array.isArray(runs) ? runs.length : 0) + 1, phase: 'enter', place: E.placeWords(ctx.pipeline, ctx.state), sweep: !!sweep }
+  await journal($, { ev: 'side.start', bug: next.id, sweep: !!sweep, step: ctx.state.current ?? null, status: ctx.state.status })
+  try {
+    await enterSide($, ctx.dir, ctx.root, side, ctx.sessionId)
+  } catch (err) {
+    return { why: `the fix run couldn't start (${String(err).slice(0, 160)}); run /bmuz-doctor` }
+  }
+  return reload($)
+}
+
+// Back from a fix run: its record is kept, the stage's put back, and the engine carries on in the stage. outcome =
+// "done" (the bug is fixed) or "stopped" (the creative put it aside: the bug goes back to open). Returns null or { why }.
+async function endSide($: any, outcome: string) {
+  const side = ctx.side
+  if (!side) return { why: 'no fix run is going on' }
+  if (outcome === 'stopped') {
+    // (a step half done gives back what it wrote; the bug goes back to open)
+    const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
+    if (step && ctx.state.status === 'working') await rollback($, step)
+    const st = await runBugs($, ['status', side.bug, 'open'])
+    await journal($, { ev: 'side.stop', bug: side.bug, step: ctx.state.current ?? null, reopened: !!st.ok })
+  }
+  try {
+    await leaveSide($, ctx.dir, ctx.root, side, outcome)
+  } catch (err) {
+    return { why: `the way back from the fix run failed (${String(err).slice(0, 160)}); run /bmuz-doctor` }
+  }
+  const out = await reload($)
+  if (out) return out
+  await journal($, { ev: 'side.back', bug: side.bug, outcome, record: `.bmuz/bug-runs/${side.n}-${side.bug}`, step: ctx.state.current ?? null, status: ctx.state.status })
+  // A sweep goes on to the next open P0–P2 bug.
+  if (side.sweep && outcome === 'done') {
+    const next = await runBugs($, ['next'])
+    if (next.ok && ['P0', 'P1', 'P2'].includes(next.level)) return startSide($, next.id, true)
+  }
+  return null
+}
+
+// The engine loaded again after a side trip's move (like a session start).
+async function reload($: any) {
+  flowAskedHere = ''
+  hiddenNotes = null
+  turnSaid = { step: '', lines: [] }
+  const wasAuto = ctx.auto
+  const ok = await startEngine($)
+  if (ctx) ctx.auto = ctx.auto || wasAuto
+  if (!ok) return { why: ctx ? ctx.broken : 'bmuz.json went missing' }
+  await save($)
+  return null
+}
+
 async function loadCtx($: any) {
   const dir = String(await $.session.cwd()).replace(/\\/g, '/')
   if ((await readText($, `${dir}/bmuz.json`)) === null) return null
@@ -184,9 +326,17 @@ async function loadCtx($: any) {
   const sw = await readJson($, `${dir}/.bmuz/switch.json`)
   if (sw && sw.from && sw.to) await finishSwitch($, dir, root, sw, c.sessionId)
   const cfgText = String(await readText($, `${dir}/bmuz.json`))
+  // F215: a side trip (the bug pipeline) cut short by a crash on its way in or out is finished first; one under way
+  // runs instead of the stage, which waits in .bmuz/parked/ with its record intact.
+  const side0 = await readJson($, `${dir}/.bmuz/side.json`)
+  if (side0 && !E.sideProblem(side0) && side0.phase === 'enter') await enterSide($, dir, root, side0, c.sessionId)
+  if (side0 && !E.sideProblem(side0) && side0.phase === 'leave') await leaveSide($, dir, root, side0)
+  const side = await readJson($, `${dir}/.bmuz/side.json`)
+  if (side && E.sideProblem(side)) throw new Error(`the side trip's record .bmuz/side.json can't be used: ${E.sideProblem(side)}`)
+  c.side = side && side.phase === 'on' ? side : null
   try {
     c.cfg = JSON.parse(cfgText)
-    const loaded = await loadPipeline($, root, c.cfg.pipeline)
+    const loaded = await loadPipeline($, root, c.side ? c.side.pipeline : c.cfg.pipeline)
     c.pipeline = loaded.pipeline
     c.script = loaded.script
     const problems = loaded.problems
@@ -287,6 +437,12 @@ async function registerAll($: any) {
     name: 'say',
     description: 'BMUZ engine: say one of the current step\'s script lines (or several at once), word for word. Give its id ("line") and the game-specific parts ("slots"). Returns the exact words ("say") or the question box to ask ("box"), and what to do next ("then"). "wait": true = say nothing more and end your turn; the creative\'s next message is the answer.',
     inputSchema: { type: 'object', properties: { line: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] }, slots: { type: 'object' }, wait: { type: 'boolean' } } },
+    isDeferred: false,
+  })
+  await $.tool.register({
+    name: 'bug',
+    description: `BMUZ engine: the creative stepped in with something broken. Report it as a bug (written to .planning/BUGS.md): {"title": "a few words", "level": "P0".."P3", "steps": ["..."], "expected": "...", "actual": "...", "often": "every time / once / not sure"} (${E.BUG_LEVELS}). Add "now": "P0" | "blocks" | "quick" only for a P0, a bug that blocks the current step, or a minutes-long fix in code being changed right now. {"ask": true} first hands you the one question box (how often), if that is essential and missing. Returns the line to say word for word and what to do next.`,
+    inputSchema: { type: 'object', properties: { title: { type: 'string' }, level: { type: 'string' }, steps: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] }, expected: { type: 'string' }, actual: { type: 'string' }, often: { type: 'string' }, evidence: { type: 'string' }, now: { type: 'string' }, ask: { type: 'boolean' } } },
     isDeferred: false,
   })
   await $.command.register({ name: 'bmuz-go', description: 'BMUZ: start or resume the pipeline' })
@@ -510,6 +666,7 @@ async function startTalk($: any, step: any, why: string) {
   }
   const given = E.givenFor(step, ctx.state.given)
   const back = ctx.state.back && ctx.state.back.step === step.id ? ctx.state.back : null
+  talkStartedHere = `${step.id}#${ctx.state.retries[step.id] || 0}`
   hiddenNotes = E.talkPrompt(step, craft, why, ctx.auto, decided, { recap, wrap: wrapWords(step), answers, intro: !!intro, given, script: ctx.script, opened: ctx.state.opened === step.id, back })
   // A resume (a new window, "bmuz go") while a free question is open: Claude says the same question again.
   const open = E.askOpen(ctx.state)
@@ -644,6 +801,17 @@ async function advance($: any, resume: boolean, opts: { timer?: boolean, go?: bo
         ctx.state = { ...s, status: 'done', current: null, startedAt: null }
         await journal($, { ev: 'pipeline.done' })
         await save($)
+        // F215: a fix run's end goes back to the stage it left, which carries on where it was (a sweep takes the next bug).
+        if (ctx.side) {
+          const why = await endSide($, 'done')
+          if (why) {
+            await $.prompt.submit({ text: `BMUZ engine: ${why.why}. Tell the creative in one plain line, then end your turn.` })
+            return
+          }
+          resume = true
+          opts = { ...opts, go: false }
+          continue
+        }
         // F225: a stage's end offers the next stage; the start moves straight into the one the creative chose.
         if (await offerNext($, false)) continue
         return
@@ -922,6 +1090,60 @@ async function sayTool($: any, e: any) {
   return { result: JSON.stringify({ say: text, then: E.sayNext({ kind, text }, ctx.auto) }) }
 }
 
+// ---- Stepping in (F215 task 3): a bug report is a side trip; the step it interrupts keeps its record ----
+// The report goes into .planning/BUGS.md (bugs.mjs, committed "Bug B004: …" when the project is a git repository), the
+// script's line comes back to be said word for word, and the step carries on where it was: nothing in its state moves
+// (results, retries, the lines said, its open question). A fix-now bug (P0, blocks this step, a minutes-long fix) runs
+// the bug pipeline at this turn's end, then comes back here.
+async function bugTool($: any, e: any) {
+  const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
+  const talkOpen = !!step && step.kind === 'talk' && ctx.state.status === 'working'
+  stepInTurn = true
+  if (e.ask === true) {
+    // (the one question at most: how often. Only inside a talk step, where a question box may be asked)
+    const r = E.renderLine(ctx.script, 'bug.often', {})
+    if (ctx.auto || r.error || !talkOpen) return { result: JSON.stringify({ then: `No question here${ctx.auto ? ' (auto run: nobody to ask)' : ''}: report it now with what you have ("often": "not sure").` }) }
+    const n = (ctx.state.boxes || []).reduce((m: number, b: any) => Math.max(m, b.n || 0), 0) + 1
+    ctx.state = { ...ctx.state, boxes: [...(ctx.state.boxes || []), { id: 'bug.often', n, box: r.box }] }
+    await journal($, { ev: 'line', step: step.id, line: 'bug.often', kind: 'box', box: r.box })
+    await save($)
+    return { result: JSON.stringify({ box: r.box, then: `Call AskUserQuestion now with exactly this box, then report the bug with ${E.BUG_TOOL}.` }) }
+  }
+  const report = { title: e.title, level: typeof e.level === 'string' ? e.level.trim().toUpperCase() : e.level, steps: e.steps, expected: e.expected, actual: e.actual, often: e.often, evidence: e.evidence, now: e.now }
+  let now = E.isFixNow(report)
+  // A fix run already going on takes a new bug in order; a running helper can't be stopped for it.
+  if (now && ctx.side) now = false
+  if (now && step && step.kind === 'flow' && ctx.state.status === 'working') {
+    return { deny: `BMUZ engine: the "${step.id}" helpers are still working, so nothing can be fixed now. Report it without "now"; it is fixed after this step ("bmuz bug").` }
+  }
+  const where = E.placeWords(ctx.pipeline, ctx.state)
+  const ran = await runBugs($, ['add', JSON.stringify({ report, where })])
+  if (!ran.ok) {
+    await journal($, { ev: 'deviation', step: ctx.state.current ?? null, tool: E.BUG_TOOL, agentId: null, why: `not logged: ${ran.say || ran.text}` })
+    return { deny: `BMUZ engine: the bug wasn't logged: ${ran.say || ran.text}. Fix the report and call ${E.BUG_TOOL} again.` }
+  }
+  const sprint = E.sprintFeature((await readText($, `${ctx.dir}/.planning/SPRINT.md`)) ?? '')
+  const when = ctx.side ? `after ${ctx.side.bug}` : E.bugWhen(ctx.pipeline, ctx.state, sprint)
+  const line = E.renderLine(ctx.script, now ? 'bug.now' : 'bug.logged', { bug: ran.bug, when })
+  if (line.error) return { deny: `BMUZ engine: ${line.error}` }
+  await journal($, { ev: 'bug', id: ran.id, level: report.level, now, step: ctx.state.current ?? null, place: where, commit: ran.commit ?? null })
+  await journal($, { ev: 'line', step: ctx.state.current ?? null, line: line.id, kind: 'say', text: line.text })
+  const sid = ctx.state.current || ''
+  if (turnSaid.step !== sid) turnSaid = { step: sid, lines: [] }
+  turnSaid.lines.push({ id: line.id, text: line.text })
+  await markActive($)
+  let then = 'Write exactly the "say" text now, as text in your reply.'
+  if (now) {
+    pendingFix = { id: ran.id, sweep: false }
+    then += ' Then end your turn: the engine starts the fix itself, and comes back to this step after it.'
+  } else if (talkOpen) {
+    // (the report came as the answer to a question box, or to an open free question: that question is asked again)
+    const again = askedThisTurn || askClosedThisTurn
+    then += ` Then carry on with step "${step.id}" exactly where it was${again ? ': the bug came in place of an answer, so ask the step\'s open question again, the way you asked it (a script line through say)' : ''}.`
+  } else then += ' Then end your turn.'
+  return { result: JSON.stringify({ say: line.text, id: ran.id, then }) }
+}
+
 // The creative did something (answered a box, closed it, typed a message): a talk step's stall clock starts again.
 
 async function markActive($: any) {
@@ -1029,6 +1251,9 @@ export const register: Register = on => {
     sessionInteractive = (e as any).isInteractive === true
     sessionAuto = false
     flowAskedHere = ''
+    pendingFix = null
+    stepInTurn = false
+    talkStartedHere = ''
     const ok = await startEngine($)
     if (!ctx) return r
     // Commands and timers exist even when the start failed, so /bmuz-doctor is there to get it going.
@@ -1066,7 +1291,7 @@ export const register: Register = on => {
     if (await $.fs.exists(`${ctx.dir}/.bmuz/test-fault`)) throw new Error('injected fault (test)')
     if (ctx.broken) return { deny: `BMUZ engine: ${ctx.broken}` }
     const call = { tool: String(e.tool), agentId: (e as any).agentId, input: e }
-    const verdict = E.judgeTool(ctx.pipeline, ctx.state, call, { auto: ctx.auto })
+    const verdict = E.judgeTool(ctx.pipeline, ctx.state, call, { auto: ctx.auto, dir: ctx.dir })
     if (!verdict.allow) {
       await journal($, { ev: 'deviation', step: ctx.state.current, tool: call.tool, agentId: call.agentId ?? null, why: verdict.why })
       return { deny: verdict.why }
@@ -1097,6 +1322,7 @@ export const register: Register = on => {
     }
     if (call.tool === E.ENGINE_TOOL) return stepDone($, e)
     if (call.tool === E.SAY_TOOL) return sayTool($, e)
+    if (call.tool === E.BUG_TOOL) return bugTool($, e)
     if (call.tool === 'AskUserQuestion' && !ctx.auto) {
       // A background session lists the question tool but refuses it (headless check 15): then nobody
       // can answer, so from here this session is an auto run and the turn-end rule keeps it moving.
@@ -1143,7 +1369,7 @@ export const register: Register = on => {
       }
       // (answered or closed by the creative: the stall clock counts from now)
       if ((!res?.deny && !res?.isError) || E.isPersonDeclining(res)) await markActive($)
-      if (!res?.deny && !res?.isError) { nudges = { key: '', n: 0 }; continues = { key: '', n: 0 }; quietWait = '' }
+      if (!res?.deny && !res?.isError) { nudges = { key: '', n: 0 }; continues = { key: '', n: 0 }; quietWait = ''; askedThisTurn = true }
       if ((res?.deny || res?.isError) && E.isPersonDeclining(res)) quietWait = 'declined'
       if ((res?.deny || res?.isError) && !E.isPersonDeclining(res)) {
         // F231: only "the tool can't be used here" means nobody can answer; a shape refusal (too few options) or any
@@ -1206,7 +1432,7 @@ export const register: Register = on => {
         pending = 'resume'
         return next({ ...(e as any), text: `${typed}\n(BMUZ engine: this folder is now a BMUZ project (bmuz.json written). Reply with one short line; the engine asks the first question itself.)` })
       }
-      if (typedHere && /^\s*bmuz (go|approve|auto|undo|retry|doctor|stage)\b/i.test(typed)) {
+      if (typedHere && /^\s*bmuz (go|approve|auto|undo|retry|doctor|stage|bug)\b/i.test(typed)) {
         return next({ ...(e as any), text: `${typed}\n(BMUZ engine: off in this folder: there is no bmuz.json here, so nothing runs. Tell the creative that in plain words: BMUZ steps run inside a BMUZ project folder, and "bmuz new" starts a game here — it begins with their idea and whatever they want to share.)` })
       }
       return next(e)
@@ -1237,16 +1463,26 @@ export const register: Register = on => {
     // The creative's message while a free question is open is its answer (their words, journaled for the scripts'
     // quote checks); the question closes and Claude is told, beside it, what it answers ("never mind" = no material).
     const openAsk = !ctx.broken && E.askOpen(ctx.state)
+    // F215: a message that may report something broken carries the step-in note beside it (Claude judges whether it is one).
+    const brokenHint = !ctx.broken && E.soundsBroken(text) ? [E.stepInNote(text, { auto: ctx.auto })] : []
     if (openAsk && !/^\s*bmuz\b/i.test(text)) {
       await journal($, { ev: 'answer', step: openAsk.step, line: openAsk.line, via: 'typed', text })
       ctx.state = { ...ctx.state, ask: null }
       await journal($, { ev: 'ask.closed', step: openAsk.step, line: openAsk.line, never: E.isNeverMind(text) })
       await save($)
-      return next({ ...(e as any), context: [...((e as any).context ?? []), E.answerNote(openAsk, text)] })
+      askClosedThisTurn = true
+      return next({ ...(e as any), context: [...((e as any).context ?? []), E.answerNote(openAsk, text), ...brokenHint] })
     }
     const say = (words: string) => {
       quietTurn = true
       return next({ ...(e as any), text: `${text}\n(${words}\nShow the creative these lines as they are, then end your turn.)` })
+    }
+    // (script lines the engine answers with itself: journaled, and checked word for word at the turn's end)
+    const sayLines = async (lines: any[]) => {
+      const ok = lines.filter((l: any) => l && !l.error)
+      for (const l of ok) await journal($, { ev: 'line', step: ctx.state.current ?? null, line: l.id, kind: l.kind, text: l.text })
+      turnSaid = { step: ctx.state.current || '', lines: ok.map((l: any) => ({ id: l.id, text: l.text })) }
+      return say(ok.map((l: any) => l.text).join('\n\n'))
     }
     if (/^\s*bmuz new\s*$/i.test(text)) return say(`BMUZ engine: this folder is already a BMUZ project (bmuz.json says "${ctx.cfg?.pipeline ?? '?'}"). "bmuz go" carries on; "bmuz stage <stage>" moves to another stage.`)
     // "bmuz stage <stage> [step]": move to any stage (the current one's record is kept in .bmuz/stages/). Works while a
@@ -1260,6 +1496,38 @@ export const register: Register = on => {
       if (why) return say(`BMUZ engine: didn't move: ${why}.`)
       pending = 'advance'
       return next({ ...(e as any), text: `${text}\n(BMUZ engine: moved on to ${E.stageOf(to)?.name ?? to}; the last stage's record is kept in .bmuz/stages/. Reply with one short line; the engine starts the stage itself.)` })
+    }
+    // F215: "bmuz bug <words>" reports a bug (a side trip, like saying it); "bmuz bug" / "bmuz bug B004" / "bmuz bug sweep"
+    // fix bugs on a side trip (the step we're on waits, then carries on); "list", "verified B004", "stop".
+    const bc = E.bugCommand(text)
+    if (bc) {
+      if (ctx.broken) return say(`BMUZ engine: ${ctx.broken}`)
+      if (bc.kind === 'report') return next({ ...(e as any), context: [...((e as any).context ?? []), E.stepInNote(bc.words, { typed: true, auto: ctx.auto })] })
+      if (bc.kind === 'list') {
+        const l = await runBugs($, ['list'])
+        return say(l.text || l.say || 'BMUZ engine: no bug list here.')
+      }
+      if (bc.kind === 'verified') {
+        const st = await runBugs($, ['status', bc.id, 'verified'])
+        if (!st.ok) return say(`BMUZ engine: ${st.say || st.text}`)
+        await journal($, { ev: 'bug.verified', id: bc.id })
+        return sayLines([E.renderLine(ctx.script, 'bug.verified', { bug: st.bug })])
+      }
+      if (bc.kind === 'stop') {
+        if (!ctx.side) return say('BMUZ engine: no fix run is going on.')
+        const out = await endSide($, 'stopped')
+        if (out) return say(`BMUZ engine: ${out.why}`)
+        pending = 'resume'
+        return next({ ...(e as any), text: `${text}\n(BMUZ engine: the fix run was put aside (the bug is open again) and the work we were on carries on: ${E.placeWords(ctx.pipeline, ctx.state)}. Reply with one short line; the engine picks it up itself.)` })
+      }
+      if (ctx.side) return say(`BMUZ engine: already fixing ${ctx.side.bug}. "bmuz bug stop" puts it aside.`)
+      const nx = await runBugs($, ['next', ...(bc.kind === 'fix' && bc.id ? [bc.id] : [])])
+      if (nx.none) return sayLines([E.renderLine(ctx.script, 'bug.none', {}), E.renderLine(ctx.script, 'bug.how', {})])
+      if (!nx.ok) return say(`BMUZ engine: ${nx.say || nx.text}`)
+      const busy = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
+      if (busy && busy.kind === 'flow' && ctx.state.status === 'working') return say(`BMUZ engine: the "${busy.id}" helpers are still working; say "bmuz bug" again once they're done.`)
+      pendingFix = { id: nx.id, sweep: bc.kind === 'sweep' }
+      return next({ ...(e as any), text: `${text}\n(BMUZ engine: fixing ${nx.bug} now; what we were on waits and carries on after it. Reply with one short line; the engine runs the fix itself.)` })
     }
     const cmd = text.match(/^\s*bmuz (undo|retry|doctor)\b\s*(.*)$/i)
     if (cmd) {
@@ -1297,7 +1565,8 @@ export const register: Register = on => {
     }
     // Answers to the card's numbered questions ("1 yes", "2: the first one"); any other message passes untouched.
     const noted = ctx.broken ? null : await recordAnswerLines($, text)
-    if (noted) return next({ ...(e as any), text: `${text}\n(${noted})` })
+    if (noted) return next({ ...(e as any), text: `${text}\n(${noted})`, ...(brokenHint.length ? { context: [...((e as any).context ?? []), ...brokenHint] } : {}) })
+    if (brokenHint.length) return next({ ...(e as any), context: [...((e as any).context ?? []), ...brokenHint] })
     return next(e)
     // Without this, an error here let the prompt through unread (proof check 6), so a flow's result could
     // be lost. Now the prompt is dropped (it goes back to the input with the reason) and every tool is
@@ -1317,6 +1586,11 @@ export const register: Register = on => {
     const r = await next(e)
     if ((e as any).agentId) return r
     turnRunning = false
+    // (F215: this turn's step-in marks, read once; the next turn starts without them)
+    const steppedIn = stepInTurn
+    stepInTurn = false
+    askedThisTurn = false
+    askClosedThisTurn = false
     if (!ctx) return r
     // F231: a stall the watchdog held while this turn ran is judged now (the engine's own work belongs here).
     if (heldStall && pending) heldStall = null
@@ -1367,6 +1641,23 @@ export const register: Register = on => {
         return r
       }
     }
+    // F215: a bug to fix now ("bmuz bug", or a fix-now report): the stage parks where it is and the bug pipeline runs; it
+    // comes back here when the fix is done. (A hand-off card still to show goes first; the fix waits for that turn's end.)
+    if (pendingFix && !(pending && typeof pending === 'object')) {
+      const want = pendingFix
+      pendingFix = null
+      const out: any = await startSide($, want.id, want.sweep)
+      if (out) {
+        await journal($, { ev: 'side.refused', bug: want.id, why: out.why ?? 'no open bugs' })
+        await $.prompt.submit({ text: `BMUZ engine: the fix couldn't start: ${out.why ?? 'there are no open bugs'}. Tell the creative in one plain line, then end your turn.` })
+      } else {
+        pending = null
+        await advance($, false)
+      }
+      quietTurn = false
+      creativeTurn = false
+      return r
+    }
     if (pending && typeof pending === 'object' && 'card' in pending) {
       // The hand-off card, as the engine's own message; the next step starts when that turn ends.
       // (handOff already saved the card's text in .bmuz/last-card.md; the message points Claude at it)
@@ -1381,9 +1672,17 @@ export const register: Register = on => {
       const step = E.stepById(ctx.pipeline, ctx.state.current)
       if (step && step.kind === 'talk') {
         await journal($, { ev: 'turn.ended-open', step: step.id })
+        // F215: an auto run's turn that ended on a step-in (a bug reported) isn't the step failing: no failed try. A step
+        // this session was running carries on where it was; one it never started (a new session, the step waiting from
+        // an earlier one) stays as it is, record intact, until "bmuz go".
+        const tryKey = `${step.id}#${ctx.state.retries[step.id] || 0}`
+        if (steppedIn && ctx.auto) {
+          const here = talkStartedHere === tryKey
+          await journal($, { ev: here ? 'stepin.back' : 'stepin.left', step: step.id })
+          if (here) await startTalk($, step, '')
+        } else if (ctx.auto) {
         // Auto run: a turn that ends without step_done is Claude waiting on someone (live check L5: it asked
         // "red or blue?" in plain text and stopped). The engine answers "nobody's coming" and counts it as a failed try.
-        if (ctx.auto) {
           const outcome = await settle($, step, { ok: false, why: 'the turn ended without step_done; in an auto run nobody will answer, so take the default and finish' }, null)
           if (outcome === 'retry') {
             ctx.state = { ...ctx.state, current: step.id }

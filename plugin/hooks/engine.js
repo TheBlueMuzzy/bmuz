@@ -386,6 +386,7 @@ export function talkPrompt(step, craft, why, auto, decided = [], more = {}) {
   if (why) lines.push(`The last try did not pass: ${why}.`)
   if (auto) lines.push(`Auto run: the creative is away. Never ask and never wait for an answer, with AskUserQuestion or in plain text. Where you would ask, pick the sensible default, list it in the result's "asks" as {"question": "...", "picked": "..."}, and carry on.${step.lines ? ` Every script line this step would say is still said: call ${SAY_TOOL} for it and write its words, exactly where a live run would say it (a free question or a box included), then take the answer and carry on.` : ''}`)
   else lines.push(step.lines ? SCRIPT_RULE : ASK_RULE)
+  lines.push(STEP_IN_RULE)
   // F232: the step's script lines, and the ones it opens with (said before anything else).
   if (step.lines && more.script) {
     lines.push(`This step's script lines (say them through ${SAY_TOOL}, filling the slots from the game so far and the creative's own words):\n${linesList(more.script, step.lines)}`)
@@ -922,6 +923,7 @@ export function toolRowLabel(tool, output, isErrored) {
   if (isErrored) return null
   if (tool === ENGINE_TOOL) return /^\s*"?Not done/.test(typeof output === 'string' ? output : JSON.stringify(output ?? '')) ? 'BMUZ · step not done yet' : 'BMUZ · step recorded'
   if (tool === SAY_TOOL) return 'BMUZ · script line'
+  if (tool === BUG_TOOL) return 'BMUZ · bug logged'
   return null
 }
 
@@ -993,6 +995,9 @@ export function judgeTool(p, state, call, opts = {}) {
   if (opts.auto && call.tool === 'AskUserQuestion') {
     return { allow: false, why: `BMUZ engine: auto run, nobody is here to answer. Don't ask: pick the sensible default, add {"question": "...", "picked": "..."} to the "asks" list in ${ENGINE_TOOL}'s result, and carry on.` }
   }
+  // F215: the creative may step in with a bug at any moment (between steps, at a gate, during a helper's run): the report
+  // is a side trip that leaves the step's record as it was (the motor writes it through bugs.mjs).
+  if (call.tool === BUG_TOOL && !call.agentId) return { allow: true }
   // step_done only closes an open talk step; called between steps, it has nothing to finish.
   if (call.tool === ENGINE_TOOL && !call.agentId && !(state.status === 'working' && (stepById(p, state.current) || {}).kind === 'talk')) {
     return { allow: false, why: 'BMUZ engine: no talk step is open, so there is nothing to finish. End your turn; the engine starts the next step itself.' }
@@ -1002,6 +1007,12 @@ export function judgeTool(p, state, call, opts = {}) {
   if (state.status === 'done') return { allow: true }
   if (state.status === 'idle' && !state.current && state.finished.length === 0) return { allow: true }
   if (state.status === 'idle') return { allow: false, why: `BMUZ engine: between steps; the engine starts the next one itself. End your turn (or the creative says "bmuz go").` }
+  // F215: while a pipeline runs, a file Claude or a helper writes or edits stays inside the project and out of the
+  // engine's own .bmuz folder, whatever tools the step allows (the bug pipeline writes tests and fixes code there).
+  if (opts.dir && ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(call.tool)) {
+    const target = (call.input || {}).file_path ?? (call.input || {}).notebook_path
+    if (!projectPath(opts.dir, target)) return { allow: false, why: `BMUZ engine: ${call.tool} may only change files inside this project, and not in its .bmuz folder (${String(target ?? '').slice(0, 160)})` }
+  }
   const step = stepById(p, state.current)
   if (!step) return { allow: false, why: `BMUZ engine: no current step (state says ${state.current}); run /bmuz-doctor` }
   if (state.status === 'blocked') return { allow: false, why: `BMUZ engine: step ${step.id} is BLOCKED; nothing runs until the creative decides ("bmuz retry" for 2 more tries, or "bmuz undo" to go back)` }
@@ -1568,4 +1579,110 @@ export function stepPlace(p, step) {
   const name = stage ? stage.name : p.id
   if (/\.0$/.test(s.no)) return `${name} · ${s.title}`
   return `${name} · ${numbered.indexOf(s.no) + 1} of ${numbered.length} · ${s.title}`
+}
+
+// ---- Stepping in (F215): something broken, said at any step, is logged as a bug on a side trip ----
+// The approved script's "Any time: when the designer steps in" (framework research/bmuz-vision/bmuz-design-doc.html):
+// "Logged as a bug: [B004 · Score cut off on phone · P2 — annoying, not blocking]. It doesn't block what we're doing, so
+// I'll fix it [after F07]." The report never touches the step it interrupts: its record (results, retries, the lines
+// said, the box it asked) stays as it was, and the step carries on where it was.
+export const BUG_TOOL = 'mcp__bmuz__bug'
+// The P-levels, from the /bug skill (the script itself names only "P2 — annoying, not blocking").
+export const BUG_LEVELS = 'P0 = a crash, the game can\'t go on, data lost, or the live build broken · P1 = a feature doesn\'t work as designed · P2 = minor, or has a workaround · P3 = cosmetic'
+// The focus rule (the /bug skill): fix now only for these; everything else is logged and fixed in order.
+export const FIX_NOW = ['P0', 'blocks', 'quick']
+
+// Every talk step is told this, live or auto, so a step-in is never mistaken for the step's own answer.
+export const STEP_IN_RULE = `Stepping in: if the creative says something is broken (a bug, in their own words or "bmuz bug …"), that is a side trip, not an answer to this step. Report it with ${BUG_TOOL}: {"title": "a few words", "level": "P0".."P3", "steps": [...], "expected": "...", "actual": "...", "often": "..."} (${BUG_LEVELS}). Ask at most one question first, and only if something essential is missing: ${BUG_TOOL} {"ask": true} hands you the box. Fix now only for a P0, a bug that blocks this step, or a minutes-long fix in code being changed right now: add "now": "P0" | "blocks" | "quick". Write the line it returns word for word, then carry on with this step exactly where it was (its record is kept).`
+
+// A plain message that may report something broken (a hint only: Claude judges whether it is a bug). Not "wrong":
+// Ideate's "What did I get wrong?" is answered with it, and that is a correction, not a bug.
+export function soundsBroken(text) {
+  const t = String(text || '')
+  if (/^\s*bmuz\b/i.test(t)) return false
+  return /\b(bug|buggy|broken|breaks|crash(es|ed)?|glitch\w*|doesn'?t work|isn'?t working|not working|won'?t (load|open|start)|cut off|off by one|freez\w*|stuck)\b/i.test(t)
+}
+
+// "bmuz bug …" as typed: { kind: 'fix', id } (no words, an id, "fix [id]"), 'sweep', 'list', 'stop', 'verified' (id),
+// or 'report' with the creative's words. null = not a bug command.
+export function bugCommand(text) {
+  const m = String(text || '').match(/^\s*bmuz bug\b\s*([\s\S]*)$/i)
+  if (!m) return null
+  const rest = m[1].trim()
+  if (!rest) return { kind: 'fix', id: null }
+  let x
+  if ((x = rest.match(/^(?:fix\s*)?(B\d{3,})$/i))) return { kind: 'fix', id: x[1].toUpperCase() }
+  if (/^fix$/i.test(rest)) return { kind: 'fix', id: null }
+  if (/^sweep$/i.test(rest)) return { kind: 'sweep' }
+  if (/^list$/i.test(rest)) return { kind: 'list' }
+  if (/^stop$/i.test(rest)) return { kind: 'stop' }
+  if ((x = rest.match(/^verified\s+(B\d{3,})$/i))) return { kind: 'verified', id: x[1].toUpperCase() }
+  return { kind: 'report', words: rest }
+}
+
+// What Claude is told beside a step-in (prompt context, the creative never sees it). typed = "bmuz bug <words>".
+export function stepInNote(words, { typed = false, auto = false } = {}) {
+  const head = typed ? `BMUZ engine: the creative stepped in to report a bug: "${String(words).slice(0, 400)}".` : 'BMUZ engine: if this message reports something broken, it is a step-in, not an answer to the step.'
+  return `${head} Report it with ${BUG_TOOL} (title, level, steps, expected, actual, how often; ${BUG_LEVELS}).${auto ? ' Auto run: ask nothing.' : ` Ask at most one question first, only if something essential is missing (${BUG_TOOL} {"ask": true} hands you the box).`} Add "now": "P0" | "blocks" | "quick" only for a P0, a bug that blocks the current step, or a minutes-long fix in code being changed right now. Write the line it returns word for word, then carry on where you were.`
+}
+
+// The current sprint's feature, from a BMUZ SPRINT.md ("## F07 … Weather cards" with a task still open): "F07", or null.
+// (Develop isn't on the engine yet, so "fix it after [F07]" reads the plan file.)
+export function sprintFeature(text) {
+  const parts = String(text || '').replace(/\r\n/g, '\n').split(/^(?=## F\d+)/m)
+  for (const p of parts) {
+    const m = p.match(/^## (F\d+)\b/)
+    if (m && /^- \[ \]/m.test(p)) return m[1]
+  }
+  return null
+}
+
+// "after F07" / "after The Rulebook" / "in the next bug fix run": when a logged bug gets fixed (the script's [after F07]).
+export function bugWhen(p, state, sprint = null) {
+  if (sprint) return `after ${sprint}`
+  const step = state && state.current ? stepById(p, state.current) : null
+  const place = step ? stepPlace(p, step) : null
+  const title = place ? place.split(' · ').pop() : step ? step.description || step.id : null
+  return title ? `after ${title}` : 'in the next bug fix run'
+}
+
+// Where a step-in came from and where it goes back to, in words: "Design · 2 of 10 · The Rulebook".
+export function placeWords(p, state) {
+  const step = state && state.current ? stepById(p, state.current) : null
+  if (!step) return state && state.status === 'done' ? `${(stageOf(p.id) || {}).name || p.id} (finished)` : `${(stageOf(p.id) || {}).name || p.id}`
+  return stepPlace(p, step) || `${(stageOf(p.id) || {}).name || p.id} · ${step.title || step.id}`
+}
+
+// Fix now? The creative's P0 is always now; "blocks" / "quick" only as the focus rule allows. Returns true / false.
+export function isFixNow(report) {
+  return !!report && (report.level === 'P0' || FIX_NOW.includes(report.now))
+}
+
+// The side trip's record: .bmuz/side.json { pipeline, bug, from, n, phase, place, sweep }. Problem in plain words, or null.
+export function sideProblem(side) {
+  if (!side || typeof side !== 'object') return 'it is not an object'
+  if (!NAME_RE.test(String(side.pipeline)) || !NAME_RE.test(String(side.from))) return 'its "pipeline" or "from" is not a pipeline name'
+  if (!/^B\d{3,}$/.test(String(side.bug))) return 'its "bug" is not a bug number like B004'
+  if (!['enter', 'on', 'leave'].includes(side.phase)) return 'its "phase" is not enter, on or leave'
+  if (!Number.isInteger(side.n) || side.n < 1) return 'its "n" is not a run number'
+  return null
+}
+
+// A file path Claude gave, as a project path ("src/score.js"), or null when it is outside the project or in .bmuz.
+// dir = the project folder with forward slashes. Windows paths compare without case.
+export function projectPath(dir, path) {
+  if (typeof path !== 'string' || !path.trim()) return null
+  const p = path.trim().replace(/\\/g, '/')
+  const root = String(dir || '').replace(/\\/g, '/').replace(/\/+$/, '')
+  const abs = /^([A-Za-z]:)?\//.test(p)
+  let rel = p
+  if (abs) {
+    const win = /^[A-Za-z]:/.test(root)
+    const a = win ? p.toLowerCase() : p
+    const r = win ? root.toLowerCase() : root
+    if (!a.startsWith(r + '/')) return null
+    rel = p.slice(root.length + 1)
+  }
+  rel = rel.replace(/^\.\//, '')
+  return isSafePath(rel) ? rel : null
 }
