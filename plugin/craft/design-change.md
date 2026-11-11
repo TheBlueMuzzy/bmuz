@@ -1,0 +1,3 @@
+Craft note (design, step "change" — the script's 3.10 Blueprint Review, after "Not yet: change something"; the option already said "next, tell me what").
+1. Call mcp__bmuz__say {"wait": true} and end your turn: their next message says what to change.
+2. Read what it touches (.planning/GDD.md, .planning/design/RULEBOOK.md), make the change, and hand back {"chapters": {"<n>": "<that whole chapter, changed>"}} — and, for a rule, "rulebook": {"<section key: overview, components, win, setup, end, scoring>": "<the section, changed>"} or {"actions": [{"name", "text"}]}, with "log": "<what changed and why>". The engine shows the blueprint again and asks.

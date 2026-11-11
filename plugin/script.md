@@ -591,9 +591,7 @@ header: The pitch
 Now the digital game around the rules, starting with who you play with and against. Knowing the gameplay first makes these choices much easier. This also starts the technical plan, the TDD.
 
 ## design.players.read · say
-I read how similar games handle this first:
-{found}
-Sources are on your project page.
+I read how similar games handle this first: {found}.
 
 ## design.players.ai · free
 How should the computer opponent play: what does it go for, how does it change by difficulty, and how does it still try to win?

@@ -9,6 +9,7 @@
       "Workflow(bmuz:hello-flow)",
       "Workflow(bmuz:research-flow)",
       "Workflow(bmuz:clash-flow)",
+      "Workflow(bmuz:sketch-flow)",
       "WebSearch",
       "WebFetch"
     ]
