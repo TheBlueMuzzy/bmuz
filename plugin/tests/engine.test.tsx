@@ -2264,3 +2264,18 @@ test('F219 review fix 6: a git exclude left changed by a stopped Deliver publish
   expect(run && /scripts\/deliver[.]mjs$/.test(run[1].split(String.fromCharCode(92)).join('/'))).toBe(true)
   expect(events(w).find((j: any) => j.ev === 'exclude.restored')).toMatchObject({ exitCode: 0 })
 })
+
+test('F219 review fix 10: in a talk step, "develop.plan" with a count of 1 is refused with the singular line to say; "develop.plan.one" comes back word for word', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const s = sayWorld(on)
+  const p = JSON.parse(s.w.files.PIPELINE)
+  p.steps[0].lines = ['develop.plan', 'develop.plan.one']
+  s.w.files.PIPELINE = JSON.stringify(p)
+  s.w.files.SCRIPT = [SCRIPT, '', '## develop.plan · say', '**Plan the Sprint** · Sprint {n} · {milestone}', "Here's what I'd build next, {count} features:", '',
+    '## develop.plan.one · say · added', '**Plan the Sprint** · Sprint {n} · {milestone}', "Here's what I'd build next, 1 feature:", ''].join(String.fromCharCode(10))
+  await start($, true)
+  const plural: any = await $.tool.call({ tool: SAY, line: 'develop.plan', slots: { n: '2', milestone: 'Vertical slice', count: '1' } } as any)
+  expect(String(plural.result ?? plural.deny ?? JSON.stringify(plural))).toMatch(/one feature: say "develop\.plan\.one" instead/)
+  const one: any = await $.tool.call({ tool: SAY, line: 'develop.plan.one', slots: { n: '2', milestone: 'Vertical slice' } } as any)
+  expect(said(one).say).toBe(`**Plan the Sprint** · Sprint 2 · Vertical slice${String.fromCharCode(10)}Here's what I'd build next, 1 feature:`)
+})
