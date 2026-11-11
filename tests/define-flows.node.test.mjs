@@ -1,4 +1,4 @@
-// No-Claude tests of Define's two workflows (F218): the fit check and the concept review run with fake
+// No-Claude tests of Define's clash check workflow (F232, the script's 2.6; it replaced F218's fit check and concept review): run with fake
 // helpers, so their rules (choose nothing, read project files only, findings become questions) are checked
 // without a session. Also the engine's test-answers stand-in (bmuz.json "testAnswers", BMUZ_TEST=1 only).
 import { test } from 'node:test'
@@ -27,74 +27,32 @@ async function runFlow(file, args, answer) {
   return { result, written, prompts, logs }
 }
 
-const CHOICES = {
-  primaries: [{ text: 'quiet care', his: true }],
-  pillars: [{ pillar: 'Every moment is quiet care', kind: 'feeling', settles: 'no rush' }],
-  coreVerbs: [{ verb: 'trim', outcome: 'keep a resource from running down' }],
-  story: null, // a step skipped by a wrap-up arrives as null
-}
 
-test('fit flow: three checks alone, reading project files only; repeats folded with who saw them; nothing chosen', async () => {
-  const seen = { tensions: [{ a: 'no rush', b: 'boats in fog', why: 'a boat in fog is a clock' }], against: [], onIceFits: [{ idea: 'a radio to talk to ships', brick: 'OI1', why: 'fits quiet care' }], gaps: [{ text: 'nothing delivers the dream' }], checked: 'read both files' }
-  const r = await runFlow('fit-flow.js', { choices: CHOICES, digest: '.planning/research/define-digest.md', discover: '.planning/DISCOVER.md', out: '.planning/research/define-fit.md' }, (p, o) => (o.label === 'check: unity' ? null : seen))
-  assert.equal(r.prompts.filter(p => p.opts.phase === 'Check').length, 3)
-  for (const p of r.prompts.filter(x => x.opts.phase === 'Check')) {
-    assert.match(p.prompt, /Find, never choose: no recommendation, no ranking/)
-    assert.match(p.prompt, /Use only Read, Glob and Grep\. Change no file\./)
-    assert.match(p.prompt, /- primaries: quiet care/)
-    assert.doesNotMatch(p.prompt, /- story:/) // a null choice is left out
-  }
-  assert.equal(r.written.path, '.planning/research/define-fit.md')
-  assert.match(r.written.text, /## Tensions\n- no rush ↔ boats in fog: a boat in fog is a clock \(seen by: Decisions & pillars, The shelves\)/)
-  assert.match(r.written.text, /## On-ice ideas that fit now\n- a radio to talk to ships \[OI1\]: fits quiet care/)
-  assert.match(r.written.text, /## Bricks against a pillar\n- none found/)
-  assert.match(r.written.text, /- Unity: no answer from this helper/)
-  assert.deepEqual(r.logs, ['no answer from: unity'])
-  assert.equal(r.result.tensions, 1)
+test('clash check (2.6): two reviewers who did not write the concept, each alone, reading project files only; each clash as A, B and why; nothing chosen', async () => {
+  const seen = []
+  const r = await runFlow('clash-flow.js', {}, (prompt, opts) => {
+    seen.push(opts)
+    assert.match(prompt, /You review it; you did not write it/)
+    assert.match(prompt, /Read \.planning\/GDD\.md \(its "Part 1 · The concept" chapters/)
+    assert.match(prompt, /You choose nothing and change no file/)
+    if (opts.label === 'review: pulls') return { clashes: [{ check: 1, a: '"Quick games"', b: 'the pillar "Big comebacks"', why: 'a comeback needs time to build, and a 3-minute game may not have it.' }], holds: 'the weather keeps every game close' }
+    assert.match(prompt, /pasted-on theme \(Juul\)[\s\S]*real trade-offs \(Meier\)[\s\S]*only because it's cool \(Thornton\)/)
+    return { clashes: [{ check: 1, a: '"Quick games"', b: 'the pillar "Big comebacks"', why: 'same' }, { check: 3, a: 'the hailstorm card art', b: 'the core loop', why: 'nothing in the loop asks for it' }], holds: 'x' }
+  })
+  assert.deepEqual(seen.filter(o => o.schema).map(o => o.label), ['review: pulls', 'review: inside'])
+  assert.equal(r.written.path, '.planning/research/define-clash.md')
+  assert.match(r.written.text, /## Clashes\nEach line: number :: A :: B :: why\n1 :: "Quick games" :: the pillar "Big comebacks" :: a comeback needs time to build, and a 3-minute game may not have it \(Pulls\)\n2 :: the hailstorm card art :: the core loop :: nothing in the loop asks for it \(Inside view\)\n/)
+  assert.match(r.written.text, /## Holds together\nthe weather keeps every game close\n/)
+  assert.equal(r.result.clashes, 2)
 })
 
-test('fit flow: a report path outside the project falls back to the default', async () => {
-  const r = await runFlow('fit-flow.js', { choices: CHOICES, out: '../escape.md' }, () => ({ tensions: [], against: [], onIceFits: [], gaps: [], checked: 'x' }))
-  assert.equal(r.written.path, '.planning/research/define-fit.md')
+test('clash check: none found says so; the report never goes into .bmuz, even when asked; no reviewer back is a failure', async () => {
+  const r = await runFlow('clash-flow.js', { out: '.bmuz/clash.md' }, () => ({ clashes: [], holds: 'every part serves the close race' }))
+  assert.equal(r.written.path, '.planning/research/define-clash.md')
+  assert.match(r.written.text, /## Clashes\nEach line: number :: A :: B :: why\n- none\n/)
+  await assert.rejects(runFlow('clash-flow.js', {}, () => { throw new Error('down') }), /no clash reviewer came back/)
 })
 
-test('fit flow: nothing chosen yet (an auto run chooses nothing): no helper runs, the report says so, the step does not fail', async () => {
-  const r = await runFlow('fit-flow.js', { choices: { story: [], pillars: null, product: {} } }, () => assert.fail('no helper should run'))
-  assert.equal(r.prompts.filter(p => p.opts.phase === 'Check').length, 0)
-  assert.match(r.written.text, /## Tensions\n- none found/)
-  assert.match(r.written.text, /## What was checked\n- nothing: no choices yet/)
-  assert.equal(r.result.tensions, 0)
-})
-
-test('concept review: two reviewers who did not write it; each finding becomes a card question (taste / want / choice, never engineering)', async () => {
-  const answer = (p, o) => (o.label === 'review: traces'
-    ? { findings: [{ check: 2, part: 'Pillars', finding: 'no pillar for "quiet care"', key: 'Concept Pillar Care!', q: 'Which pillar carries quiet care', kind: 'choice', options: ['pillar 1'] }], agrees: [{ check: 1, note: 'the story uses trim' }], notChecked: ['Scope per release: open'] }
-    : { findings: [{ check: 2, part: 'Made of', finding: 'the theme could be swapped', key: 'concept-theme', q: 'Does trimming feel like a keeper?', kind: 'taste', options: [] }, { check: 1, part: 'x', finding: 'dup', key: 'concept-theme', q: 'again?', kind: 'want', options: [] }], agrees: [], notChecked: [] })
-  const r = await runFlow('concept-check-flow.js', { gdd: '.planning/GDD.md', discover: '.planning/DISCOVER.md', decisions: '.bmuz/decisions.md', out: '.planning/research/define-check.md' }, answer)
-  const reviews = r.prompts.filter(p => p.opts.phase === 'Review')
-  assert.equal(reviews.length, 2)
-  for (const p of reviews) {
-    assert.match(p.prompt, /You review it; you did not write it\./)
-    assert.match(p.prompt, /You choose nothing and change no file\./)
-    assert.match(p.prompt, /Never an engineering question/)
-  }
-  assert.match(reviews[1].prompt, /contradicts a decision already recorded in \.bmuz\/decisions\.md/)
-  // a choice with fewer than 2 options becomes a want; a question gets its "?"; the key becomes a slug; a repeat key is dropped
-  assert.deepEqual(r.result.questions, [
-    { key: 'concept-pillar-care', q: 'Which pillar carries quiet care?', kind: 'want', options: ['pillar 1'] },
-    { key: 'concept-theme', q: 'Does trimming feel like a keeper?', kind: 'taste', options: [] },
-  ])
-  for (const q of r.result.questions) assert.equal(E.checkCard({ title: 't', done: 'd', see: 's', try: 't', proof: ['p'], todos: 'none', next: 'n', questions: [q] }).ok, true)
-  assert.match(r.written.text, /## Findings\n- Pillars: no pillar for "quiet care" \(Traces: every pillar traces to a primary feeling/)
-  assert.match(r.written.text, /→ question `concept-pillar-care` \(want\): Which pillar carries quiet care\? Options: pillar 1/)
-  assert.match(r.written.text, /## Not checked \(open parts\)\n- Scope per release: open/)
-})
-
-test('concept review: the report never goes into .bmuz, even when asked', async () => {
-  const r = await runFlow('concept-check-flow.js', { out: '.bmuz/check.md' }, () => ({ findings: [], agrees: [], notChecked: [] }))
-  assert.equal(r.written.path, '.planning/research/define-check.md')
-  assert.match(r.written.text, /## Findings\n- none: every check that could run agrees/)
-})
 
 test('test answers: refused without BMUZ_TEST=1; with it, the talk step\'s prompt carries them as the creative\'s words', () => {
   assert.equal(E.testAnswersProblem({ pipeline: 'define' }, ''), null)

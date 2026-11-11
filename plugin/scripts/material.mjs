@@ -143,3 +143,18 @@ export function onlyPointers(text) {
   const items = splitMaterial(text)
   return items.length > 0 && items.every(i => i.kind !== 'text')
 }
+
+// ---- Their own words (moved here from intake.mjs in F232, when the start was folded into Ideate) ----
+// Text as compared: case, curly quotes, dashes and markdown signs don't count.
+export function normalise(s) {
+  return String(s || '').toLowerCase()
+    .replace(/[‘’`´]/g, "'").replace(/[“”«»]/g, '"').replace(/[–—−]/g, '-')
+    .replace(/[*_#>|]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+// Is `text` the creative's own words, found in `sources` (normalised)? A quote cut with "…" counts when every
+// part is there; the quote's own end punctuation doesn't have to match.
+export function isVerbatim(text, sources) {
+  const parts = normalise(text).replace(/^["']|["']$/g, '').split(/\s*(?:\.\.\.|…)\s*/).map(p => p.replace(/[.,;:!?"']+$/, '').trim()).filter(Boolean)
+  return parts.length > 0 && parts.every(p => p.length >= 3 && sources.includes(p))
+}

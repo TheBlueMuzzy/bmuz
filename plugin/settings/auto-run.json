@@ -8,8 +8,7 @@
     "allow": [
       "Workflow(bmuz:hello-flow)",
       "Workflow(bmuz:research-flow)",
-      "Workflow(bmuz:fit-flow)",
-      "Workflow(bmuz:concept-check-flow)",
+      "Workflow(bmuz:clash-flow)",
       "WebSearch",
       "WebFetch"
     ]

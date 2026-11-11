@@ -85,7 +85,7 @@ test('F218: a step with "retries": 0 BLOCKS on its first failure (a refusal that
     p.steps.find(x => x.id === 'plan').retries = bad
     assert.ok(E.checkPipeline(p).some(m => /"retries" must be a whole number/.test(m)), String(bad))
   }
-  assert.equal(E.stepById(JSON.parse(readFileSync(new URL('../plugin/pipelines/define.json', import.meta.url), 'utf8')), 'stage').retries, 0)
+  assert.equal(E.stepById(JSON.parse(readFileSync(new URL('../plugin/pipelines/define.json', import.meta.url), 'utf8')), 'locked').retries, 0) // (F232: the lock's log step; F218's stage step went with the old Define)
 })
 
 test('done-checks read results and files', () => {

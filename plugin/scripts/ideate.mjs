@@ -15,8 +15,22 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as E from '../hooks/engine.js'
 import * as G from './gdd.mjs'
-import { answersFrom } from './ideate-doc.mjs'
-import { isVerbatim, normalise } from './intake.mjs'
+import { isVerbatim, normalise } from './material.mjs'
+
+// The creative's answers as the engine journaled them (ev "answer": a typed answer to a free line, or a question box's
+// answer — of a box, only the answers count, not the questions: Claude Code writes "question"="answer").
+export function answersFrom(journalLines, steps = null) {
+  const out = []
+  for (const l of journalLines) {
+    let j
+    try { j = JSON.parse(l) } catch (e) { continue }
+    if (!j || j.ev !== 'answer' || (steps && !steps.includes(j.step))) continue
+    const t = String(j.text || '')
+    const picked = [...t.matchAll(/"[^"]*"="([^"]*)"/g)].map(m => m[1])
+    out.push(...(picked.length ? picked : [t]))
+  }
+  return out.filter(x => String(x).trim())
+}
 
 export const SO_FAR = '.planning/research/ideate-so-far.md'
 export const SO_FAR_JSON = '.planning/research/ideate-so-far.json'

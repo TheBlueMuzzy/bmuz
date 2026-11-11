@@ -1,461 +1,301 @@
 {
   "id": "define",
   "version": 1,
-  "description": "Define a game (framework .planning/research/bmuz-vision/define-research.md section 5, with section 6's 'Muzzy's answers' built in): build on DISCOVER.md's shelves, choose the direction, the 3-5 line story, the blocks (core verbs and mechanisms), the pillars, the scope and the risks, check them against each other, write the concept (GDD Part 1) and lock it. Choosing is the creative's: an auto run chooses nothing. Wrap up after any talk step. (F228: it builds on Ideate's game so far, .planning/IDEATE.md, and on an older DISCOVER.md when there is none.)",
+  "description": "Define: The Concept (F232, the approved script's Stage 2, framework .planning/research/bmuz-vision/bmuz-design-doc.html): 2.0 Welcome to Define · 2.1 The Feelings · 2.2 The 3 Pillars · 2.3 The Pitch (research offered first; 'show me your take') · 2.4 The Core Loop · 2.5 Platform & Play · 2.6 Clash Check · 2.7 Scope, First Pass · 2.8 Concept Lock (gate). Turns the loose idea into decisions, from the biggest down, writing GDD Part 1 chapter by chapter as chosen; it ends with a one-page concept and a first, rough scope and risk report. Choosing is the creative's: an auto run never locks. Every fixed line comes from plugin/script.md, word for word.",
   "watchdogMs": 1200000,
-  "next": {
-    "pipeline": "design"
-  },
+  "next": { "pipeline": "design", "ask": false },
   "steps": [
     {
-      "id": "digest",
-      "kind": "script",
+      "id": "welcome",
+      "kind": "talk",
       "needs": [],
-      "always": true,
-      "description": "Digest: DISCOVER.md's shelves grouped (no AI), and on a second run what's locked and what's new",
-      "run": [
-        "node",
-        "{plugin}/scripts/define-digest.mjs"
-      ],
-      "writes": [
-        ".planning/research/define-digest.md"
-      ],
-      "done": {
-        "type": "file-contains",
-        "path": ".planning/research/define-digest.md",
-        "text": "## Shelves"
-      }
+      "no": "2.0",
+      "title": "Welcome to Define",
+      "description": "What Define is for and how it flows",
+      "tools": ["Read"],
+      "lines": ["define.welcome"],
+      "opening": ["define.welcome"],
+      "craft": "craft/define-welcome.md"
     },
     {
-      "id": "direction",
+      "id": "feelings",
       "kind": "talk",
-      "needs": [
-        "digest"
-      ],
-      "description": "Direction: the frame first (platform, which way up, players, online, session, controls), then the feelings that are this game, how we'll know, and what it is not",
-      "tools": [
-        "AskUserQuestion",
-        "ToolSearch",
-        "Read",
-        "Glob",
-        "Grep"
-      ],
-      "craft": "craft/define-direction.md",
-      "results": [
-        "youAre",
-        "fantasy",
-        "primaries",
-        "knowWhen",
-        "notThis",
-        "audience",
-        "product"
-      ],
-      "wrapTo": "write"
+      "needs": ["welcome"],
+      "no": "2.1",
+      "title": "The Feelings",
+      "description": "The one or two feelings that are this game, how we'd know, and what it won't have",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "lines": ["define.feelings", "define.feelings.moments", "define.feelings.own", "define.feelings.match", "define.feelings.right", "define.feelings.eight", "define.feelings.know", "define.feelings.not", "any.keep"],
+      "opening": ["define.feelings"],
+      "craft": "craft/define-feelings.md",
+      "results": ["chapters", "feelings", "feeling"]
     },
     {
-      "id": "story",
-      "kind": "talk",
-      "needs": [
-        "direction"
-      ],
-      "description": "Story: the game in 3 to 5 lines, the pitch line, the hook and the anchor — and, once, an offer to look at the closest games first",
-      "tools": [
-        "AskUserQuestion",
-        "ToolSearch",
-        "Read",
-        "Glob",
-        "Grep"
-      ],
-      "craft": "craft/define-story.md",
-      "results": [
-        "story",
-        "pitch",
-        "hook",
-        "anchor",
-        "priorArt"
-      ],
-      "recap": [
-        "youAre",
-        "fantasy",
-        "primaries",
-        "notThis"
-      ],
-      "wrapTo": "write"
-    },
-    {
-      "id": "prior-art",
-      "kind": "flow",
-      "needs": [
-        "story"
-      ],
-      "when": "{priorArt}",
-      "description": "Prior art, only when you asked for it: the games closest to this one, what players praise and miss, what is new here",
-      "workflow": "bmuz:research-flow",
-      "args": {
-        "topic": "prior-art",
-        "brief": "{pitch}",
-        "youAre": "{youAre}",
-        "collected": {
-          "story": "{story}",
-          "primaries": "{primaries}",
-          "notThis": "{notThis}",
-          "hook": "{hook}",
-          "anchor": "{anchor}"
-        },
-        "out": ".planning/research/define-prior-art.md"
-      },
-      "agentTools": [
-        "ToolSearch",
-        "WebSearch",
-        "WebFetch",
-        "StructuredOutput",
-        "Write"
-      ],
-      "writes": [
-        ".planning/research/define-prior-art.md"
-      ],
-      "timeoutMs": 1800000,
-      "done": {
-        "type": "script-ok",
-        "run": [
-          "node",
-          "{plugin}/scripts/check-sources.mjs",
-          ".planning/research/define-prior-art.md"
-        ]
-      }
-    },
-    {
-      "id": "bricks",
-      "kind": "talk",
-      "needs": [
-        "prior-art"
-      ],
-      "description": "Blocks: the core loop in verbs, what players act on, the rules' shape, the real skill, what changes over time, a mechanism per verb (yours first), the look",
-      "tools": [
-        "AskUserQuestion",
-        "ToolSearch",
-        "Read",
-        "Glob",
-        "Grep"
-      ],
-      "craft": "craft/define-bricks.md",
-      "results": [
-        "coreVerbs",
-        "mechanisms",
-        "interactables",
-        "theme",
-        "tone"
-      ],
-      "recap": [
-        "youAre",
-        "primaries",
-        "story",
-        "notThis",
-        "priorArt"
-      ],
-      "wrapTo": "write"
+      "id": "feelings-gdd",
+      "kind": "script",
+      "needs": ["feelings"],
+      "description": "The Feelings, chosen, into the GDD",
+      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "feelings", "chosen"],
+      "writes": [".planning/GDD.md", ".planning/project-page.html"]
     },
     {
       "id": "pillars",
       "kind": "talk",
-      "needs": [
-        "bricks"
-      ],
-      "description": "Pillars: three rules that settle arguments (a feeling, a theme rule or a situation)",
-      "tools": [
-        "AskUserQuestion",
-        "ToolSearch",
-        "Read",
-        "Glob",
-        "Grep"
-      ],
+      "needs": ["feelings-gdd"],
+      "no": "2.2",
+      "title": "The 3 Pillars",
+      "description": "Three short rules that settle arguments later",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "lines": ["define.pillars", "define.pillars.take", "define.pillars.own", "define.pillars.test", "define.pillars.slogan", "any.keep"],
+      "opening": ["define.pillars"],
       "craft": "craft/define-pillars.md",
-      "results": [
-        "pillars"
-      ],
-      "recap": [
-        "primaries",
-        "story",
-        "coreVerbs",
-        "theme",
-        "tone",
-        "notThis"
-      ],
-      "wrapTo": "write"
+      "results": ["chapters", "pillars"]
     },
     {
-      "id": "fit-check",
-      "kind": "flow",
-      "needs": [
-        "pillars"
-      ],
-      "description": "Fit check: helpers check the choices against each other and the shelves, and choose nothing",
-      "workflow": "bmuz:fit-flow",
-      "args": {
-        "choices": {
-          "youAre": "{youAre}",
-          "fantasy": "{fantasy}",
-          "primaries": "{primaries}",
-          "knowWhen": "{knowWhen}",
-          "notThis": "{notThis}",
-          "audience": "{audience}",
-          "story": "{story}",
-          "pitch": "{pitch}",
-          "hook": "{hook}",
-          "anchor": "{anchor}",
-          "coreVerbs": "{coreVerbs}",
-          "mechanisms": "{mechanisms}",
-          "interactables": "{interactables}",
-          "theme": "{theme}",
-          "tone": "{tone}",
-          "pillars": "{pillars}",
-          "product": "{product}"
-        },
-        "digest": ".planning/research/define-digest.md",
-        "discover": ".planning/DISCOVER.md",
-        "out": ".planning/research/define-fit.md",
-        "ideate": ".planning/IDEATE.md"
-      },
-      "agentTools": [
-        "Read",
-        "Glob",
-        "Grep",
-        "StructuredOutput",
-        "Write"
-      ],
-      "writes": [
-        ".planning/research/define-fit.md"
-      ],
-      "timeoutMs": 1200000,
-      "done": {
-        "type": "file-contains",
-        "path": ".planning/research/define-fit.md",
-        "text": "## Tensions"
-      }
+      "id": "pillars-gdd",
+      "kind": "script",
+      "needs": ["pillars"],
+      "description": "The 3 Pillars, chosen, into the GDD",
+      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "pillars", "chosen"],
+      "writes": [".planning/GDD.md", ".planning/project-page.html"]
     },
     {
-      "id": "tensions",
+      "id": "pitch-ask",
       "kind": "talk",
-      "needs": [
-        "fit-check"
-      ],
-      "description": "Tensions: each one the fit check found (keep, change or park), then the on-ice ideas that fit now",
-      "tools": [
-        "AskUserQuestion",
-        "ToolSearch",
-        "Read",
-        "Glob",
-        "Grep"
-      ],
-      "craft": "craft/define-tensions.md",
-      "results": [
-        "resolved",
-        "broughtIn",
-        "parked"
-      ],
-      "recap": [
-        "primaries",
-        "pillars",
-        "coreVerbs",
-        "notThis"
-      ],
-      "wrapTo": "write"
+      "needs": ["pillars-gdd"],
+      "no": "2.3",
+      "title": "The Pitch",
+      "description": "The game in a few lines; research the closest games first?",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "lines": ["define.pitch", "define.pitch.research"],
+      "opening": ["define.pitch"],
+      "craft": "craft/define-pitch-ask.md",
+      "results": ["research", "brief"]
+    },
+    {
+      "id": "prior-art",
+      "kind": "flow",
+      "needs": ["pitch-ask"],
+      "when": "{research}",
+      "no": "2.3",
+      "title": "The Pitch",
+      "description": "The closest games: what players love and miss in them, and what's new here (only when you asked)",
+      "workflow": "bmuz:research-flow",
+      "args": {
+        "topic": "prior-art",
+        "brief": "{brief}",
+        "youAre": "",
+        "collected": { "feelings": "{feelings}", "pillars": "{pillars}" },
+        "out": ".planning/research/define-prior-art.md"
+      },
+      "agentTools": ["ToolSearch", "WebSearch", "WebFetch", "StructuredOutput", "Write"],
+      "writes": [".planning/research/define-prior-art.md"],
+      "timeoutMs": 1800000,
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/check-sources.mjs", ".planning/research/define-prior-art.md"] }
+    },
+    {
+      "id": "pitch",
+      "kind": "talk",
+      "needs": ["prior-art"],
+      "no": "2.3",
+      "title": "The Pitch",
+      "description": "Your take or mine: 3–5 lines written to \"you\", and one line",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "lines": ["define.pitch.found", "define.pitch.take", "define.pitch.write", "define.pitch.mine", "define.pitch.how", "define.pitch.different", "define.pitch.meets", "define.pitch.breath", "any.keep"],
+      "craft": "craft/define-pitch.md",
+      "results": ["chapters", "oneliner"],
+      "recap": ["research"]
+    },
+    {
+      "id": "pitch-gdd",
+      "kind": "script",
+      "needs": ["pitch"],
+      "description": "The Pitch, chosen, into the GDD",
+      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "pitch", "chosen"],
+      "writes": [".planning/GDD.md", ".planning/project-page.html"]
+    },
+    {
+      "id": "loop",
+      "kind": "talk",
+      "needs": ["pitch-gdd"],
+      "no": "2.4",
+      "title": "The Core Loop",
+      "description": "What you do, over and over: the heartbeat of the game",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "lines": ["define.loop", "define.loop.steps", "define.loop.time", "define.loop.verbs", "define.loop.here", "define.loop.ok", "any.keep"],
+      "opening": ["define.loop"],
+      "craft": "craft/define-loop.md",
+      "results": ["chapters", "loop"]
+    },
+    {
+      "id": "loop-gdd",
+      "kind": "script",
+      "needs": ["loop"],
+      "description": "The Core Loop, chosen, into the GDD",
+      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "loop", "chosen"],
+      "writes": [".planning/GDD.md", ".planning/project-page.html"]
+    },
+    {
+      "id": "platform",
+      "kind": "talk",
+      "needs": ["loop-gdd"],
+      "no": "2.5",
+      "title": "Platform & Play",
+      "description": "Where it's played first, and who with",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "lines": ["define.platform", "define.platform.where", "define.platform.first", "define.platform.someday", "define.platform.who", "define.platform.ai", "any.keep"],
+      "opening": ["define.platform"],
+      "craft": "craft/define-platform.md",
+      "results": ["chapters", "platform"]
+    },
+    {
+      "id": "platform-gdd",
+      "kind": "script",
+      "needs": ["platform"],
+      "description": "Platform & Play, chosen, into the GDD",
+      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "platform", "chosen"],
+      "writes": [".planning/GDD.md", ".planning/project-page.html"]
+    },
+    {
+      "id": "clash",
+      "kind": "talk",
+      "needs": ["platform-gdd"],
+      "no": "2.6",
+      "title": "Clash Check",
+      "description": "What the clash check does, before the reviewers read",
+      "tools": ["Read"],
+      "lines": ["define.clash"],
+      "opening": ["define.clash"],
+      "craft": "craft/define-clash.md"
+    },
+    {
+      "id": "clash-review",
+      "kind": "flow",
+      "needs": ["clash"],
+      "no": "2.6",
+      "title": "Clash Check",
+      "description": "Separate reviewers read Part 1 for things that pull against each other (they choose nothing)",
+      "workflow": "bmuz:clash-flow",
+      "args": { "gdd": ".planning/GDD.md", "decisions": ".bmuz/decisions.md", "out": ".planning/research/define-clash.md" },
+      "agentTools": ["Read", "Glob", "Grep", "StructuredOutput", "Write"],
+      "writes": [".planning/research/define-clash.md"],
+      "timeoutMs": 1200000,
+      "done": { "type": "file-contains", "path": ".planning/research/define-clash.md", "text": "## Clashes" }
+    },
+    {
+      "id": "clashes",
+      "kind": "talk",
+      "needs": ["clash-review"],
+      "no": "2.6",
+      "title": "Clash Check",
+      "description": "Each clash and what you'd do: keep both, change one, or park one",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "lines": ["define.clash.one", "define.clash.what", "define.clash.none"],
+      "craft": "craft/define-clashes.md",
+      "results": ["clashes"]
+    },
+    {
+      "id": "clashes-gdd",
+      "kind": "script",
+      "needs": ["clashes"],
+      "description": "What you decided about each clash, into the GDD (risks, changes, ideas for later)",
+      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "clashes", "chosen"],
+      "writes": [".planning/GDD.md", ".planning/project-page.html"]
     },
     {
       "id": "scope",
       "kind": "talk",
-      "needs": [
-        "tensions"
-      ],
-      "description": "Scope: what the player can do and feel in the first release and later, what's never in it, where it's played",
-      "tools": [
-        "AskUserQuestion",
-        "ToolSearch",
-        "Read",
-        "Glob",
-        "Grep"
-      ],
+      "needs": ["clashes-gdd"],
+      "no": "2.7",
+      "title": "Scope, First Pass",
+      "description": "Must / Should / Could / Won't, effort vs impact",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "lines": ["define.scope", "define.scope.smallest", "define.scope.idea", "define.scope.wont"],
+      "opening": ["define.scope"],
       "craft": "craft/define-scope.md",
-      "results": [
-        "musts",
-        "later",
-        "should",
-        "could",
-        "wont",
-        "size",
-        "product"
-      ],
-      "recap": [
-        "primaries",
-        "pillars",
-        "story",
-        "coreVerbs",
-        "mechanisms",
-        "product"
-      ],
-      "wrapTo": "write"
+      "results": ["chapters", "musts"]
     },
     {
-      "id": "risks",
-      "kind": "talk",
-      "needs": [
-        "scope"
-      ],
-      "description": "Risks: what could stop it being great, the cheapest test for each, and what would make you rethink",
-      "tools": [
-        "AskUserQuestion",
-        "ToolSearch",
-        "Read",
-        "Glob",
-        "Grep"
-      ],
-      "craft": "craft/define-risks.md",
-      "results": [
-        "risks"
-      ],
-      "recap": [
-        "primaries",
-        "pillars",
-        "coreVerbs",
-        "mechanisms",
-        "musts"
-      ]
-    },
-    {
-      "id": "write",
+      "id": "scope-gdd",
       "kind": "script",
-      "needs": [
-        "risks"
-      ],
-      "always": true,
-      "description": "Write: the concept into GDD Part 1 (hand edits kept, changes logged) and the material it used marked in DISCOVER.md (never trimmed)",
-      "run": [
-        "node",
-        "{plugin}/scripts/define-doc.mjs"
-      ],
-      "writes": [
-        ".planning/GDD.md",
-        ".planning/DISCOVER.md"
-      ],
-      "done": {
-        "type": "file-contains",
-        "path": ".planning/GDD.md",
-        "text": "## Part 1 — The concept"
-      }
+      "needs": ["scope"],
+      "description": "The scope and the effort vs impact chart, into the GDD and onto your project page",
+      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "scope", "chosen"],
+      "writes": [".planning/GDD.md", ".planning/project-page.html"]
     },
     {
-      "id": "concept-lint",
-      "kind": "script",
-      "needs": [
-        "write"
-      ],
-      "always": true,
-      "description": "Concept lint: every part there (or marked open), the counts right, every won't with a reason, every risk with a test",
-      "run": [
-        "node",
-        "{plugin}/scripts/concept-lint.mjs",
-        ".planning/GDD.md"
-      ]
-    },
-    {
-      "id": "concept-review",
-      "kind": "flow",
-      "needs": [
-        "concept-lint"
-      ],
-      "always": true,
-      "description": "Concept review: separate reviewers check the concept agrees with itself; findings become questions",
-      "workflow": "bmuz:concept-check-flow",
-      "args": {
-        "gdd": ".planning/GDD.md",
-        "discover": ".planning/DISCOVER.md",
-        "decisions": ".bmuz/decisions.md",
-        "out": ".planning/research/define-check.md",
-        "ideate": ".planning/IDEATE.md"
-      },
-      "agentTools": [
-        "Read",
-        "Glob",
-        "Grep",
-        "StructuredOutput",
-        "Write"
-      ],
-      "writes": [
-        ".planning/research/define-check.md"
-      ],
-      "timeoutMs": 1200000,
-      "done": {
-        "type": "file-contains",
-        "path": ".planning/research/define-check.md",
-        "text": "## Findings"
-      }
-    },
-    {
-      "id": "review",
+      "id": "slice",
       "kind": "talk",
-      "needs": [
-        "concept-review"
-      ],
-      "description": "the concept card: what was chosen, what's still open, and the review's findings as numbered questions",
-      "tools": [
-        "AskUserQuestion",
-        "ToolSearch",
-        "Read",
-        "Glob",
-        "Grep",
-        "Edit"
-      ],
-      "craft": "craft/define-review.md",
-      "handoff": true,
-      "results": [
-        "found"
-      ],
-      "writes": [
-        ".planning/GDD.md"
-      ],
-      "done": {
-        "type": "script-ok",
-        "run": [
-          "node",
-          "{plugin}/scripts/concept-lint.mjs",
-          ".planning/GDD.md"
-        ]
-      }
+      "needs": ["scope-gdd"],
+      "no": "2.7",
+      "title": "Scope, First Pass",
+      "description": "The chart, the vertical slice, and my first report",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "lines": ["define.scope.chart", "define.scope.slice", "define.scope.slice.ok", "define.scope.report"],
+      "opening": ["define.scope.chart"],
+      "craft": "craft/define-slice.md",
+      "results": ["chapters", "slice"]
+    },
+    {
+      "id": "slice-gdd",
+      "kind": "script",
+      "needs": ["slice"],
+      "description": "The slice, the risks and the new sketch ideas, into the GDD",
+      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "slice", "chosen"],
+      "writes": [".planning/GDD.md", ".planning/project-page.html"]
+    },
+    {
+      "id": "change",
+      "kind": "talk",
+      "needs": ["slice-gdd"],
+      "onBack": true,
+      "no": "2.8",
+      "title": "Concept Lock",
+      "description": "What you want changed before you lock it (only when you said \"Not yet\")",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "lines": ["any.keep"],
+      "craft": "craft/define-change.md",
+      "results": ["chapters"]
+    },
+    {
+      "id": "change-gdd",
+      "kind": "script",
+      "needs": ["change"],
+      "description": "Your changes, into the GDD",
+      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "change", "chosen"],
+      "writes": [".planning/GDD.md", ".planning/project-page.html"]
+    },
+    {
+      "id": "lock-show",
+      "kind": "script",
+      "needs": ["change-gdd"],
+      "no": "2.8",
+      "title": "Concept Lock",
+      "description": "The concept, one page, on your project page",
+      "run": ["node", "{plugin}/scripts/define.mjs", "lock-show"],
+      "writes": [".planning/research/define-lock.md", ".planning/project-page.html"],
+      "show": ".planning/research/define-lock.md",
+      "done": { "type": "file-contains", "path": ".planning/research/define-lock.md", "text": "**Concept Lock**" }
     },
     {
       "id": "lock",
       "kind": "gate",
-      "needs": [
-        "review"
-      ],
-      "question": "Lock the concept and start Design?",
-      "options": [
-        "Not yet: change something",
-        "Lock it: on to Design"
-      ],
+      "needs": ["lock-show"],
+      "no": "2.8",
+      "title": "Concept Lock",
+      "description": "Lock the concept?",
+      "line": "define.lock.box",
       "approve": "Lock it: on to Design",
-      "backTo": "review"
+      "backTo": "change"
     },
     {
-      "id": "stage",
+      "id": "locked",
       "kind": "script",
-      "needs": [
-        "lock"
-      ],
-      "description": "Stage: the GDD moves to Design (refused, in plain words, while the story, feelings, pillars or first-release musts are open)",
+      "needs": ["lock"],
       "retries": 0,
-      "run": [
-        "node",
-        "{plugin}/scripts/define-stage.mjs"
-      ],
-      "writes": [
-        ".planning/GDD.md"
-      ],
-      "done": {
-        "type": "file-contains",
-        "path": ".planning/GDD.md",
-        "text": "Current phase: Design"
-      }
+      "description": "The concept locked: logged in the GDD's Decisions and Changes",
+      "run": ["node", "{plugin}/scripts/define.mjs", "locked"],
+      "writes": [".planning/GDD.md", ".planning/project-page.html"]
     }
   ]
 }
