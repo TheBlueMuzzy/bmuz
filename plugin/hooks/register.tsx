@@ -598,6 +598,12 @@ async function registerAll($: any) {
     inputSchema: { type: 'object', properties: { idea: { type: 'string' } }, required: ['idea'] },
     isDeferred: false,
   })
+  await $.tool.register({
+    name: 'run',
+    description: 'BMUZ engine (Develop\'s builder): run one of a fixed list in the project folder, and see its output: {"what": "test"} (the project\'s tests; add "file": "tests/x.test.mjs" for one file), {"what": "check"} (npm run check:fast), {"what": "install"} (npm install), {"what": "screenshot", "url": "http://localhost:5173/", "out": ".planning/screens/F01-main-phone.png", "size": "phone" | "desktop"} (when the project has Playwright). Nothing else runs: no git, no other commands.',
+    inputSchema: { type: 'object', properties: { what: { type: 'string', enum: E.RUN_WHAT }, file: { type: 'string' }, url: { type: 'string' }, out: { type: 'string' }, size: { type: 'string' } }, required: ['what'] },
+    isDeferred: false,
+  })
   await $.command.register({ name: 'bmuz-go', description: 'BMUZ: start or resume the pipeline' })
   await $.command.register({ name: 'bmuz-approve', description: 'BMUZ: answer the open gate', argumentHint: '<option>' })
   await $.command.register({ name: 'bmuz-status', description: 'BMUZ: where are we' })
@@ -1408,6 +1414,33 @@ async function ideaTool($: any, e: any) {
   return { result: JSON.stringify({ say: line.text, then: `Write exactly the "say" text now, as text in your reply.${talkOpen ? ` Then carry on with step "${step.id}" exactly where it was.` : ' Then end your turn.'}` }) }
 }
 
+// F216 review fix 2a: the run tool. Only run.mjs's fixed list, in the project folder; the files a run changed (a
+// package-lock.json, a screenshot) are recorded as the step's own, so the feature's commit takes them.
+async function runTool($: any, e: any) {
+  const what = String(e.what ?? '')
+  if (!E.RUN_WHAT.includes(what)) return { deny: `BMUZ engine: "what" is one of ${E.RUN_WHAT.join(', ')}` }
+  const args = what === 'test' ? (e.file ? [String(e.file)] : []) : what === 'screenshot' ? [String(e.url ?? ''), String(e.out ?? ''), String(e.size ?? '')] : []
+  let ran: any
+  try {
+    ran = await $.process.run(['node', `${ctx.root}/scripts/run.mjs`, what, ...args], { cwd: ctx.dir, timeoutMs: E.HOST_RUN_MAX_MS })
+  } catch (err) {
+    return { result: `the run could not start: ${String(err).slice(0, 200)}` }
+  }
+  const out = String(ran?.stdout ?? '').trim()
+  let last: any = {}
+  try { last = JSON.parse(out.split('\n').pop() || '{}') } catch (err) { last = {} }
+  const stepId = ctx.state.current
+  if (stepId && Array.isArray(last.changed)) {
+    const own = await readOwn($)
+    const mine = own.steps[stepId] || {}
+    for (const f of last.changed.map(String).filter((x: string) => E.isSafePath(x))) mine[f] = { after: E.textSha(await readText($, `${ctx.dir}/${f}`)), keys: null, created: !!(mine[f] && mine[f].created), run: true }
+    own.steps[stepId] = mine
+    await $.fs.write(`${ctx.dir}/.bmuz/own.json`, JSON.stringify(own, null, 2))
+  }
+  await journal($, { ev: 'run', step: stepId ?? null, what, args, exitCode: last.exitCode ?? ran?.exitCode ?? null, changed: last.changed ?? [] })
+  return { result: out.split('\n').slice(0, -1).join('\n').slice(-4000) || '(no output)' }
+}
+
 // The creative did something (answered a box, closed it, typed a message): a talk step's stall clock starts again.
 
 async function markActive($: any) {
@@ -1596,6 +1629,7 @@ export const register: Register = on => {
     if (call.tool === E.SAY_TOOL) return sayTool($, e)
     if (call.tool === E.BUG_TOOL) return bugTool($, e)
     if (call.tool === E.IDEA_TOOL) return ideaTool($, e)
+    if (call.tool === E.RUN_TOOL) return runTool($, e)
     if (call.tool === 'AskUserQuestion' && !ctx.auto) {
       // A background session lists the question tool but refuses it (headless check 15): then nobody
       // can answer, so from here this session is an auto run and the turn-end rule keeps it moving.

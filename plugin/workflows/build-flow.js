@@ -12,7 +12,7 @@ export const meta = {
 // The design: the approved script's 4.4 Build & Prove ("Every rule gets a test, and every screen size gets a
 // screenshot"), the /develop skill's unattended runs (one fresh helper per feature, briefed with the feature's sprint
 // section; tests in the foreground with a timeout) and the clash flow's separate reviewers (they didn't write it).
-// The engine runs each mode as its own step, so each gets only its own tools: the builder may use Bash (inside the
+// The engine runs each mode as its own step, so each gets only its own tools: the builder may run the engine's fixed list (mcp__bmuz__run: the tests, check:fast, npm install, screenshots — no Bash; F216 review fix 2a) (inside the
 // project, the engine checks), Write and Edit; the reviewer and the confirmer only Read, Glob and Grep. "Done" is
 // sprint.mjs prove, run by the engine after the build and after the fix: the tests run and pass, or it isn't done.
 
@@ -41,12 +41,12 @@ const REPORT = {
 const RULES = [
   'Rules:',
   `- Read ${brief} first (the feature: what the creative will see, when it is done, what it is not doing yet, its tasks), then the files it names. The rulebook is the single truth.`,
-  '- Read files with the Read tool (the brief and the earlier tries in .bmuz/develop/ too); run commands with Bash, from the project folder, with relative paths.',
+  '- Read files with the Read tool (the brief and the earlier tries in .bmuz/develop/ too). There is no Bash: run the tests with the mcp__bmuz__run tool ({"what": "test"}, or {"what": "test", "file": "tests/x.test.mjs"}), and {"what": "install"} after adding a package to the dependencies in package.json. Never change the scripts in package.json, anything in .planning/, or an existing test so that it checks less.',
   '- Change files inside this project only (relative paths). Never change anything in the .bmuz folder, never commit or push: the engine commits.',
   '- Every rule this feature builds gets a test (node --test unless package.json says otherwise), named "<feature id> <the rule in a few words>". Tests check behaviour, not wording.',
   '- Every number a designer could tune (speeds, counts, odds) lives in content/ JSON (content/tuning/*.json or content/data/*.json), never written in the code.',
-  '- Run the tests in the foreground with a timeout (npm test), never start one in the background and wait. Fix until they pass.',
-  '- If the project has a UI (an index.html, or a "dev" script in package.json), take a screenshot of each screen this feature changes at phone size (390×844) and desktop size (1280×800), saved as .planning/screens/<feature id>-<screen>-phone.png and -desktop.png (Playwright through npx, if it is there).',
+  '- Run the tests with mcp__bmuz__run (it runs them in the foreground with a timeout and shows you the output). Fix until they pass.',
+  '- If the project has a UI (an index.html, or a "dev" script in package.json), take a screenshot of each screen this feature changes at phone size (390×844) and desktop size (1280×800), saved as .planning/screens/<feature id>-<screen>-phone.png and -desktop.png (mcp__bmuz__run {"what": "screenshot", "url": "http://localhost:<port>/", "out": ".planning/screens/…png", "size": "phone" | "desktop"}, when the project has Playwright).',
   '- Human-readable code, small changes, nothing beyond the feature.',
   '- Your answer: "tests" (each {rule, file, name}: the exact test name), "changed" (up to 3 short lines from the player\'s side: what they can now do or see), "try" (one thing for the creative to try), "pc" and "phone" (how to play it: a link or a command; leave out if none), "screens" ({size: "phone"|"desktop", file}), "files" (what you changed).',
 ].join('\n')

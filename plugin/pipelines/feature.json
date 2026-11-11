@@ -15,7 +15,7 @@
       "id": "build", "kind": "flow", "needs": ["start"], "no": "4.4", "title": "Build & Prove",
       "description": "A fresh builder helper builds it, every rule with a test; the engine runs the tests",
       "workflow": "bmuz:build-flow", "args": { "mode": "build", "brief": ".bmuz/develop/brief.md", "tries": ".bmuz/develop/tries.md" },
-      "agentTools": ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "StructuredOutput"], "timeoutMs": 2400000,
+      "agentTools": ["Read", "Glob", "Grep", "Write", "Edit", "mcp__bmuz__run", "ToolSearch", "StructuredOutput"], "timeoutMs": 2400000,
       "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/sprint.mjs", "prove"] },
       "stuck": ".bmuz/develop/say-stuck.md"
     },
@@ -34,7 +34,7 @@
       "id": "fix", "kind": "flow", "needs": ["review-save"], "when": "{findings}", "no": "4.4", "title": "Build & Prove",
       "description": "The confirmed findings fixed, once; the engine runs the tests again",
       "workflow": "bmuz:build-flow", "args": { "mode": "fix", "brief": ".bmuz/develop/brief.md", "review": ".bmuz/develop/review.md" },
-      "agentTools": ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "StructuredOutput"], "timeoutMs": 2400000,
+      "agentTools": ["Read", "Glob", "Grep", "Write", "Edit", "mcp__bmuz__run", "ToolSearch", "StructuredOutput"], "timeoutMs": 2400000,
       "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/sprint.mjs", "prove"] }
     },
     {

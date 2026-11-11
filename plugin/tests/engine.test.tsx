@@ -2098,3 +2098,23 @@ test('F216 review fix 5: an undo puts back only what the step\'s own Write chang
   expect(JSON.parse(w.files['/proj/cfg.json'])).toEqual({ speed: 2, hand: 4 })
   expect(w.files['/proj/other.json']).toBe('{"x":2}')
 })
+
+test('F216 review fix 2a: the builder helper runs only through the engine\'s run tool (run.mjs, its fixed list); what a run changed is recorded as the step\'s own; Bash is refused', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({}), (argv: string[]) => (String(argv[1]).endsWith('run.mjs') ? { exitCode: 0, stdout: 'added 1 package\n{"exitCode":0,"changed":["package-lock.json"]}' } : { exitCode: 0, stdout: '{}' }))
+  const p = JSON.parse(w.files.PIPELINE)
+  p.steps[2] = { id: 'plan', kind: 'flow', needs: ['approve'], workflow: 'bmuz:hello-flow', agentTools: ['Read', 'mcp__bmuz__run'] }
+  w.files.PIPELINE = JSON.stringify(p)
+  w.files['/proj/.bmuz/state.json'] = state({ current: 'plan', status: 'working', finished: ['name', 'approve'], flow: { args: {}, toolUseId: 'tu1', taskId: 'wf1' } })
+  w.files['/proj/package-lock.json'] = '{}'
+  await start($, false)
+  const r: any = await $.tool.call({ tool: 'mcp__bmuz__run', agentId: 'helper-1', what: 'install' } as any)
+  expect(refused(r)).toBe(false)
+  expect(String(r.result)).toMatch(/added 1 package/)
+  const ran = w.runs.find(a => String(a[1]).endsWith('run.mjs'))!
+  expect(ran.slice(2)).toEqual(['install'])
+  expect(JSON.parse(w.files['/proj/.bmuz/own.json']).steps.plan['package-lock.json']).toMatchObject({ run: true, keys: null })
+  expect(events(w).find((j: any) => j.ev === 'run')).toMatchObject({ step: 'plan', what: 'install', changed: ['package-lock.json'] })
+  expect(refused(await $.tool.call({ tool: 'Bash', agentId: 'helper-1', command: 'npm install' } as any))).toBe(true)
+  expect(refused(await $.tool.call({ tool: 'mcp__bmuz__run', agentId: 'helper-1', what: 'git' } as any))).toBe(true)
+})

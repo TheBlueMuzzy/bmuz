@@ -456,7 +456,9 @@ test('the loop and the feature run: fresh builder and fixer may run commands, th
   assert.deepEqual(loop.run.slice(-2), ['next', '{auto}'])
   for (const id of ['build', 'fix']) {
     assert.equal(stepOf(FEAT, id).workflow, 'bmuz:build-flow')
-    assert.ok(stepOf(FEAT, id).agentTools.includes('Bash'))
+    // (review fix 2a: no Bash for the builder; it runs the fixed list through the engine's run tool)
+    assert.ok(!stepOf(FEAT, id).agentTools.includes('Bash'), id)
+    assert.ok(stepOf(FEAT, id).agentTools.includes(E.RUN_TOOL), id)
     assert.deepEqual(stepOf(FEAT, id).done.run.slice(-1), ['prove'])
   }
   // (StructuredOutput: how a helper with a schema hands its answer back — headless run 2026-11-11, refused, every build failed)
@@ -490,8 +492,9 @@ test('Bash while a pipeline runs: inside the project only (no "..", no .bmuz, no
   assert.match(E.bashProblem(d, 'git push'), /pushing/)
   assert.match(E.bashProblem(d, 'type C:/Windows/win.ini'), /outside the project \(C:\/Windows/)
   const st = { ...E.freshState('feature'), current: 'build', status: 'working', finished: ['start'] }
-  assert.match(E.judgeTool(FEAT, st, { tool: 'Bash', agentId: 'a1', input: { command: 'rm -rf ../x' } }, { dir: d }).why, /Bash stays inside this project/)
-  assert.equal(E.judgeTool(FEAT, st, { tool: 'Bash', agentId: 'a1', input: { command: 'npm test' } }, { dir: d }).allow, true)
+  // (review fix 2a: the builder can't run Bash at all, only the run tool)
+  assert.equal(E.judgeTool(FEAT, st, { tool: 'Bash', agentId: 'a1', input: { command: 'npm test' } }, { dir: d }).allow, false)
+  assert.equal(E.judgeTool(FEAT, st, { tool: E.RUN_TOOL, agentId: 'a1', input: { what: 'test' } }, { dir: d }).allow, true)
   const rv = { ...st, current: 'review', finished: ['start', 'build'] }
   assert.equal(E.judgeTool(FEAT, rv, { tool: 'Bash', agentId: 'a2', input: { command: 'npm test' } }, { dir: d }).allow, false)
   assert.equal(E.judgeTool(FEAT, rv, { tool: 'Write', agentId: 'a2', input: { file_path: 'src/x.js' } }, { dir: d }).allow, false)

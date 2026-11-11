@@ -1672,6 +1672,9 @@ export const BUG_TOOL = 'mcp__bmuz__bug'
 // F216: a new idea mid-loop (Develop's step-in list: "it goes on Ideas for Later and comes back at the milestone where
 // it fits"): noted by the engine's tool, never built now.
 export const IDEA_TOOL = 'mcp__bmuz__idea'
+// F216 review fix 2a: the builder helper's only way to run anything (plugin/scripts/run.mjs): no Bash for it.
+export const RUN_TOOL = 'mcp__bmuz__run'
+export const RUN_WHAT = ['test', 'check', 'install', 'screenshot']
 export const IDEA_RULE = `A new idea (the creative brings something new, not a tweak to what we're building and not a bug): it isn't built now. Note it with ${IDEA_TOOL} {"idea": "their idea in a few words"}, write the line it returns word for word, then carry on exactly where the step was.`
 // The P-levels, from the /bug skill (the script itself names only "P2 — annoying, not blocking").
 export const BUG_LEVELS = 'P0 = a crash, the game can\'t go on, data lost, or the live build broken · P1 = a feature doesn\'t work as designed · P2 = minor, or has a workaround · P3 = cosmetic'
