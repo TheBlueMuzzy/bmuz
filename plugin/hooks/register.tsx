@@ -225,16 +225,29 @@ async function enterSide($: any, dir: string, root: string, side: any, sessionId
   await $.fs.write(`${bmuz}/side.json`, JSON.stringify({ ...side, phase: 'on' }))
 }
 
+// Coming back is safe to run again after a crash at any point (review fix 3): nothing is deleted whose copy isn't safe.
+// 1. The fix run's record is COPIED to its archive (state.json last: its copy marks the archive whole).
+// 2. While parked/state.json is there, the stage's record isn't fully back: the fix run's own files that the stage has
+//    no parked copy of are deleted, then every parked file is copied back (state.json last). The parked copies stay.
+// 3. parked/state.json goes first (its going marks "everything is back"), then the other parked copies.
 async function leaveSide($: any, dir: string, root: string, side: any, outcome: string = 'done') {
   const bmuz = `${dir}/.bmuz`
+  const rm = (p: string) => $.process.run(['node', `${root}/scripts/rm.mjs`, p])
   await $.fs.write(`${bmuz}/side.json`, JSON.stringify({ ...side, phase: 'leave', outcome: side.outcome ?? outcome }))
   const record = `bug-runs/${side.n}-${side.bug}`
   await journalQueue
   const mine = await recordFiles($, root, side.pipeline)
-  if (!(await $.fs.exists(`${bmuz}/${record}/state.json`))) await moveFiles($, root, bmuz, `${bmuz}/${record}`, mine, ['state.json', 'journal.jsonl'])
-  else for (const f of mine.slice(2)) if (await $.fs.exists(`${bmuz}/${f}`)) await $.process.run(['node', `${root}/scripts/rm.mjs`, `${bmuz}/${f}`])
-  // the stage's record, put back as it was (the parked copy goes once it is back)
-  await moveFiles($, root, `${bmuz}/parked`, bmuz, await recordFiles($, root, side.from))
+  const stage = await recordFiles($, root, side.from)
+  if (!(await $.fs.exists(`${bmuz}/${record}/state.json`))) await moveFiles($, root, bmuz, `${bmuz}/${record}`, mine, mine)
+  if (await $.fs.exists(`${bmuz}/parked/state.json`)) {
+    for (const f of [...new Set([...mine, ...stage])]) {
+      if (f === 'state.json' || f === 'journal.jsonl') continue
+      if (!(await $.fs.exists(`${bmuz}/parked/${f}`)) && (await $.fs.exists(`${bmuz}/${f}`))) await rm(`${bmuz}/${f}`)
+    }
+    await moveFiles($, root, `${bmuz}/parked`, bmuz, stage, stage)
+    await rm(`${bmuz}/parked/state.json`)
+  }
+  for (const f of stage) if (await $.fs.exists(`${bmuz}/parked/${f}`)) await rm(`${bmuz}/parked/${f}`)
   const runs = (await readJson($, `${bmuz}/bug-runs.json`)) || []
   if (Array.isArray(runs) && !runs.some((r: any) => r.n === side.n)) {
     const old = await readJson($, `${bmuz}/${record}/state.json`)
@@ -374,6 +387,12 @@ async function loadCtx($: any) {
   c.state = report.state
   if (report.fixed) c.rebuilt = report.lines
   c.baseline = report.baseline
+  // (review fix 3: a fix run that finished but whose way back never started — the window closed right at its end — goes
+  // back now, so the stage isn't left waiting behind a finished fix run)
+  if (c.side && !c.broken && (c.state.status === 'done' || (c.state.status === 'idle' && c.state.finished.length && !E.nextStep(c.pipeline, c.state)))) {
+    await leaveSide($, dir, root, c.side, 'done')
+    return loadCtx($)
+  }
   return c
 }
 

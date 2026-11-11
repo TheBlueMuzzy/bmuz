@@ -19,6 +19,17 @@ function state(over: Record<string, unknown>) {
   return JSON.stringify({ pipeline: 'hello', current: null, status: 'idle', results: { name: 'Moon Goat' }, retries: {}, finished: [], blocked: null, startedAt: 1, ...over })
 }
 
+// F215 review fix 3: a crash part way through: the n-th write or delete inside /proj/.bmuz/ from now on fails (and so
+// does everything after it in that run), as if the window closed there. 0 = no crash.
+const crash = { at: 0, seen: 0, down: false }
+function crashes(path: string) {
+  if (!crash.at || !path.startsWith('/proj/.bmuz/')) return false
+  if (crash.down) return true
+  crash.seen += 1
+  if (crash.seen >= crash.at) crash.down = true
+  return crash.down
+}
+
 // A fake disk and session beneath the plugin. Returns the files, the calls the tools got, and the runs.
 // onRun: what a command answers (default: exit 0, "{}").
 function world(on: any, files: Record<string, string>, onRun?: (argv: string[]) => { exitCode: number, stdout: string }) {
@@ -43,7 +54,11 @@ function world(on: any, files: Record<string, string>, onRun?: (argv: string[]) 
   }
   on('fs.exists', (_: any, e: any) => ({ value: key(e.path) in files }))
   on('fs.read', (_: any, e: any) => (key(e.path) in files ? { value: files[key(e.path)] } : { deny: 'ENOENT' }))
-  on('fs.write', (_: any, e: any) => { files[key(e.path)] = e.text; return { value: undefined } })
+  on('fs.write', (_: any, e: any) => {
+    if (crashes(key(e.path))) return { deny: 'the window was closed (test crash)' }
+    files[key(e.path)] = e.text
+    return { value: undefined }
+  })
   on('tool.register', (_: any, e: any) => ({ value: { tool: `mcp__bmuz__${e.name}` } }))
   on('command.register', (_: any, e: any) => ({ value: { command: e.name } }))
   on('ui.status', () => ({ value: undefined }))
@@ -51,7 +66,10 @@ function world(on: any, files: Record<string, string>, onRun?: (argv: string[]) 
   on('process.run', (_: any, e: any) => {
     runs.push([...e.argv])
     // the engine's own delete (rollback, a stage switch moving checkpoints away) really deletes on the fake disk
-    if (/rm[.]mjs$/.test(String(e.argv[1] ?? ''))) delete files[key(String(e.argv[2]))]
+    if (/rm[.]mjs$/.test(String(e.argv[1] ?? ''))) {
+      if (crashes(key(String(e.argv[2])))) return { deny: 'the window was closed (test crash)' }
+      delete files[key(String(e.argv[2]))]
+    }
     const said = onRun ? onRun([...e.argv]) : { exitCode: 0, stdout: '{}' }
     return { value: { ...said, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
@@ -1716,3 +1734,41 @@ test('F215: "bmuz bug" with nothing open says the script\'s two lines; the bug t
   expect(JSON.parse(String(r.result)).then).toMatch(/Then end your turn\./)
   expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ current: 'approve', status: 'waiting' })
 })
+
+// Review fix 3: coming back from a fix run is safe to run again after a crash at any point: the stage's record (its
+// state, journal, last card and checkpoints) ends exactly as it was, and nothing of the fix run is left in its place.
+for (let at = 1; at <= 24; at++) {
+  test(`F215 review fix 3: a crash at write or delete ${at} on the way back from a fix run, then a new window: the stage's record is back, intact`, async ($, on) => {
+    mock.clock(on, { now: 1000 })
+    const { w } = bugWorld(on, { current: 'name', status: 'working', retries: { name: 1 }, said: { step: 'name', lines: ['define.pitch'] }, opened: 'name' })
+    w.files['PIPELINE:bug'] = JSON.stringify(BUG_PIPE)
+    w.files['/proj/.bmuz/checkpoint-name.json'] = '{"x.txt":null}'
+    w.files['/proj/.bmuz/last-card.md'] = 'THE STAGE CARD\n'
+    await start($, true)
+    const before = keep(JSON.parse(w.files['/proj/.bmuz/state.json']))
+    const journalBefore = w.files['/proj/.bmuz/journal.jsonl']
+    await $.prompt.submit({ text: 'bmuz bug' } as any)
+    await turn($, 't1')
+    // (the fix run leaves a card and a checkpoint of its own, which must not end up in the stage's record)
+    w.files['/proj/.bmuz/last-card.md'] = 'THE FIX RUN CARD\n'
+    await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { files: ['src/score.js'] } } as any)
+    crash.at = at
+    crash.seen = 0
+    crash.down = false
+    try { await turn($, 't2') } catch (err) { /* the window closed */ }
+    const crashed = crash.down
+    crash.at = 0
+    crash.down = false
+    await start($, true)
+    const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+    expect({ crashed, pipeline: st.pipeline, ...keep(st) }).toEqual({ crashed, pipeline: 'hello', ...before })
+    expect(w.files['/proj/.bmuz/last-card.md']).toBe('THE STAGE CARD\n')
+    expect(w.files['/proj/.bmuz/checkpoint-name.json']).toBe('{"x.txt":null}')
+    expect(w.files['/proj/.bmuz/checkpoint-fix.json']).toBeUndefined()
+    expect(w.files['/proj/.bmuz/side.json']).toBeUndefined()
+    expect(Object.keys(w.files).filter(f => f.startsWith('/proj/.bmuz/parked/'))).toEqual([])
+    expect(w.files['/proj/.bmuz/journal.jsonl'].startsWith(journalBefore.trimEnd())).toBe(true)
+    expect(JSON.parse(w.files['/proj/.bmuz/bug-runs/1-B004/state.json'])).toMatchObject({ pipeline: 'bug' })
+    expect(w.files['/proj/.bmuz/bug-runs/1-B004/last-card.md']).toBe('THE FIX RUN CARD\n')
+  })
+}
