@@ -78,3 +78,18 @@ test('A6: the content steps\' "writes" cover content/data/*.json; a pattern is a
   assert.deepEqual(run('content/data/*.json'), ['content/data/a.json', 'content/data/b.json'])
   assert.deepEqual(run('nothing/*.json'), [])
 })
+
+// ---- after the review: what let design-garden's players step through (headless 2026-11-11, 8/10) ----
+test('chapters: a chapter-writing step\'s result with a chapter number outside "chapters" is refused with the expected shape', async () => {
+  const E = await import('../plugin/hooks/engine.js')
+  const { readFileSync } = await import('node:fs')
+  const D = JSON.parse(readFileSync(new URL('../plugin/pipelines/design.json', import.meta.url), 'utf8'))
+  const players = D.steps.find(s => s.id === 'players')
+  const why = E.resultProblems(D, players, { 5: 'chapter five', chapters: { 11: 'eleven' }, needs: ['None of these'] })
+  assert.match(why, /"5" is a chapter number outside "chapters"/)
+  assert.match(why, /\{"chapters": \{"5": "/)
+  assert.match(E.resultProblems(D, players, { 5: 'five', needs: ['x'] }), /outside "chapters"/)
+  assert.match(E.resultProblems(D, players, { chapters: ['five'], needs: ['x'] }), /"chapters" must be/)
+  assert.equal(E.resultProblems(D, players, { chapters: { 5: 'five', 11: 'eleven' }, needs: ['x'] }), null)
+  assert.equal(E.resultProblems(D, players, { chapters: 'plain text for the step\'s one chapter', needs: ['x'] }), null)
+})

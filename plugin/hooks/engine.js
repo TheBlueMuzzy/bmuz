@@ -723,6 +723,15 @@ export function resultProblems(p, step, result) {
   const keys = step.results || []
   if (!keys.length) return null
   const r = result && typeof result === 'object' ? result : {}
+  // A step that writes chapters hands them back inside "chapters" (headless run 2026-11-11: Players & Opponents
+  // put chapter 5 beside it, {"5": …}, and it was never written). A bare number key is never taken as a chapter.
+  if (keys.includes('chapters')) {
+    const shape = '{"chapters": {"5": "<chapter 5\'s whole text>", "11": "<chapter 11\'s whole text>"}, …} (each chapter by its number, inside "chapters")'
+    const loose = Object.keys(r).filter(k => /^\d+$/.test(k))
+    if (loose.length) return `${loose.map(k => `"${k}"`).join(', ')} ${loose.length > 1 ? 'are chapter numbers' : 'is a chapter number'} outside "chapters"; hand the chapters back as ${shape}`
+    const c = r.chapters
+    if (c !== undefined && c !== null && typeof c !== 'string' && (typeof c !== 'object' || Array.isArray(c))) return `"chapters" must be ${shape}`
+  }
   const missing = keys.filter(k => r[k] === undefined || r[k] === null || (typeof r[k] === 'string' && !r[k].trim()))
   if (missing.length) return `the result has no ${missing.map(k => `"${k}"`).join(', ')}; give ${missing.length > 1 ? 'them' : 'it'} in step_done's result`
   const inPaths = new Set(p.steps.flatMap(s => (isList(s.writes) ? s.writes : []).flatMap(f => holesIn(f))))
