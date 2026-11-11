@@ -123,6 +123,20 @@ test('plain refusals: a table not linked, a Sheet nobody can read, a tab without
 })
 
 // ---- F227 review fixes (2026-11-11) ----
+test('F227 review A1: pull only touches the columns the Sheet has; the JSON\'s other columns are kept, and the reply names the missing ones', () => {
+  const { dir, sheets, editWorld } = setup()
+  T.link(dir, 'seed-cards', SHEET, '', sheets)
+  // the Sheet has no Quantity column; then someone changes a Cost there
+  editWorld(t => { t.values = t.values.map(r => r.filter((v, i) => i !== 2)); t.formulas = t.formulas.map(r => r.filter((v, i) => i !== 2)); t.values[1][1] = 3 })
+  const r = T.pull(dir, 'seed-cards', { sheets, force: true })
+  assert.equal(r.ok, true, r.say)
+  const t = T.readTable(dir, 'seed-cards')
+  assert.deepEqual(t.rows.map(x => x.Quantity), [6, 4], 'Quantity kept from the JSON')
+  assert.equal(t.rows[0].Cost, 3)
+  assert.deepEqual(r.diff, ['Sunflower · Cost: 1 → 3'])
+  assert.match(r.say, /the Sheet has no "Quantity" column/)
+})
+
 test('F227 review A2: with no record of what BMUZ last wrote, a hand-made table file is theirs: their rows and cells kept, only new rows and empty cells added', () => {
   const cur = { name: 'Seeds', columns: ['Name', 'Cost'], rows: [{ Name: 'Rose', Cost: 9 }, { Name: 'Mine', Cost: 1 }, { Name: 'Tulip', Cost: '' }] }
   const next = { name: 'Seeds', columns: ['Name', 'Cost', 'Value'], rows: [{ Name: 'Rose', Cost: 2, Value: 4 }, { Name: 'Tulip', Cost: 3, Value: 1 }, { Name: 'Daisy', Cost: 1, Value: 2 }] }

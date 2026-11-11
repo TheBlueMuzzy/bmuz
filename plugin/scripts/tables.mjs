@@ -265,10 +265,18 @@ export function pull(dir, id, { force = false, sheets = sheetsRunner(), commit =
   if (!x.ok) return x
   if (!x.sheetChanged) return { ok: true, say: `✔ ${x.table.name}: the Sheet hasn't changed since the last sync; nothing to pull` }
   if (x.json && !force) return { ok: false, say: both(x, 'pulled') }
-  const d = diff(x.table, x.sheet.table)
-  writeJson(dir, fileOf(id), { name: x.table.name, columns: x.table.columns, rows: x.sheet.table.rows })
+  // Only the columns the Sheet has are taken; a column it lacks keeps the JSON's value (F227 review: it was blanked).
+  const { idx, missing } = x.sheet
+  const jsonBy = new Map(x.table.rows.map(r => [keyOf(x.table, r), r]))
+  const rows = x.sheet.table.rows.map(r => {
+    const mine = jsonBy.get(keyOf(x.table, r)) || {}
+    return Object.fromEntries(x.table.columns.map((c, i) => [c, idx[i] < 0 ? (c in mine ? mine[c] : '') : r[c]]))
+  })
+  const pulled = { name: x.table.name, columns: x.table.columns, rows }
+  const d = diff(x.table, pulled)
+  writeJson(dir, fileOf(id), pulled)
   const sync = readSync(dir)
-  sync.tables[id].sheet = { ...x.entry.sheet, ...synced(x.sheet.table, x.sheet.table) }
+  sync.tables[id].sheet = { ...x.entry.sheet, ...synced(pulled, x.sheet.table) }
   writeJson(dir, SYNC, sync)
   let committed = ''
   if (commit && d.length) {
@@ -277,7 +285,8 @@ export function pull(dir, id, { force = false, sheets = sheetsRunner(), commit =
     const c = add.status === 0 ? spawnSync('git', ['commit', '-q', '-m', msg, '--', fileOf(id), SYNC], { cwd: dir, encoding: 'utf8' }) : add
     committed = c.status === 0 ? ' · committed' : ' · not committed (not a git repository?)'
   }
-  return { ok: true, say: `✔ ${x.table.name} pulled from the Sheet: ${d.length ? d.join('; ') : 'no changes in the table\'s columns'}${committed}`, diff: d }
+  const lacks = missing.length ? ` · the Sheet has no ${missing.map(c => `"${c}"`).join(', ')} column${missing.length > 1 ? 's' : ''}, so ${missing.length > 1 ? 'those were' : 'that was'} kept from the JSON` : ''
+  return { ok: true, say: `✔ ${x.table.name} pulled from the Sheet: ${d.length ? d.join('; ') : 'no changes in the table\'s columns'}${lacks}${committed}`, diff: d }
 }
 
 export function push(dir, id, { force = false, sheets = sheetsRunner() } = {}) {
