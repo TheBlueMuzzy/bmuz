@@ -520,7 +520,9 @@ const scenarios = {
     check('F215 (bug): the step-in is logged as B001 in BUGS.md, and the script\'s line is in Claude\'s words word for word', !!bug && bug.id === 'B001' && !!logged && /^Logged as a bug: B001 · .+ · P[0-3] — .+\. It doesn't block what we're doing, so I'll fix it after Blueprint Review\.$/.test(logged.text) && plain(out1).includes(plain(logged.text)) && /^### B001 · P[0-3] · open · found \d{4}-\d\d-\d\d in Design · 10 of 10 · Blueprint Review$/m.test(read('.planning/BUGS.md') || ''), `${trailOf(js)} | ${(read('.planning/BUGS.md') || '').slice(0, 400)}`)
     const st1 = JSON.parse(read('.bmuz/state.json') || '{}')
     check('F215 (bug): the gate it stepped in at is untouched (waiting at the Blueprint Review, nothing finished or dropped)', st1.current === 'review' && st1.status === 'waiting' && st1.finished.length === review && !js.some(j => j.ev === 'retry' || j.ev === 'blocked'), JSON.stringify({ current: st1.current, status: st1.status, finished: st1.finished?.length }))
-    // run 2: the fix run
+    // run 2: the fix run (review fix 8: what git shows as changed before it, .bmuz/ left out, is all it shows after it)
+    const changed = () => new Set((spawnSync('git', ['status', '--porcelain', '--untracked-files=all', '--', '.', ':!.bmuz'], { cwd: dir, encoding: 'utf8' }).stdout || '').split('\n').filter(Boolean).map(l => l.slice(3)))
+    const changedBefore = changed()
     const out2 = runIn(dir, 'bmuz bug', tools, true)
     writeFileSync(join(dir, 'run-output.txt'), `${out1}\n----\n${out2}`)
     const runs = JSON.parse(read('.bmuz/bug-runs.json') || '[]')
@@ -540,6 +542,8 @@ const scenarios = {
     check('F215 (bug): BUGS.md right: B001 under Fixed with "fixed in" and Guarded by a real test, its cause, the Open count line', /^Open: \d+ \(P0 \d+ · P1 \d+ · P2 \d+ · P3 \d+\)$/m.test(bugsMd) && new RegExp(`### B001 · P[0-3] · fixed \\d{4}-\\d\\d-\\d\\d · .* · fixed in [0-9a-f]{7,} · Guarded by: ${proof.repro?.test?.replace(/[.]/g, '[.]')}$`, 'm').test(fixed) && /\nCause: /.test(fixed) && !/### B001/.test(bugsMd.split('## Fixed')[0]), bugsMd.slice(0, 1200))
     const log = spawnSync('git', ['log', '--format=%s'], { cwd: dir, encoding: 'utf8' }).stdout
     check('F215 (bug): committed "Fix B001: …" (and the report "Bug B001: …" before it)', /^Fix B001: .+$/m.test(log) && /^Bug B001: /m.test(log), log)
+    const leftOver = [...changed()].filter(f => !changedBefore.has(f) && f !== 'run-output.txt')
+    check('F215 (bug): nothing of the fix run is left in the project: git shows only what it showed before the run', leftOver.length === 0, leftOver.join(', '))
     const shows = bj.filter(j => j.ev === 'show')
     const missing = shows.filter(j => !plain(out2).includes(plain(read(j.path) || '~')))
     check('F215 (bug): every fixed line of the fix run (Fixing a bug, Reproduced, Fixed) is in Claude\'s words word for word', shows.map(j => j.step).join(',') === 'pick,repro-show,record' && missing.length === 0, `${shows.map(j => j.step)} missing: ${missing.map(j => j.path)}`)
