@@ -658,7 +658,7 @@ async function rollback($: any, step: any) {
 
 // The holes a step's done-check fills from: the results so far, and (F215) a talk step's own result.
 function checkVars(step: any, result: any) {
-  return step.kind === 'talk' && result && typeof result === 'object' ? { ...vars(), ...result } : vars()
+  return step.kind === 'talk' && result && typeof result === 'object' ? E.checkVarsOf(vars(), result) : vars()
 }
 
 async function look($: any, step: any, result: any) {

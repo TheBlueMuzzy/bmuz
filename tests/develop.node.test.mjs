@@ -53,6 +53,16 @@ test('plan-check: only proposed features, every card field, 3–8 tasks, a check
   assert.ok(bad.some(p => /F01: 1 tasks; a feature has 3 to 8/.test(p)))
 })
 
+test('review fix 8: a step\'s own result never overrides a built-in hole ({auto}, {project}, {plugin}): built-ins win, and such a key is refused', () => {
+  const base = { auto: 'auto', project: '/p', plugin: '/pl', features: [] }
+  assert.deepEqual(E.checkVarsOf(base, { answer: 'approved', auto: 'live', project: '/elsewhere' }), { auto: 'auto', project: '/p', plugin: '/pl', features: [], answer: 'approved' })
+  const P = { id: 'x', version: 1, steps: [{ id: 'a', kind: 'talk', needs: [], tools: ['Read'], craft: 'craft/a.md', results: ['answer'] }] }
+  assert.match(E.resultProblems(P, P.steps[0], { answer: 'approved', auto: 'live' }), /"auto" is one of the engine's own holes/)
+  assert.equal(E.resultProblems(P, P.steps[0], { answer: 'approved' }), null)
+  const bad = { ...P, steps: [{ ...P.steps[0], results: ['answer', 'auto'] }] }
+  assert.ok(E.checkPipeline(bad).some(p => /"auto" is one of the engine's own holes/.test(p)))
+})
+
 test('review fix 7: the next sprint is the highest archived number + 1 (not a count), and an archived sprint is never overwritten', () => {
   const dir = project()
   mkdirSync(join(dir, S.ARCHIVE), { recursive: true })

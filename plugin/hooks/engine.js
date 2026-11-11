@@ -183,6 +183,8 @@ export function checkPipeline(p) {
       }
     }
     if (s.results !== undefined && !(isList(s.results) && s.results.every(k => /^\w+$/.test(k)))) problems.push(`${at}: "results" must be a list of result keys (letters, digits, _)`)
+    // (F216 review fix 8: a result key may never stand in for one of the engine's own holes)
+    for (const k of isList(s.results) ? s.results.filter(k => BUILT_IN_HOLES.includes(k)) : []) problems.push(`${at}: result key "${k}" is one of the engine's own holes ({${BUILT_IN_HOLES.join('}, {')}}); name it something else`)
     if (s.results !== undefined && s.kind !== 'talk') problems.push(`${at}: only talk steps hand back a result, so "results" can't be on a ${s.kind} step`)
     if (s.done !== undefined) {
       const d = s.done
@@ -745,10 +747,20 @@ export function answersNote(answers) {
 // What is wrong with a talk step's result against its "results" list (null = fine): every listed key
 // must be there (an empty list counts, an empty text doesn't), and a key some step names a file with
 // ("writes": ".../discover-{slug}.md") must be a slug, so the file stays where the pipeline says.
+// The holes a talk step's done-check fills from: the results so far, the step's own result, and the engine's own holes,
+// which always win (F216 review fix 8: a result holding "auto": "live" could have let an auto run approve).
+export function checkVarsOf(base, result) {
+  const own = Object.fromEntries(BUILT_IN_HOLES.filter(k => base[k] !== undefined).map(k => [k, base[k]]))
+  return { ...base, ...(result && typeof result === 'object' ? result : {}), ...own }
+}
+
 export function resultProblems(p, step, result) {
   const keys = step.results || []
-  if (!keys.length) return null
   const r = result && typeof result === 'object' ? result : {}
+  // (F216 review fix 8: a result can't stand in for the engine's own holes: {auto} decides who may approve)
+  const shadow = Object.keys(r).filter(k => BUILT_IN_HOLES.includes(k))
+  if (shadow.length) return `"${shadow[0]}" is one of the engine's own holes ({${BUILT_IN_HOLES.join('}, {')}}); leave it out of the result`
+  if (!keys.length) return null
   // A step that writes chapters hands them back inside "chapters" (headless run 2026-11-11: Players & Opponents
   // put chapter 5 beside it, {"5": …}, and it was never written). A bare number key is never taken as a chapter.
   if (keys.includes('chapters')) {
