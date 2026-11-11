@@ -41,6 +41,10 @@ let turnRunning = false
 let heldStall: null | { step: string, at: number } = null
 // creativeTurn: the turn began with the creative's own typed message (not the engine's, not a bmuz command)
 let creativeTurn = false
+// F232: the script lines said in this turn ({ id, text }), checked word for word at the turn's end; longSaid: one of
+// them was long, so the step's next question comes in a turn of its own (the engine carries the step on).
+let turnSaid: { step: string, lines: { id: string, text: string }[] } = { step: '', lines: [] }
+let longSaid = false
 
 const SAFE_DENY = 'BMUZ engine hit an error in its own code, so it refused this action to be safe. Run /bmuz-doctor.'
 
@@ -96,7 +100,17 @@ async function loadPipeline($: any, root: string, name: string) {
   const problems = E.checkPipeline(pipeline)
   if (!problems.length && pipeline.id !== name) problems.push(`the file pipelines/${name}.json says its id is "${pipeline.id}"`)
   for (const f of problems.length ? [] : E.pluginFiles(pipeline)) if (!(await $.fs.exists(`${root}/${f}`))) problems.push(`the craft note ${f} is missing`)
-  return { pipeline, problems }
+  // F232: the script lines its steps say must be in the script (plugin/script.md)
+  const script = await loadScript($, root)
+  if (!problems.length) problems.push(...script.problems.map((x: string) => `script.md: ${x}`), ...E.checkLines(pipeline, script))
+  return { pipeline, problems, script }
+}
+
+// The script: every fixed line BMUZ says (plugin/script.md). A missing file is an empty script (a pipeline whose steps
+// name lines then refuses to run, with the reason).
+async function loadScript($: any, root: string) {
+  const text = await readText($, `${root}/script.md`)
+  return E.parseScript(text ?? '')
 }
 
 async function readJson($: any, path: string) {
@@ -171,6 +185,7 @@ async function loadCtx($: any) {
     c.cfg = JSON.parse(cfgText)
     const loaded = await loadPipeline($, root, c.cfg.pipeline)
     c.pipeline = loaded.pipeline
+    c.script = loaded.script
     const problems = loaded.problems
     if (problems.length) c.broken = `pipeline ${c.cfg.pipeline} has problems: ${problems.join('; ')}`
     // Test only: let flow helpers use extra tools (the stall test's helper runs Bash sleep).
@@ -180,6 +195,7 @@ async function loadCtx($: any) {
     if (answersProblem && !c.broken) c.broken = answersProblem
   } catch (err) {
     c.broken = `could not load the pipeline: ${String(err)}`
+    c.script = E.parseScript('')
     c.pipeline = { id: '?', steps: [] }
     c.cfg = {}
   }
@@ -217,7 +233,7 @@ async function startEngine($: any) {
     if (await $.fs.exists(`${dir}/.bmuz/test-fault-start`)) throw new Error('injected fault (test)')
     ctx = await loadCtx($)
   } catch (err) {
-    ctx = { dir, broken: `the engine failed to start (${String(err).slice(0, 160)}); run /bmuz-doctor`, pipeline: { id: '?', steps: [] }, cfg: {}, state: E.freshState('?') }
+    ctx = { dir, broken: `the engine failed to start (${String(err).slice(0, 160)}); run /bmuz-doctor`, pipeline: { id: '?', steps: [] }, cfg: {}, state: E.freshState('?'), script: E.parseScript('') }
   }
   if (!ctx) return false
   ctx.interactive = sessionInteractive
@@ -265,9 +281,9 @@ async function registerAll($: any) {
     isDeferred: false,
   })
   await $.tool.register({
-    name: 'ask_paste',
-    description: 'BMUZ engine: ask the creative for their links or long text (Google Drive, GitHub, files and folders on their computer) instead of the question box. Returns the exact words to write as your whole reply; then end your turn: their next chat message is the answer. Only in talk steps that list it.',
-    inputSchema: { type: 'object', properties: {} },
+    name: 'say',
+    description: 'BMUZ engine: say one of the current step\'s script lines (or several at once), word for word. Give its id ("line") and the game-specific parts ("slots"). Returns the exact words ("say") or the question box to ask ("box"), and what to do next ("then"). "wait": true = say nothing more and end your turn; the creative\'s next message is the answer.',
+    inputSchema: { type: 'object', properties: { line: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] }, slots: { type: 'object' }, wait: { type: 'boolean' } } },
     isDeferred: false,
   })
   await $.command.register({ name: 'bmuz-go', description: 'BMUZ: start or resume the pipeline' })
@@ -457,10 +473,12 @@ async function startTalk($: any, step: any, why: string) {
     await save($)
   }
   const given = E.givenFor(step, ctx.state.given)
-  hiddenNotes = E.talkPrompt(step, craft, why, ctx.auto, decided, { recap, wrap: wrapWords(step), answers, intro: !!intro, given })
-  // A resume (a new window, "bmuz go") while the ask for links is open: Claude sends the same ask again.
-  if (E.pasteOpen(ctx.state)) hiddenNotes += `\n${E.pasteResumeLine()}`
-  await $.prompt.submit({ text: E.talkHeadline(step, intro) })
+  const back = ctx.state.back && ctx.state.back.step === step.id ? ctx.state.back : null
+  hiddenNotes = E.talkPrompt(step, craft, why, ctx.auto, decided, { recap, wrap: wrapWords(step), answers, intro: !!intro, given, script: ctx.script, opened: ctx.state.opened === step.id, back })
+  // A resume (a new window, "bmuz go") while a free question is open: Claude says the same question again.
+  const open = E.askOpen(ctx.state)
+  if (open) hiddenNotes += `\n${E.askResumeLine(open)}`
+  await $.prompt.submit({ text: E.talkHeadline(step, intro, E.stepPlace(ctx.pipeline, step)) })
   // The prompt hook takes the notes as it attaches them. Still here = they never went out: say so in the journal
   // rather than let Claude guess the step from its headline.
   if (hiddenNotes !== null) {
@@ -536,15 +554,17 @@ async function runScript($: any, step: any) {
 }
 
 async function askGate($: any, step: any) {
+  // (F232: a gate with a script "line" asks the script's box, word for word)
+  const words = E.gateWords(step, ctx.script, vars())
   if (ctx.auto) {
     // A gate is the creative's own OK: an auto run never answers it, and never opens a dialog that waits.
-    await journal($, { ev: 'gate.pending', step: step.id, why: 'auto run: nobody to ask; answer with "bmuz approve <option>"' })
-    await addQuestions($, step.id, [{ question: `${E.fill(step.question, vars())} (the run stopped here; answer with "bmuz approve ${step.approve}" or another option)` }])
+    await journal($, { ev: 'gate.pending', step: step.id, question: words.question, options: words.options, why: 'auto run: nobody to ask; answer with "bmuz approve <option>"' })
+    await addQuestions($, step.id, [{ question: `${words.question} (the run stopped here; answer with "bmuz approve ${step.approve}" or another option)` }])
     return null
   }
   try {
-    const answer = await $.ui.ask(E.fill(step.question, vars()), step.options)
-    if (step.options.includes(answer)) return answer
+    const answer = await $.ui.ask(words.question, step.line ? { options: words.options, header: ctx.script.lines[step.line].box.header } : words.options)
+    if (words.options.includes(answer)) return answer
     // An empty or typed answer (or an away-from-keyboard timeout) is no decision: keep waiting.
     await journal($, { ev: 'gate.pending', step: step.id, why: `answer was not an option: ${JSON.stringify(answer).slice(0, 80)}` })
     return null
@@ -560,7 +580,7 @@ async function applyGate($: any, step: any, answer: string) {
   const before = ctx.state.finished
   ctx.state = out.state
   if (out.approved) await journal($, { ev: 'step.done', step: step.id, kind: 'gate', result: null })
-  else await journal($, { ev: 'gate.back', step: step.id, dropped: before.filter((id: string) => !ctx.state.finished.includes(id)) })
+  else await journal($, { ev: 'gate.back', step: step.id, dropped: before.filter((id: string) => !ctx.state.finished.includes(id)), back: ctx.state.back ?? null })
   await save($)
 }
 
@@ -599,10 +619,11 @@ async function advance($: any, resume: boolean, opts: { timer?: boolean, go?: bo
     }
     // A step with "when" runs only when the earlier result it names says yes (research offered, never forced):
     // otherwise it is skipped like a wrapped-up step, journaled, and the run goes on.
-    if (!isRestart && !E.isWanted(step, vars())) {
+    // (F232: an "onBack" step runs only when a gate sent the creative back to it)
+    if (!isRestart && (!E.isWanted(step, vars()) || E.onBackSkips(step, ctx.state))) {
       const empties = E.wrapEmpties(ctx.pipeline, ctx.state, [step.id])
       ctx.state = E.applyWrap(ctx.state, [step.id], empties)
-      await journal($, { ev: 'step.skip', step: step.id, when: step.when, empties })
+      await journal($, { ev: 'step.skip', step: step.id, ...(step.when ? { when: step.when } : { onBack: true }), empties })
       await save($)
       continue
     }
@@ -655,6 +676,8 @@ async function showFile($: any, step: any) {
   }
   await $.fs.write(`${ctx.dir}/.bmuz/last-shown.md`, text.endsWith('\n') ? text : text + '\n')
   await journal($, { ev: 'show', step: step.id, path: step.show })
+  // (F232: checked word for word at that turn's end, like a script line)
+  turnSaid = { step: step.id, lines: [{ id: `show:${step.show}`, text: text.trim() }] }
   pending = 'advance'
   await $.prompt.submit({ text: E.showPrompt(`${ctx.dir}/.bmuz/last-shown.md`) })
   return true
@@ -789,27 +812,65 @@ async function flowFinished($: any, n: any) {
   return next // the caller lets turn.complete run the next step
 }
 
-// ---- Asking for links (F228, live look round 5): Claude writes E.PASTE_ASK; their next chat message is the answer ----
-async function askPaste($: any, e: any) {
+// ---- The script (F232 task 2): Claude asks for a line by id; the engine hands back the exact words ----
+// A "free" line opens "the next message is the answer" (state.ask; F228's ask for links, generalised); a "box" line is
+// kept until AskUserQuestion asks exactly it (state.boxes); every line said is checked word for word at the turn's end.
+async function sayTool($: any, e: any) {
   const step = E.stepById(ctx.pipeline, ctx.state.current)
-  if (!step || step.kind !== 'talk' || ctx.state.status !== 'working') {
-    return { deny: 'BMUZ engine: no talk step is open, so there is nothing to ask for. End your turn.' }
+  if (!step || step.kind !== 'talk' || ctx.state.status !== 'working' || !step.lines) {
+    return { deny: 'BMUZ engine: no talk step with script lines is open, so there is nothing to say. End your turn.' }
   }
-  // After the start (any later stage): links the start already took are never asked for again.
-  if (ctx.pipeline.id !== 'start') {
-    const taken = E.materialTakenProblem(await readJson($, `${ctx.dir}/.planning/research/intake.json`))
-    if (taken) {
-      await journal($, { ev: 'deviation', step: step.id, tool: E.PASTE_TOOL, agentId: null, why: taken })
-      return { deny: taken }
-    }
+  const deny = async (why: string) => {
+    await journal($, { ev: 'deviation', step: step.id, tool: E.SAY_TOOL, agentId: null, why })
+    return { deny: why }
   }
-  ctx.state = { ...ctx.state, paste: { step: step.id } }
-  await journal($, { ev: 'paste.open', step: step.id })
+  if (e.wait === true) {
+    if (ctx.auto) return { result: JSON.stringify({ say: '', then: 'Auto run: nobody will type. Take the creative\'s answer from the test answers (or the sensible default) and carry on in this turn.' }) }
+    ctx.state = { ...ctx.state, ask: { step: step.id, line: 'wait', text: '' } }
+    await journal($, { ev: 'ask.open', step: step.id, line: 'wait' })
+    await save($)
+    return { result: JSON.stringify({ say: '', then: 'Write nothing more and end your turn: the creative\'s next chat message is the answer.' }) }
+  }
+  const ids: string[] = (Array.isArray(e.line) ? e.line : [e.line]).map((x: any) => String(x ?? ''))
+  if (!ids.length || ids.some(id => !id)) return deny(`BMUZ engine: say which line: {"line": "<id>"} (this step's lines: ${step.lines.join(', ')}).`)
+  const notHere = ids.filter(id => !step.lines.includes(id))
+  if (notHere.length) return deny(`BMUZ engine: ${notHere.map(id => `"${id}"`).join(', ')} ${notHere.length > 1 ? "aren't" : "isn't"} one of this step's lines (${step.lines.join(', ')}).`)
+  // The step opens with its opening lines, said first, together.
+  const opened = ctx.state.opened === step.id
+  if (step.opening && !opened && JSON.stringify(ids.slice(0, step.opening.length)) !== JSON.stringify(step.opening)) {
+    return deny(`BMUZ engine: this step opens with ${JSON.stringify(step.opening.length === 1 ? step.opening[0] : step.opening)}: say that first (one ${E.SAY_TOOL} call).`)
+  }
+  const slots = e.slots && typeof e.slots === 'object' && !Array.isArray(e.slots) ? e.slots : {}
+  const rendered = ids.map(id => E.renderLine(ctx.script, id, slots))
+  const bad = rendered.find((r: any) => r.error)
+  if (bad) return deny(`BMUZ engine: ${bad.error}.`)
+  const boxes = rendered.filter((r: any) => r.kind === 'box')
+  if (boxes.length && rendered.some((r: any) => r.kind !== 'box')) return deny('BMUZ engine: ask for a box on its own, after the words before it (a box covers text written in the same call).')
+  // (each box handed out gets a number, so the same box can be asked twice: Scope's "[idea]: …?" per idea)
+  let n = (ctx.state.boxes || []).reduce((m: number, b: any) => Math.max(m, b.n || 0), 0)
+  if (boxes.length) {
+    const add = boxes.map((r: any) => ({ id: r.id, n: ++n, box: r.box }))
+    ctx.state = { ...ctx.state, boxes: [...(ctx.state.boxes || []), ...add], opened: step.id }
+    for (const r of boxes) await journal($, { ev: 'line', step: step.id, line: r.id, kind: 'box', box: r.box })
+    await save($)
+    const then = E.sayNext(boxes[0], ctx.auto)
+    return { result: JSON.stringify(boxes.length === 1 ? { box: boxes[0].box, then } : { boxes: boxes.map((r: any) => r.box), then: `${then} (All ${boxes.length} questions in one AskUserQuestion call, in this order.)` }) }
+  }
+  const text = rendered.map((r: any) => r.text).join('\n\n')
+  const last = rendered[rendered.length - 1]
+  const kind = rendered.some((r: any) => r.kind === 'free') ? 'free' : 'say'
+  for (const r of rendered) await journal($, { ev: 'line', step: step.id, line: r.id, kind: r.kind, text: r.text })
+  if (turnSaid.step !== step.id) turnSaid = { step: step.id, lines: [] }
+  turnSaid.lines.push(...rendered.map((r: any) => ({ id: r.id, text: r.text })))
+  ctx.state = { ...ctx.state, opened: step.id, ...(kind === 'free' && !ctx.auto ? { ask: { step: step.id, line: last.kind === 'free' ? last.id : ids[ids.length - 1], text } } : {}) }
+  if (kind === 'free' && !ctx.auto) await journal($, { ev: 'ask.open', step: step.id, line: last.id })
+  if (kind === 'say' && E.isLongSay(text) && !ctx.auto) longSaid = true
   await save($)
-  return { result: JSON.stringify(E.PASTE_RETURNED) }
+  return { result: JSON.stringify({ say: text, then: E.sayNext({ kind, text }, ctx.auto) }) }
 }
 
 // The creative did something (answered a box, closed it, typed a message): a talk step's stall clock starts again.
+
 async function markActive($: any) {
   if (!ctx || ctx.state.status !== 'working') return
   ctx.state = { ...ctx.state, activeAt: await $.clock.now() }
@@ -957,8 +1018,15 @@ export const register: Register = on => {
       await journal($, { ev: 'deviation', step: ctx.state.current, tool: call.tool, agentId: call.agentId ?? null, why: verdict.why })
       return { deny: verdict.why }
     }
+    // F232: a script step says its opening before it asks or finishes anything.
+    const cur0 = E.stepById(ctx.pipeline, ctx.state.current)
+    if (cur0 && cur0.kind === 'talk' && cur0.opening && ctx.state.status === 'working' && ctx.state.opened !== cur0.id && (call.tool === E.ENGINE_TOOL || call.tool === 'AskUserQuestion') && !call.agentId) {
+      const why = `BMUZ engine: this step opens with its script line first: call ${E.SAY_TOOL} with {"line": ${JSON.stringify(cur0.opening.length === 1 ? cur0.opening[0] : cur0.opening)}}.`
+      await journal($, { ev: 'deviation', step: cur0.id, tool: call.tool, agentId: null, why })
+      return { deny: why }
+    }
     if (call.tool === E.ENGINE_TOOL) return stepDone($, e)
-    if (call.tool === E.PASTE_TOOL) return askPaste($, e)
+    if (call.tool === E.SAY_TOOL) return sayTool($, e)
     if (call.tool === 'AskUserQuestion' && !ctx.auto) {
       // A background session lists the question tool but refuses it (headless check 15): then nobody
       // can answer, so from here this session is an auto run and the turn-end rule keeps it moving.
@@ -974,6 +1042,16 @@ export const register: Register = on => {
         if (fake) {
           await journal($, { ev: 'deviation', step: cur.id, tool: 'AskUserQuestion', agentId: null, why: fake })
           return { deny: fake }
+        }
+        // F232: in a step with script lines, every box is one the script handed out, asked exactly.
+        if (cur.lines) {
+          const m = E.boxProblem(ctx.state.boxes || [], (e as any).questions)
+          if (m.why) {
+            await journal($, { ev: 'deviation', step: cur.id, tool: 'AskUserQuestion', agentId: null, why: m.why })
+            return { deny: m.why }
+          }
+          ctx.state = { ...ctx.state, boxes: (ctx.state.boxes || []).filter((b: any) => !m.used.includes(`${b.id}#${b.n}`)) }
+          await save($)
         }
         let rows: any = null
         try { rows = await $.session.messages() } catch (err) { rows = null }
@@ -1085,15 +1163,15 @@ export const register: Register = on => {
     quietTurn = false
     creativeTurn = true
     if (!ctx.broken && ctx.state.status === 'working') await markActive($)
-    // The creative's message while the ask for links is open is its answer (their words, journaled for ideate-doc's
-    // quote check); the ask closes and Claude is told, beside it, what it means ("never mind" = no material).
-    const openPaste = !ctx.broken && E.pasteOpen(ctx.state)
-    if (openPaste && !/^\s*bmuz\b/i.test(text)) {
-      await journal($, { ev: 'answer', step: openPaste.step, via: 'typed', text })
-      ctx.state = { ...ctx.state, paste: null }
-      await journal($, { ev: 'paste.closed', step: openPaste.step, never: E.isNeverMind(text) })
+    // The creative's message while a free question is open is its answer (their words, journaled for the scripts'
+    // quote checks); the question closes and Claude is told, beside it, what it answers ("never mind" = no material).
+    const openAsk = !ctx.broken && E.askOpen(ctx.state)
+    if (openAsk && !/^\s*bmuz\b/i.test(text)) {
+      await journal($, { ev: 'answer', step: openAsk.step, line: openAsk.line, via: 'typed', text })
+      ctx.state = { ...ctx.state, ask: null }
+      await journal($, { ev: 'ask.closed', step: openAsk.step, line: openAsk.line, never: E.isNeverMind(text) })
       await save($)
-      return next({ ...(e as any), context: [...((e as any).context ?? []), E.pasteAnswerNote(text)] })
+      return next({ ...(e as any), context: [...((e as any).context ?? []), E.answerNote(openAsk, text)] })
     }
     const say = (words: string) => {
       quietTurn = true
@@ -1136,7 +1214,8 @@ export const register: Register = on => {
       if (!step || step.kind !== 'gate') return say('BMUZ engine: no gate is open.')
       // No default answer: the creative names the option (an empty "bmuz approve" must never say yes).
       const answer = go[2].trim()
-      if (!step.options.includes(answer)) return say(`BMUZ engine: the gate is still open. Answer with one of: ${step.options.map((o: string) => `"bmuz approve ${o}"`).join(' / ')}`)
+      const opts = E.gateWords(step, ctx.script, vars()).options
+      if (!opts.includes(answer)) return say(`BMUZ engine: the gate is still open. Answer with one of: ${opts.map((o: string) => `"bmuz approve ${o}"`).join(' / ')}`)
       await applyGate($, step, answer)
       pending = 'advance'
       return next({ ...(e as any), text: `${text}\n(BMUZ engine: gate answered. Reply with one short line; the engine runs the next step itself.)` })
@@ -1175,6 +1254,44 @@ export const register: Register = on => {
       creativeTurn = false
       return r
     }
+    // F232: every script line said in this turn must be in what Claude wrote, word for word. A line that isn't gets the
+    // engine's correction (at most MAX_NUDGES per step try); anything pending waits for that turn's end.
+    const said = turnSaid
+    const wasLong = longSaid
+    turnSaid = { step: '', lines: [] }
+    longSaid = false
+    if (said.lines.length) {
+      let rows: any = null
+      try { rows = await $.session.messages() } catch (err) { rows = null }
+      const written = Array.isArray(rows) ? E.turnText(rows) : String((e as any).answer ?? '')
+      const missing = E.unsaid(said.lines, `${written}\n${String((e as any).answer ?? '')}`)
+      await journal($, { ev: 'said', step: said.step, lines: said.lines.map(l => l.id), missing: missing.map((l: any) => l.id), checked: Array.isArray(rows) ? 'transcript' : 'answer' })
+      if (missing.length && !(e as any).isAborted) {
+        const key = `${said.step}#${ctx.state.retries[said.step] || 0}`
+        if (nudges.key !== key) nudges = { key, n: 0 }
+        const fix = E.unsaidNudge(E.stepById(ctx.pipeline, said.step) || { id: said.step }, missing, nudges.n)
+        if (fix) {
+          nudges.n += 1
+          turnSaid = { step: said.step, lines: missing }
+          await journal($, { ev: 'nudge', step: said.step, n: nudges.n, unsaid: missing.map((l: any) => l.id) })
+          await $.prompt.submit({ text: fix })
+          quietTurn = false
+          creativeTurn = false
+          return r
+        }
+      }
+    }
+    // A long line was shown and the step goes on: its next question comes in a turn of its own (a box would cover it).
+    if (!pending && wasLong && ctx.state.status === 'working' && !E.askOpen(ctx.state) && !(e as any).isAborted) {
+      const step = E.stepById(ctx.pipeline, ctx.state.current)
+      if (step && step.kind === 'talk') {
+        await journal($, { ev: 'continue', step: step.id })
+        await $.prompt.submit({ text: E.continueLine(step) })
+        quietTurn = false
+        creativeTurn = false
+        return r
+      }
+    }
     if (pending && typeof pending === 'object' && 'card' in pending) {
       // The hand-off card, as the engine's own message; the next step starts when that turn ends.
       // (handOff already saved the card's text in .bmuz/last-card.md; the message points Claude at it)
@@ -1198,11 +1315,11 @@ export const register: Register = on => {
             await save($)
             await startTalk($, step, 'the turn ended without step_done; in an auto run nobody will answer, so take the default and finish')
           }
-        } else if (quietWait || E.pasteOpen(ctx.state)) {
+        } else if (quietWait || E.askOpen(ctx.state)) {
           // The creative closed the question box (Esc, or "Type something" sent empty — Claude Code can't tell them
-          // apart), or the ask for links is open. Their answer comes next: no nudge (live look 2026-11-10: two nudges
+          // apart), or a free question is open. Their answer comes next: no nudge (live look 2026-11-10: two nudges
           // made Claude repeat "still paused" while the creative looked for a paste field).
-          await journal($, { ev: E.pasteOpen(ctx.state) ? 'ask.paste' : 'ask.declined', step: step.id })
+          await journal($, { ev: E.askOpen(ctx.state) ? 'ask.waiting' : 'ask.declined', step: step.id })
           quietWait = ''
         } else if (!quietTurn && (e as any).reason === 'answer' && !(e as any).isAborted && (!creativeTurn || E.plainQuestion(String((e as any).answer ?? '')))) {
           // (a turn the creative started — "what do you mean?" — answered in plain text is a conversation, not a stall:
@@ -1251,7 +1368,8 @@ export const register: Register = on => {
     const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
     if (!step || step.kind !== 'gate') return { text: 'No gate is open.' }
     const answer = String((e as any).args || '').trim()
-    if (!step.options.includes(answer)) return { text: `The gate is still open. Pick one of: ${step.options.join(' / ')}` }
+    const opts = E.gateWords(step, ctx.script, vars()).options
+    if (!opts.includes(answer)) return { text: `The gate is still open. Pick one of: ${opts.join(' / ')}` }
     await applyGate($, step, answer)
     $.clock.after(50, () => { advance($, false, { timer: true }) })
     return { text: `BMUZ engine: gate answered "${answer}".` }

@@ -43,25 +43,24 @@ test('F231 fix 1: the engine refuses a question box with fewer than 2 or more th
   assert.match(E.optionCountProblem([...q(2, 'a'), ...q(3, 'b'), ...q(2, 'c'), ...q(1, 'Matter most')]), /"Matter most" has 1 option/)
 })
 
-test('F231 fix 3: what the start already took — Ideate never asks for it again, and its craft note says so', async () => {
-  const { readFileSync } = await import('node:fs')
-  // the live run's intake: no sources read, the Drive link left for Ideate
-  const live = { sources: [], unreadable: [{ path: 'https://drive.google.com/drive/folders/1mGTFuDLcFBOKxRrR2s9ylI7LeQxOFN74', why: 'a link: Ideate reads it next', later: true }] }
-  assert.deepEqual(E.materialTaken(live), ['https://drive.google.com/drive/folders/1mGTFuDLcFBOKxRrR2s9ylI7LeQxOFN74'])
-  assert.match(E.materialTakenProblem(live), /the start already took their material \(https:\/\/drive\.google\.com\/drive\/folders\/1mGT.*Don't ask for links again/)
-  assert.deepEqual(E.materialTaken({ sources: [{ name: 'rules.md', chars: 10 }], unreadable: [{ path: 'deck.pdf', why: 'not a text file yet' }] }), ['rules.md'])
-  assert.deepEqual(E.materialTaken({ sources: [], unreadable: [] }), [])
-  assert.equal(E.materialTakenProblem(null), null)
-  const note = readFileSync(new URL('../plugin/craft/ideate-show.md', import.meta.url), 'utf8')
-  assert.match(note, /When the start already took their material — intake\.json has "sources", or "unreadable" items marked "later": true .* never ask for material again/)
-  assert.match(note, /Write ONE short line saying what will be read next/)
-  assert.match(note, /the idea itself is missing .* ask ONLY the one-breath question/)
+test('F231 fix 3, as F232 has it: the start is folded into Ideate, so the links are asked for once — one step in all the pipelines says the ask for links', async () => {
+  const { readFileSync, readdirSync } = await import('node:fs')
+  const dir = new URL('../plugin/pipelines/', import.meta.url)
+  const saying = []
+  for (const f of readdirSync(dir).filter(f => f.endsWith('.json'))) {
+    const p = JSON.parse(readFileSync(new URL(f, dir), 'utf8'))
+    for (const s of p.steps) if ((s.lines || []).includes(E.LINKS_LINE)) saying.push(`${p.id}/${s.id}`)
+  }
+  assert.ok(saying.length <= 1, saying.join(', '))
+  // the old start-took-it check is gone with the start
+  assert.equal(E.materialTaken, undefined)
 })
 
 test('F231 fix 4: the engine\'s own tool rows get one plain line; other tools and refusals are left alone', () => {
-  assert.equal(E.toolRowLabel(E.PASTE_TOOL, JSON.stringify(E.PASTE_RETURNED), false), 'BMUZ · asked for your links')
+  assert.equal(E.toolRowLabel(E.SAY_TOOL, JSON.stringify({ say: 'x', then: 'y' }), false), 'BMUZ · script line')
   assert.equal(E.toolRowLabel(E.ENGINE_TOOL, 'Step name done.', false), 'BMUZ · step recorded')
   assert.equal(E.toolRowLabel(E.ENGINE_TOOL, 'Not done: the result has no "name".', false), 'BMUZ · step not done yet')
   assert.equal(E.toolRowLabel(E.ENGINE_TOOL, 'x', true), null)
   assert.equal(E.toolRowLabel('Bash', 'x', false), null)
 })
+

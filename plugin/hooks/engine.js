@@ -85,9 +85,13 @@ const STEP_KEYS = {
   // 0 for a step whose refusal is a verdict, not a flake (Define's stage: running it again says the same)
   // when: "{key}" — the step runs only when that earlier talk result says yes (F218: research offered, never forced);
   // otherwise it is skipped like a wrapped-up step (it counts as finished and hands back nothing)
-  common: ['id', 'kind', 'needs', 'description', 'timeoutMs', 'always', 'retries', 'when'],
-  talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results', 'wrapTo', 'recap'],
-  gate: ['question', 'options', 'approve', 'backTo'],
+  // no + title (F232): the script's step number ("2.3") and name ("The Pitch"), for the band ("Define · 3 of 8 · The
+  // Pitch"); onBack: the step runs only when a gate sent the creative back to it (Define's Concept Lock "Not yet")
+  common: ['id', 'kind', 'needs', 'description', 'timeoutMs', 'always', 'retries', 'when', 'no', 'title', 'onBack'],
+  // lines (F232): the script lines the step may say (plugin/script.md); opening: the ones it must say first
+  talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results', 'wrapTo', 'recap', 'lines', 'opening'],
+  // line (F232): the gate's question and options come from that script box
+  gate: ['question', 'options', 'approve', 'backTo', 'line'],
   // show: a .md file the script wrote; after the step passes, the engine shows it to the creative word for word
   // in a turn of its own (F228: Ideate's "the game so far"), then goes on
   script: ['run', 'writes', 'done', 'show'],
@@ -190,7 +194,17 @@ export function checkPipeline(p) {
       if (!isList(s.tools)) problems.push(`${at} (talk) needs "tools": the list of tools Claude may use in it`)
       if (!s.craft) problems.push(`${at} (talk) needs a "craft" note telling Claude what to do`)
     }
-    if (s.kind === 'gate') {
+    if (s.no !== undefined && !(typeof s.no === 'string' && /^\d+\.\d+$/.test(s.no))) problems.push(`${at}: "no" must be the script's step number, like "2.3"`)
+    if (s.title !== undefined && !(typeof s.title === 'string' && s.title.trim())) problems.push(`${at}: "title" must be the step's name, like "The Pitch"`)
+    if (s.onBack !== undefined && typeof s.onBack !== 'boolean') problems.push(`${at}: "onBack" must be true or false`)
+    if (s.lines !== undefined && !(isList(s.lines) && s.lines.every(id => /^[a-z][a-z0-9.-]*$/.test(id)))) problems.push(`${at}: "lines" must be a list of script line ids, like ["define.pitch"]`)
+    if (s.opening !== undefined && !(isList(s.opening) && s.opening.length)) problems.push(`${at}: "opening" must be a list of the line ids the step says first`)
+    if (s.kind === 'gate' && s.line !== undefined) {
+      if (typeof s.line !== 'string' || !/^[a-z][a-z0-9.-]*$/.test(s.line)) problems.push(`${at} (gate): "line" must be a script box id`)
+      if (s.question !== undefined || s.options !== undefined) problems.push(`${at} (gate): a gate with a script "line" takes its question and options from it; leave out "question" and "options"`)
+      if (typeof s.approve !== 'string' || !s.approve) problems.push(`${at} (gate) needs "approve": the box's option that says yes, word for word`)
+      if (s.backTo !== undefined && !byId.has(s.backTo)) problems.push(`${at} (gate): "backTo" "${s.backTo}" is not an earlier step`)
+    } else if (s.kind === 'gate') {
       if (typeof s.question !== 'string' || !s.question.trim()) problems.push(`${at} (gate) needs a "question"`)
       if (!isList(s.options) || s.options.length < 2) problems.push(`${at} (gate) needs 2 or more "options"`)
       else if (new Set(s.options).size !== s.options.length) problems.push(`${at} (gate): two options have the same words`)
@@ -278,7 +292,7 @@ function dropSteps(state, drop) {
   const finished = state.finished.filter(id => !drop.has(id))
   const resultsBy = Object.fromEntries(Object.entries(state.resultsBy || {}).filter(([id]) => !drop.has(id)))
   const retries = Object.fromEntries(Object.entries(state.retries || {}).filter(([id]) => !drop.has(id)))
-  const out = { ...state, finished, resultsBy, retries, paste: null, results: state.resultsBy ? mergeResults(finished, resultsBy) : state.results }
+  const out = { ...state, finished, resultsBy, retries, ask: null, boxes: [], opened: null, results: state.resultsBy ? mergeResults(finished, resultsBy) : state.results }
   // A skipped step taken off the finished list runs for real next time.
   if (state.skipped) out.skipped = state.skipped.filter(id => !drop.has(id))
   return out
@@ -365,7 +379,13 @@ export function talkPrompt(step, craft, why, auto, decided = [], more = {}) {
   const lines = [`BMUZ step "${step.id}" — this message comes from the BMUZ engine, not the creative; do the step without commenting on the engine.`]
   if (why) lines.push(`The last try did not pass: ${why}.`)
   if (auto) lines.push(`Auto run: the creative is away. Never ask and never wait for an answer, with AskUserQuestion or in plain text. Where you would ask, pick the sensible default, list it in the result's "asks" as {"question": "...", "picked": "..."}, and carry on.`)
-  else lines.push(ASK_RULE)
+  else lines.push(step.lines ? SCRIPT_RULE : ASK_RULE)
+  // F232: the step's script lines, and the ones it opens with (said before anything else).
+  if (step.lines && more.script) {
+    lines.push(`This step's script lines (say them through ${SAY_TOOL}, filling the slots from the game so far and the creative's own words):\n${linesList(more.script, step.lines)}`)
+    if (step.opening && !more.opened) lines.push(`Open the step with ${SAY_TOOL} {"line": ${JSON.stringify(step.opening.length === 1 ? step.opening[0] : step.opening)}} before anything else.`)
+  }
+  if (more.back) lines.push(`The creative answered "${more.back.answer}" at "${more.back.question}", so this step runs again: ask what they want changed (their next message), make the change in the result, and finish.`)
   // The recap carries what earlier steps collected, so the step works the same after a new session or a
   // compacted chat (the conversation alone would forget it).
   const recap = Object.fromEntries(Object.entries(more.recap || {}).filter(([, v]) => v !== undefined && v !== null))
@@ -385,12 +405,13 @@ export function talkPrompt(step, craft, why, auto, decided = [], more = {}) {
     lines.push(`This step hands back to the creative: put the hand-off card's words in the result's "card" (every part filled; "none" where there is nothing). Don't write the card in the chat: the engine shows it. Questions go in "questions" as {"key": "short-slug", "q": "...?", "kind": "taste" | "want" | "choice", "options": ["..."]}: taste = how it looks, feels or plays (no "pick": the creative's view comes first); want / choice may add "pick" (one of the options). Engineering calls are yours: decide them and say why in "done", never ask.`)
     if (decided.length) lines.push(`Already decided (use these, never ask them again): ${decided.map(d => `${d.key} = ${d.answer}`).join('; ')}.`)
   }
-  if (step.wrapTo && more.wrap) {
+  // (a step with script lines asks its own way on: its boxes are the script's, never the engine's wrap-up words)
+  if (step.wrapTo && more.wrap && !step.lines) {
     // The same words at every step, from the engine, so wrapping up is always offered the same way.
     lines.push(auto
       ? `Wrap-up: in an auto run keep going (leave "wrap" out of the result).`
       : `Wrap-up: the creative may wrap up at any point. When this step's own questions are done, ask one more with AskUserQuestion: "Keep going (next: ${more.wrap.next}), or wrap up now (what's collected is saved, then ${more.wrap.to})?" with the options "Keep going" first and "Wrap up". If they wrap up, here or earlier in their own words, finish the step with what you have and add "wrap": true to the result.`)
-  }
+  } else if (step.wrapTo && step.lines) lines.push(`Jumping ahead: when the creative's answer skips the rest of this stage (the craft note says which), add "wrap": true to the result.`)
   // (headless define 2026-11-10: haiku copied the "..." placeholders' shape and handed every list back as one string —
   // a 5-line story as one line, pillars without their "settles")
   if ((step.results || []).length) lines.push('The "..." values below only name the keys: give each value the shape the note above asks for — a JSON list where it says list, an object where it says object — never a list or an object written out as text.')
@@ -430,14 +451,18 @@ export function switchProblem(sw) {
 // The one line the creative sees when a talk step starts; talkPrompt's words travel with it as hidden context
 // (register.tsx prompt.submit). It still says where it's from, so Claude never reads it as the creative's.
 // intro: the stage's short paragraph (F225), shown above the headline at a stage's first talk step.
-export function talkHeadline(step, intro = null) {
-  const line = `BMUZ step "${step.id}"${step.description ? ` — ${step.description}` : ''} (from the BMUZ engine; its instructions for this step are attached)`
+export function talkHeadline(step, intro = null, place = null) {
+  // (F232: a script step names its place, "Define · 3 of 8 · The Pitch", as the band does)
+  const what = place || step.description
+  const line = `BMUZ step "${step.id}"${what ? ` — ${what}` : ''} (from the BMUZ engine; its instructions for this step are attached)`
   return intro ? `${intro}\n\n${line}` : line
 }
 
 // The stage intro a pipeline's first talk step shows, once per run (null: not a stage, or already shown).
 export function introFor(p, state) {
   const s = stageOf(p && p.id)
+  // (F232: a stage whose steps say the script's lines opens with the script's own welcome instead)
+  if (p && Array.isArray(p.steps) && p.steps.some(x => x && x.lines)) return null
   return s && !state.introShown ? s.intro : null
 }
 // The engine's short line when a timer picks up a run at a talk step (register.tsx advance, opts.timer): the step
@@ -761,7 +786,7 @@ export function isPersonDeclining(res) {
 
 // ---- Asking only through the question box (F228 task 3; discover-live-review-2026-11-09.md S3 and #20b) ----
 // Every live talk step is told this, whatever its craft note says.
-export const ASK_RULE = 'Asking: every question to the creative goes through AskUserQuestion (their own words go in its "Other"). Never ask anything in plain text: the creative doesn\'t see it as a question and the run waits (a live run stalled 18 minutes on one). Nothing they must read goes in plain text in the same turn as the question box: the box covers it. Put it inside the question or the options\' descriptions, with at most one short line before the box. A turn of a talk step ends only with the box answered and more to do, or with step_done. Options: only real answers, two is fine, never filler. Never an option that only means "I\'ll type or paste it" (picking an option ends the question with nothing typed). Links, notes or any long text: never the box — call mcp__bmuz__ask_paste (where the step lists it), then write exactly the text it returns as your whole reply and end your turn. Their next chat message is the answer: every link or path in it is material, one item each; "never mind" means none. (The box\'s own "Type something." field is easy to miss and paste doesn\'t reach it until it\'s selected — live look 2026-11-10.) Anything that asks them to put files in this folder gives the folder\'s full path, so they can find it. If the creative closes the box without an answer (Esc, or "Type something." sent empty — the same thing to you), write ONE short line: "Nothing came through. Paste it as your next message, or say carry on." and end your turn; their next message is the answer. Never repeat it.'
+export const ASK_RULE = 'Asking: every question to the creative goes through AskUserQuestion (their own words go in its "Other"). Never ask anything in plain text: the creative doesn\'t see it as a question and the run waits (a live run stalled 18 minutes on one). Nothing they must read goes in plain text in the same turn as the question box: the box covers it. Put it inside the question or the options\' descriptions, with at most one short line before the box. A turn of a talk step ends only with the box answered and more to do, or with step_done. Options: only real answers, two is fine, never filler. Never an option that only means "I\'ll type or paste it" (picking an option ends the question with nothing typed). Links, notes or any long text: never the box — ask in one short line as your whole reply and end your turn; their next chat message is the answer: every link or path in it is material, one item each; "never mind" means none. (The box\'s own "Type something." field is easy to miss and paste doesn\'t reach it until it\'s selected — live look 2026-11-10.) Anything that asks them to put files in this folder gives the folder\'s full path, so they can find it. If the creative closes the box without an answer (Esc, or "Type something." sent empty — the same thing to you), write ONE short line: "Nothing came through. Paste it as your next message, or say carry on." and end your turn; their next message is the answer. Never repeat it.'
 export const MAX_NUDGES = 2
 
 // The question a message asks in plain text (one of its last lines ending in "?"), or null.
@@ -821,7 +846,7 @@ export function fakeTypeOptionProblem(questions) {
       const label = String((o && o.label) || '')
       const desc = String((o && o.description) || '')
       if (FAKE_LABEL.some(r => r.test(label)) || FAKE_DESC.test(desc)) {
-        return `BMUZ engine: the option "${label}" stands in for typing, but picking an option ends the question with nothing typed — the creative gets asked again and never gets a field to paste into (live look: four screens of "I'll paste it"). Drop that option. For links or long text call ${PASTE_TOOL} instead of the box (their next chat message is the answer); keep only options that are real answers — two is fine, no filler.`
+        return `BMUZ engine: the option "${label}" stands in for typing, but picking an option ends the question with nothing typed — the creative gets asked again and never gets a field to paste into (live look: four screens of "I'll paste it"). Drop that option. For links or long text ask in the chat instead of the box (their next chat message is the answer); keep only options that are real answers — two is fine, no filler.`
       }
     }
   }
@@ -856,45 +881,26 @@ export function isNobodyToAsk(res) {
   return /not available in this session|(isn'?t|is not|not) available|unavailable|non-?interactive|no (one|user|person) (is )?(here |available )?to (answer|ask)|nobody (is )?(here|available) to|can(not|'t) ask (the )?(user|person)/i.test(JSON.stringify(res ?? ''))
 }
 
-// ---- Asking for links (F228, live looks 2026-11-10) ----
+/// ---- Free answers: "your next message is the answer" (F228's ask for links, generalised in F232 task 2) ----
 // The question box's only text field is its last row, "Type something.": easy to miss, and paste doesn't reach it
-// until it's selected. An engine panel above the prompt (round 4) worked, but the creative pasted into the chat
-// prompt anyway and wanted the ask to look like Claude's own message. So a talk step calls PASTE_TOOL: Claude writes
-// PASTE_ASK as its whole reply and ends the turn; state.paste marks the ask open (no nudge, no watchdog stall, kept
-// across a new window); the creative's next chat message is the answer ("never mind" = no material).
-export const PASTE_TOOL = 'mcp__bmuz__ask_paste'
-// The creative's own wording (live look round 5), word for word.
-export const PASTE_ASK = 'Share your links — paste them with Alt+V. I can read Google Drive folder and/or doc links, GitHub links, and even folder and file links from your computer. If you don\'t want to share any links, just say "never mind".'
-export const PASTE_RETURNED = { open: true, say: PASTE_ASK, note: 'Write exactly the "say" text as your whole reply — nothing before or after it, no question box — and end your turn. The creative\'s next chat message is the answer.' }
+// until it's selected (live looks 2026-11-10). So every free question is a script "free" line: Claude writes it as its
+// whole reply and ends the turn; state.ask marks it open (no nudge, no watchdog stall, kept across a new window); the
+// creative's next chat message is the answer. The ask for links (ideate.material) is one of them ("never mind" = none).
+export const LINKS_LINE = 'ideate.material'
 
 // The engine's own tool rows in the transcript, as one dim line instead of their raw JSON (F231, live look: "bmuz -
 // ask_paste (MCP) { open: true, say: … }"). null = not the engine's tool, or a refusal (its reason is shown as is).
 export function toolRowLabel(tool, output, isErrored) {
   if (isErrored) return null
   if (tool === ENGINE_TOOL) return /^\s*"?Not done/.test(typeof output === 'string' ? output : JSON.stringify(output ?? '')) ? 'BMUZ · step not done yet' : 'BMUZ · step recorded'
-  if (tool === PASTE_TOOL) return 'BMUZ · asked for your links'
+  if (tool === SAY_TOOL) return 'BMUZ · script line'
   return null
 }
 
-// What the start already took (F231, live run 2026-11-10: Ideate asked for the Drive link the start had): the names of
-// intake.json's sources and of the links and paths it left for Ideate to read ("later"). [] when none.
-export function materialTaken(intake) {
-  if (!intake || typeof intake !== 'object') return []
-  const names = [
-    ...(Array.isArray(intake.sources) ? intake.sources : []).map(s => s && s.name),
-    ...(Array.isArray(intake.unreadable) ? intake.unreadable : []).filter(u => u && (u.later || /^https?:\/\//i.test(String(u.path || '')))).map(u => u.path),
-  ]
-  return names.filter(n => typeof n === 'string' && n.trim())
-}
-export function materialTakenProblem(intake) {
-  const names = materialTaken(intake)
-  if (!names.length) return null
-  return `BMUZ engine: the start already took their material (${names.slice(0, 5).join(', ')}${names.length > 5 ? ', …' : ''}); Ideate's reading step reads it next. Don't ask for links again: say in one short line what will be read, then carry on (the craft note says when the one-breath question is still needed).`
-}
-
-// The open ask, when it belongs to the step that is running now; else null (a finished or undone step's is stale).
-export function pasteOpen(state) {
-  const p = state && state.paste
+// The open free question, when it belongs to the step that is running now; else null (a finished or undone step's is
+// stale). { step, line, text }
+export function askOpen(state) {
+  const p = state && state.ask
   return p && state.status === 'working' && p.step === state.current ? p : null
 }
 
@@ -904,16 +910,20 @@ export function isNeverMind(text) {
   return t === 'never mind' || t === 'nevermind'
 }
 
-// What Claude is told beside the creative's answer to the ask (prompt context: the creative never sees it).
-export function pasteAnswerNote(text) {
-  return isNeverMind(text)
-    ? 'BMUZ engine: the creative said "never mind" to sharing links: carry on with the step with no material from this ask (no links, files or pasted text).'
-    : 'BMUZ engine: this message answers your ask for links: take every link and path in it as their material (one item per link or path), and any other text as pasted text, exactly as given.'
+// What Claude is told beside the creative's answer (prompt context: the creative never sees it).
+export function answerNote(ask, text) {
+  if (ask && ask.line === LINKS_LINE) {
+    return isNeverMind(text)
+      ? 'BMUZ engine: the creative said "never mind" to sharing links: carry on with the step with no material from this ask (no links, files or pasted text).'
+      : 'BMUZ engine: this message answers your ask for links: take every link and path in it as their material (one item per link or path), and any other text as pasted text, exactly as given.'
+  }
+  const q = plainWords(ask ? ask.text : '')
+  return `BMUZ engine: this message is the creative's answer to the script line "${ask ? ask.line : '?'}" ("${q.slice(0, 80)}${q.length > 80 ? '…' : ''}"). Their own words, exactly: use them, then carry on with the step.`
 }
 
-// The line a talk step's notes get when it starts again (a new window, "bmuz go") with its ask still open.
-export function pasteResumeLine() {
-  return `Your ask for their links is still open: write exactly this as your whole reply and end your turn — ${PASTE_ASK}`
+// The line a talk step's notes get when it starts again (a new window, "bmuz go") with its question still open.
+export function askResumeLine(ask) {
+  return `Your question (script line "${ask.line}") is still open: write exactly this as your whole reply and end your turn — ${ask.text}`
 }
 
 // The text of a question box's answer, whatever field carries it (the mod docs don't fix the result's shape).
@@ -952,7 +962,7 @@ export function judgeTool(p, state, call, opts = {}) {
   // Reading the saved hand-off card (cardPrompt) or a script step's shown file (showPrompt) is always allowed: the
   // engine asks for them between steps.
   if (!call.agentId && call.tool === 'Read' && /[\\/]\.bmuz[\\/]last-(card|shown)\.md$/.test(String((call.input || {}).file_path || ''))) return { allow: true }
-  if (opts.auto && (call.tool === 'AskUserQuestion' || call.tool === PASTE_TOOL)) {
+  if (opts.auto && call.tool === 'AskUserQuestion') {
     return { allow: false, why: `BMUZ engine: auto run, nobody is here to answer. Don't ask: pick the sensible default, add {"question": "...", "picked": "..."} to the "asks" list in ${ENGINE_TOOL}'s result, and carry on.` }
   }
   // step_done only closes an open talk step; called between steps, it has nothing to finish.
@@ -981,6 +991,8 @@ export function judgeTool(p, state, call, opts = {}) {
   if (call.tool === 'Workflow' && step.kind === 'flow') {
     return { allow: true, rewriteWorkflow: true }
   }
+  // F232: every talk step with script lines may say them (the motor checks which).
+  if (call.tool === SAY_TOOL) return step.kind === 'talk' && step.lines ? { allow: true } : { allow: false, why: `BMUZ engine: step ${step.id} has no script lines to say` }
   if ((step.tools || []).includes(call.tool)) return { allow: true }
   return { allow: false, why: `BMUZ engine: step ${step.id} (${step.kind}) may use only ${(step.tools || []).join(', ') || 'no tools'}; ${call.tool} is out of order` }
 }
@@ -1058,7 +1070,10 @@ export function finish(state, step, result) {
     resultsBy: result ? { ...(state.resultsBy || {}), [step.id]: result } : (state.resultsBy || {}),
     retries,
     flow: null, // a finished flow's launch record (and a "late" mark) must not follow the next step
-    paste: null, // nor a talk step's open ask for links
+    ask: null, // nor a talk step's open free question, its script boxes or its opening mark (F232)
+    boxes: [],
+    opened: null,
+    back: state.back && state.back.step === step.id ? null : state.back || null,
     current: null,
     status: 'idle',
     startedAt: null,
@@ -1123,7 +1138,14 @@ export function answerGate(p, state, step, answer) {
     grew = false
     for (const s of p.steps) if (!drop.has(s.id) && (s.needs || []).some(n => drop.has(n))) { drop.add(s.id); grew = true }
   }
-  return { state: { ...dropSteps(state, drop), current: null, status: 'idle', startedAt: null }, approved: false }
+  // (F232: the step it goes back to is told what the creative answered, and an "onBack" step runs only then)
+  return { state: { ...dropSteps(state, drop), current: null, status: 'idle', startedAt: null, back: { step: back, gate: step.id, answer, question: step.question || step.line || step.id } }, approved: false }
+}
+
+// A step with "onBack" runs only when a gate sent the creative back to it (Define's "Not yet: change something");
+// otherwise it is skipped like a "when" that says no.
+export function onBackSkips(step, state) {
+  return !!(step && step.onBack && !(state && state.back && state.back.step === step.id))
 }
 
 // TaskStop's answer when the task had already finished (proof run 9: "not running (completed)").
@@ -1140,7 +1162,7 @@ export function isStalled(p, state, now, defaultMs, opts = {}) {
   if (state.status !== 'working' || !state.startedAt) return false
   if (opts.askOpen) return false
   // (a talk step with its ask for links open is waiting on the creative, not stalled)
-  if (pasteOpen(state)) return false
+  if (askOpen(state)) return false
   const step = stepById(p, state.current)
   const limit = (step && step.timeoutMs) || defaultMs
   const since = Math.max(state.startedAt, Number(state.activeAt) || 0)
@@ -1165,6 +1187,10 @@ export function bandText(p, state, now) {
   const timed = state.status === 'working' && typeof state.startedAt === 'number'
   const secs = timed ? Math.max(0, Math.floor((now - state.startedAt) / 1000)) : 0
   const clock = `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`
+  // F232: a stage with the script's step numbers says "Define · 3 of 8 · The Pitch" (the script's band); a free
+  // question open says it is waiting for the creative, not working.
+  const place = stepPlace(p, step)
+  if (place) return `${place} · ${askOpen(state) ? 'your turn' : word}${timed && !askOpen(state) ? ' · ' + clock : ''}`
   return `BMUZ · step ${n} of ${total} · ${step ? step.id : '?'} · ${word}${timed ? ' · ' + clock : ''}`
 }
 
@@ -1185,7 +1211,7 @@ export function rebuildFromJournal(pipelineId, lines) {
     if (j.ev === 'wrap') s = applyWrap(s, j.skipped || [], j.empties || {})
     if (j.ev === 'step.skip') s = applyWrap(s, [j.step], j.empties || {})
     if (j.ev === 'retry') s = { ...s, retries: { ...s.retries, [j.step]: (s.retries[j.step] || 0) + 1 } }
-    if (j.ev === 'gate.back') s = { ...dropSteps(s, new Set(j.dropped || [])), current: null, status: 'idle', startedAt: null }
+    if (j.ev === 'gate.back') s = { ...dropSteps(s, new Set(j.dropped || [])), current: null, status: 'idle', startedAt: null, ...(j.back ? { back: j.back } : {}) }
     if (j.ev === 'undo') s = { ...dropSteps(s, new Set(j.redo || [])), current: null, status: 'idle', startedAt: null, blocked: null }
     if (j.ev === 'blocked') s = { ...s, status: 'blocked', blocked: { step: j.step, why: j.why }, retries: { ...s.retries, [j.step]: MAX_RETRIES + 1 } }
     if (j.ev === 'unblock') s = unblock(s).state || s
@@ -1224,7 +1250,7 @@ export function doctor(p, stateText, journalLines, lock, sessionId, now) {
     lines.push(`The state file disagreed with the journal (state: ${kept.status} at ${kept.current || 'no step'}, ${kept.finished.length} finished; journal: ${rebuilt.status} at ${rebuilt.current || 'no step'}, ${rebuilt.finished.length} finished): went with the journal.`)
     fixed = true
   }
-  const state = fixed ? { ...rebuilt, flow: kept && kept.flow, paste: kept && kept.paste } : kept
+  const state = fixed ? { ...rebuilt, flow: kept && kept.flow, ask: kept && kept.ask, boxes: (kept && kept.boxes) || [], opened: kept && kept.opened } : kept
   if (lock && lock.step && !lock.closed && lock.session !== sessionId) lines.push(`The last session (${String(lock.session).slice(0, 8)}) ended without closing, during step "${lock.step}" (${lock.status}).`)
   if (state.status === 'blocked' && state.blocked) lines.push(`Step "${state.blocked.step}" is BLOCKED: ${state.blocked.why}. Say "bmuz retry" to give it 2 more tries, or "bmuz undo" to go back further.`)
   for (const [id, n] of Object.entries(state.retries || {})) if (n && !(state.blocked && state.blocked.step === id)) lines.push(`Step "${id}" has used ${n} of its ${MAX_RETRIES} retries.`)
@@ -1250,4 +1276,252 @@ export function parseTaskNotification(text) {
   let result = get('result')
   try { result = result !== undefined ? JSON.parse(result) : undefined } catch (err) { /* keep text */ }
   return { taskId: get('task-id'), toolUseId: get('tool-use-id'), status: get('status'), result }
+}
+
+// ---- The script (F232 task 2): every fixed line BMUZ says, word for word, from ONE file (plugin/script.md) ----
+// The approved script (framework research/bmuz-vision/bmuz-design-doc.html, "How to read the scripts"): free answers go
+// in the chat ("your next message is the answer"), choices in a question box, and every fixed line is said exactly.
+// Claude never writes a fixed line itself: it asks the engine for it by id (SAY_TOOL) with the game-specific slots,
+// and gets the exact words back; the engine checks at the turn's end that they were said unchanged, and refuses a
+// question box that isn't the script's. A free line opens "the next message is the answer" (F228's ask for links,
+// generalised): no nudge and no watchdog stall while it waits.
+export const SAY_TOOL = 'mcp__bmuz__say'
+export const SCRIPT_KINDS = ['say', 'free', 'box']
+// A said line longer than this is shown in a turn of its own: a question box in the same turn covers it (live review
+// 2026-11-09 #20b; the same limits as hiddenTextProblem).
+export const LONG_SAY = { chars: 300, lines: 3 }
+
+// Reads script.md. Returns { lines: { id: { id, kind, added, text, box? } }, problems: [plain words] }.
+// A box: { question, header, many, options: [{ label, description, if?, each? }] }.
+export function parseScript(text) {
+  const lines = {}
+  const problems = []
+  let cur = null
+  const close = () => {
+    if (!cur) return
+    const body = cur.body.join('\n').replace(/^\n+|\n+$/g, '')
+    if (cur.kind !== 'box') {
+      cur.text = body
+      if (!body.trim()) problems.push(`line "${cur.id}" has no words`)
+    } else {
+      const box = { question: '', header: '', many: false, options: [] }
+      for (const l of body.split('\n')) {
+        if (/^\?\s/.test(l)) box.question = l.slice(2).trim()
+        else if (/^header:\s*/.test(l)) box.header = l.replace(/^header:\s*/, '').trim()
+        else if (/^many:\s*yes\s*$/.test(l)) box.many = true
+        else if (/^- /.test(l)) {
+          const m = l.slice(2).match(/^(?:\[(if|each) (\w+)\]\s+)?(.*?)(?: — (.*))?$/)
+          box.options.push({ label: m[3].trim(), description: (m[4] || '').trim(), ...(m[1] ? { [m[1]]: m[2] } : {}) })
+        } else if (l.trim()) problems.push(`box "${cur.id}": the line "${l.slice(0, 60)}" isn't "? question", "header:", "many: yes" or "- option"`)
+      }
+      if (!box.question) problems.push(`box "${cur.id}" has no "? question" line`)
+      if (!box.header || box.header.length > 12) problems.push(`box "${cur.id}" needs a "header:" of 12 characters at most`)
+      if (!box.options.length) problems.push(`box "${cur.id}" has no options`)
+      if (box.options.filter(o => !o.if && !o.each).length > 4) problems.push(`box "${cur.id}" has more than 4 options`)
+      cur.box = box
+    }
+    lines[cur.id] = { id: cur.id, kind: cur.kind, added: cur.added, ...(cur.kind === 'box' ? { box: cur.box } : { text: cur.text }) }
+    cur = null
+  }
+  for (const raw of String(text || '').replace(/\r\n/g, '\n').split('\n')) {
+    const h = raw.match(/^## ([a-z][a-z0-9.-]*) · (say|free|box)( · added)?\s*$/)
+    if (h) {
+      close()
+      if (lines[h[1]]) problems.push(`line "${h[1]}" is in the script twice`)
+      cur = { id: h[1], kind: h[2], added: !!h[3], body: [] }
+      continue
+    }
+    if (/^#{1,2} /.test(raw)) { close(); continue }
+    if (cur) cur.body.push(raw)
+  }
+  close()
+  return { lines, problems }
+}
+
+const filled = v => v !== undefined && v !== null && v !== false && !(typeof v === 'string' && !v.trim()) && !(Array.isArray(v) && !v.length)
+const slotNames = t => [...String(t).matchAll(/\{([\w.]+)(#?)\}/g)].map(m => m[1]).filter(n => n !== '.')
+
+// Fills one template. slots: the game-specific parts; a list fills as "· " lines ({x#}: "1. " lines); an item that is
+// { line, slots } is another script line (Ideate's question pool). Returns { text } or { missing: [slot names] }.
+function fillTemplate(t, slots, nested) {
+  const missing = []
+  const one = (name, numbered, ctx) => {
+    const v = name === '.' ? ctx : ctx && typeof ctx === 'object' && !Array.isArray(ctx) && ctx[name] !== undefined ? ctx[name] : slots[name]
+    if (!filled(v)) { missing.push(name); return '' }
+    const item = x => (x && typeof x === 'object' && typeof x.line === 'string' ? nested(x) : typeof x === 'object' ? String(x.text ?? '') : String(x))
+    if (Array.isArray(v)) return v.map((x, i) => `${numbered ? `${i + 1}.` : '·'} ${item(x).trim()}`).join('\n')
+    return item(v)
+  }
+  // [[ … ]]: said only when every slot inside it is filled
+  let out = String(t).replace(/\[\[([\s\S]*?)\]\]/g, (m, inner) => (slotNames(inner).every(n => filled(slots[n])) ? inner : ''))
+  out = out.replace(/\{([\w.]+)(#?)\}/g, (m, name, hash) => one(name, !!hash, null))
+  // Numbered questions the material already answered are left out, the rest renumbered (Feelings & Hopes).
+  const omit = Array.isArray(slots.omit) ? slots.omit.map(Number) : []
+  if (omit.length) {
+    let n = 0
+    out = out.split('\n').filter(l => { const m = l.match(/^(\d+)\. /); return !(m && omit.includes(Number(m[1]))) })
+      .map(l => (/^\d+\. /.test(l) ? l.replace(/^\d+\./, `${++n}.`) : l)).join('\n')
+  }
+  return missing.length ? { missing } : { text: out }
+}
+
+// A line ready to say: { id, kind, text } or, for a box, { id, kind: 'box', box: { question, header, multiSelect,
+// options: [{ label, description }] } } — or { error } in plain words.
+export function renderLine(script, id, slots = {}) {
+  const line = script && script.lines && script.lines[id]
+  if (!line) return { error: `there is no line "${id}" in the script` }
+  const s = slots && typeof slots === 'object' && !Array.isArray(slots) ? slots : {}
+  const nested = x => {
+    const r = renderLine(script, x.line, x.slots || {})
+    return r.error ? `[${r.error}]` : r.kind === 'box' ? `[${x.line} is a box]` : r.text
+  }
+  if (line.kind !== 'box') {
+    const f = fillTemplate(line.text, s, nested)
+    return f.missing ? { error: `line "${id}" needs ${f.missing.map(n => `{${n}}`).join(', ')} in "slots"` } : { id, kind: line.kind, text: f.text }
+  }
+  const q = fillTemplate(line.box.question, s, nested)
+  if (q.missing) return { error: `box "${id}" needs ${q.missing.map(n => `{${n}}`).join(', ')} in "slots"` }
+  const options = []
+  for (const o of line.box.options) {
+    if (o.if && !filled(s[o.if])) continue
+    const items = o.each ? (Array.isArray(s[o.each]) ? s[o.each] : []) : [null]
+    if (o.each && !items.length) return { error: `box "${id}" needs {${o.each}}: the list its options are made from` }
+    for (const it of items) {
+      const ctxSlots = it && typeof it === 'object' ? { ...s, ...it } : it !== null ? { ...s, '.': it } : s
+      const lab = fillTemplate(o.label.replace(/\{\.\}/g, it !== null && typeof it !== 'object' ? String(it) : '{.}'), ctxSlots, nested)
+      const desc = fillTemplate(o.description, ctxSlots, nested)
+      const miss = [...(lab.missing || []), ...(desc.missing || [])]
+      if (miss.length) return { error: `box "${id}" needs ${[...new Set(miss)].map(n => `{${n}}`).join(', ')} for its options` }
+      options.push({ label: lab.text.trim(), description: desc.text.trim() })
+    }
+  }
+  if (options.length < 2 || options.length > 4) return { error: `box "${id}" would have ${options.length} option${options.length === 1 ? '' : 's'}; a question box takes 2 to 4 (give at most ${Math.max(0, 4 - line.box.options.filter(o => !o.each && !o.if).length)} items)` }
+  return { id, kind: 'box', box: { question: q.text.trim(), header: line.box.header, multiSelect: line.box.many, options } }
+}
+
+// The words as compared: bold marks, curly quotes, bullet signs and spacing don't count (Markdown may draw them
+// differently); every word and every other sign does.
+export function plainWords(t) {
+  return String(t ?? '').replace(/\r\n/g, '\n').replace(/\*\*|__/g, '').replace(/[“”]/g, '"').replace(/[‘’]/g, "'")
+    .replace(/^[ \t]*[-*•·][ \t]+/gm, '· ').replace(/\s+/g, ' ').trim()
+}
+export const isLongSay = text => String(text).length > LONG_SAY.chars || String(text).split('\n').filter(l => l.trim()).length > LONG_SAY.lines
+
+// Was each line said, word for word? said = [{ id, text }]; turn = everything Claude wrote this turn.
+// Returns the lines that weren't (empty = all said).
+export function unsaid(said, turn) {
+  const have = plainWords(turn)
+  return (Array.isArray(said) ? said : []).filter(l => l && l.text && !have.includes(plainWords(l.text)))
+}
+
+// Does a question box match the script's? pending = the boxes the engine handed out ({ id, box }); questions =
+// AskUserQuestion's input.questions. Returns { used: [ids] } or { why } in plain words.
+export function boxProblem(pending, questions) {
+  const qs = Array.isArray(questions) ? questions : []
+  if (!qs.length) return { why: 'BMUZ engine: the question box has no questions.' }
+  const used = []
+  for (const q of qs) {
+    const p = (pending || []).find(b => !used.includes(b.id + '#' + b.n) && plainWords(b.box.question) === plainWords(q && q.question))
+    if (!p) {
+      const want = (pending || []).filter(b => !used.includes(b.id + '#' + b.n))
+      return { why: want.length
+        ? `BMUZ engine: the question "${String(q && q.question).slice(0, 120)}" isn't the script's. Ask exactly the box the engine gave you: ${JSON.stringify(want[0].box)}`
+        : `BMUZ engine: every question box in this step comes from the script: call ${SAY_TOOL} with the box's line id first, then ask exactly the box it returns.` }
+    }
+    const labels = (q.options || []).map(o => plainWords(o && o.label))
+    const descs = (q.options || []).map(o => plainWords(o && o.description))
+    const wantLabels = p.box.options.map(o => plainWords(o.label))
+    const wantDescs = p.box.options.map(o => plainWords(o.description))
+    if (JSON.stringify(labels) !== JSON.stringify(wantLabels) || wantDescs.some((d, i) => d && d !== descs[i]) || !!q.multiSelect !== !!p.box.multiSelect) {
+      return { why: `BMUZ engine: the box "${p.box.question.slice(0, 80)}" must have exactly the script's options, in order, with their descriptions${p.box.multiSelect ? ' (pick any: multiSelect true)' : ''}: ${JSON.stringify(p.box)}` }
+    }
+    used.push(p.id + '#' + p.n)
+  }
+  return { used }
+}
+
+// What is wrong with a pipeline's script lines (empty = fine): every step's "lines" and "opening" are lines of the
+// script, an opening is among the step's lines, a gate's "line" is a box whose "approve" is one of its options but
+// not the first (a stray Enter picks the first).
+export function checkLines(p, script) {
+  const out = []
+  for (const s of Array.isArray(p && p.steps) ? p.steps : []) {
+    const at = `step "${s && s.id}"`
+    for (const id of [...(isList(s.lines) ? s.lines : []), ...(isList(s.opening) ? s.opening : [])]) {
+      if (!script.lines[id]) out.push(`${at}: the line "${id}" isn't in the script (plugin/script.md)`)
+    }
+    for (const id of isList(s.opening) ? s.opening : []) if (!(s.lines || []).includes(id)) out.push(`${at}: its opening "${id}" must be one of its "lines"`)
+    if (s.kind === 'gate' && typeof s.line === 'string') {
+      const l = script.lines[s.line]
+      if (!l || l.kind !== 'box') out.push(`${at} (gate): "line" "${s.line}" must be a box in the script`)
+      else {
+        const labels = l.box.options.map(o => o.label)
+        if (!labels.includes(s.approve)) out.push(`${at} (gate): "approve" must be one of the box's options: ${labels.join(' / ')}`)
+        else if (labels[0] === s.approve) out.push(`${at} (gate): "${s.approve}" can't be the box's first option; a stray Enter would approve it`)
+      }
+    }
+  }
+  return out
+}
+
+// A gate's question and options: from its script box ("line") when it has one, else its own words.
+export function gateWords(step, script, vars = {}) {
+  if (typeof step.line === 'string' && script && script.lines[step.line] && script.lines[step.line].kind === 'box') {
+    const r = renderLine(script, step.line, vars)
+    if (!r.error) return { question: r.box.question, options: r.box.options.map(o => o.label) }
+  }
+  return { question: fill(step.question, vars), options: step.options }
+}
+
+// Every live talk step with script lines is told this, in place of ASK_RULE.
+export const SCRIPT_RULE = `The script: this step's fixed lines are BMUZ's own words, word for word, from its script. Never write one yourself and never reword one. To say a line, call ${SAY_TOOL} with {"line": "<id>", "slots": {…}} (a list of ids says several at once); it returns the exact words and what to do next. Free answers go in the chat: a "free" line is your whole reply, then end your turn; the creative's next chat message is the answer (Ctrl+V / Alt+V work there). Choices go in a question box: a "box" line returns the box to ask with AskUserQuestion, exactly as given (the engine refuses any other box). Between lines you may add one short sentence of your own only where the script has nothing to say (an example, a pointer to their own words); never a question in plain text. If the creative closes a box without an answer, write ONE short line: "Nothing came through. Paste it as your next message, or say carry on." and end your turn.`
+
+// The step's lines as its prompt lists them: id, kind, slots and the first words.
+export function linesList(script, ids) {
+  return (isList(ids) ? ids : []).map(id => {
+    const l = script && script.lines[id]
+    if (!l) return `- ${id}: (missing from the script)`
+    const words = l.kind === 'box' ? l.box.question : l.text
+    const slots = [...new Set([...slotNames(l.kind === 'box' ? [l.box.question, ...l.box.options.map(o => `${o.label} ${o.description}`)].join(' ') : l.text), ...(l.kind === 'box' ? l.box.options.filter(o => o.each || o.if).map(o => o.each || o.if) : [])])]
+    return `- ${id} (${l.kind}${slots.length ? `; slots: ${slots.join(', ')}` : ''}): "${plainWords(words).slice(0, 90)}${plainWords(words).length > 90 ? '…' : ''}"`
+  }).join('\n')
+}
+
+// What Claude is told to do with a line it asked for (the say tool's answer). auto = nobody can answer.
+export function sayNext(r, auto, last = false) {
+  if (r.kind === 'box') return auto
+    ? 'Auto run: nobody can answer the box. Take the creative\'s answer from the test answers (or the sensible default, listed in "asks") and carry on; don\'t call AskUserQuestion.'
+    : 'Call AskUserQuestion now with exactly this box: the same question, header, options (label and description) and multiSelect, in this order. Nothing else written before it beyond one short line.'
+  if (r.kind === 'free') return auto
+    ? 'Auto run: write exactly the "say" text, then take the creative\'s answer from the test answers (or the sensible default, listed in "asks") and carry on in this turn.'
+    : 'Write exactly the "say" text as your whole reply — nothing before or after it, no question box — and end your turn. The creative\'s next chat message is the answer.'
+  if (isLongSay(r.text) && !auto) return 'Write exactly the "say" text as your reply. It is long, so no question box in this turn (it would cover the text): end your turn after it (the engine carries the step on), or call step_done if the step is finished.'
+  return 'Write exactly the "say" text, then carry on with the step in this turn.'
+}
+
+// The engine's short message when a step's long line was shown and the step goes on (its next question comes in a
+// turn of its own, so the box doesn't cover the text).
+export function continueLine(step) {
+  return `BMUZ engine — this message comes from the BMUZ engine, not the creative: carry on with step "${step.id}"${step.title ? ` (${step.title})` : ''} from where it is.`
+}
+
+// What the engine says when a line wasn't said word for word (the turn's end). null once MAX_NUDGES are used.
+export function unsaidNudge(step, lines, n = 0) {
+  if (n >= MAX_NUDGES || !lines.length) return null
+  return `BMUZ engine — this message comes from the BMUZ engine, not the creative (step "${step.id}"). The script line${lines.length > 1 ? 's' : ''} ${lines.map(l => `"${l.id}"`).join(', ')} ${lines.length > 1 ? 'were' : 'was'} not written word for word. Write exactly this, nothing changed, then carry on:\n\n${lines.map(l => l.text).join('\n\n')}`
+}
+
+// The band's words for a step with a script number ("2.3") and title: "Define · 3 of 8 · The Pitch". The welcome
+// ("2.0") isn't counted. Steps without a number take the nearest numbered step above them. null = not numbered.
+export function stepPlace(p, step) {
+  if (!p || !step) return null
+  const steps = p.steps
+  let s = step
+  for (let i = steps.indexOf(step); i >= 0 && !(s && s.no && s.title); i--) s = steps[i]
+  if (!s || !s.no || !s.title) return null
+  const numbered = [...new Set(steps.filter(x => x.no && !/\.0$/.test(x.no)).map(x => x.no))]
+  const stage = stageOf(p.id)
+  const name = stage ? stage.name : p.id
+  if (/\.0$/.test(s.no)) return `${name} · ${s.title}`
+  return `${name} · ${numbered.indexOf(s.no) + 1} of ${numbered.length} · ${s.title}`
 }

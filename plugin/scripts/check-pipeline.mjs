@@ -23,6 +23,9 @@ export function checkFile(file) {
   const name = basename(file, '.json')
   if (p && p.id !== undefined && p.id !== name) problems.push(`its id "${p.id}" must match its file name "${name}"`)
   for (const f of E.pluginFiles(p)) if (!existsSync(join(root, f))) problems.push(`the craft note ${f} is missing`)
+  // F232: every script line its steps say is in the script, and the script itself reads
+  const script = E.parseScript(existsSync(join(root, 'script.md')) ? readFileSync(join(root, 'script.md'), 'utf8') : '')
+  problems.push(...script.problems.map(x => `script.md: ${x}`), ...E.checkLines(p, script))
   // A fixed "next" with a fixed "at": that step must exist in the next stage's pipeline (when it's on the engine).
   const nx = p && p.next
   if (nx && typeof nx.pipeline === 'string' && E.NAME_RE.test(nx.pipeline) && typeof nx.at === 'string' && E.NAME_RE.test(nx.at)) {

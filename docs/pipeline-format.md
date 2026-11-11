@@ -32,7 +32,22 @@ Any other setting is refused (a typo like `stpes` would otherwise be ignored sil
 | `always` | no | `true` = the step still runs when the creative wraps up early (below) |
 | `when` | no | `"{key}"`: the step runs only when that earlier talk result says yes (`true`, or text starting "yes"); otherwise the engine skips it like a wrapped-up step (journaled `step.skip`, counts as finished, hands back nothing). For something offered, never forced — Define's prior-art research (F218). The key must come from a talk step this step needs |
 
+| `no`, `title` | no | (F232) the script's step number (`"2.3"`) and name (`"The Pitch"`). The band then says `Define · 3 of 8 · The Pitch`; a `.0` step (a stage's welcome) isn't counted, and a step without them shows the numbered step above it |
+| `onBack` | no | (F232) `true` = the step runs only when a gate sent the creative back to it (Define's "Not yet: change something"); otherwise it is skipped like a `when` that says no. The step is told what they answered at the gate |
+
 A step runs when everything it `needs` is finished. A step can only need steps **above** it.
+
+## The script (F232): what BMUZ says, word for word
+Every fixed line BMUZ says lives in ONE file, `plugin/script.md` (its head explains the format: `## <id> · say|free|box`, `{slots}`, `[[ … ]]`, `[if x]` / `[each x]` options). A node test holds it to the approved script (framework research/bmuz-vision/bmuz-design-doc.html): every fixed part of Stages 1–2 must be in it word for word; lines not in the approved script are marked `· added`.
+- A talk step's `lines`: the script lines it may say. `opening`: the ones it says first, in one call, before any box or `step_done`.
+- Claude never writes a fixed line itself: it calls `mcp__bmuz__say` with `{"line": "<id>" or [ids], "slots": {…}}` and gets back the exact words (`say`) or the box (`box`), and what to do next (`then`). The engine journals each line (`line`).
+- **say**: written as is; a long one (over 300 characters or 3 lines) is shown in a turn of its own, and the engine carries the step on at that turn's end (`continue`), so no box covers it.
+- **free**: Claude's whole reply, then the turn ends; the creative's next chat message is the answer (`state.ask`; journaled as `answer` with its line; no nudge and no watchdog stall while it waits; said again after a new window). The ask for links, `ideate.material`, is one: "never mind" = no material. `{"wait": true}` opens one with nothing said (an option's description already asked, like "next, tell me what").
+- **box**: the box to ask with AskUserQuestion, exactly; in a step with `lines` the engine refuses any other box (another question, other options or lost descriptions).
+- At the turn's end every line said in it must be in what Claude wrote, word for word (bold marks, curly quotes, bullet signs and spacing don't count): one that isn't gets the engine's correction with the exact words (at most 2 per try; journaled `said` with what was missing). A script step's `show` file is checked the same way.
+- A gate's `line` (instead of `question` + `options`): the gate asks that script box; `approve` is one of its options, never the first.
+- In an auto run a free line opens nothing and boxes are never asked: the step takes the test answers or the default.
+- `npm run check:pipelines` and the engine's start refuse a pipeline naming a line the script doesn't have.
 
 ## The four kinds
 

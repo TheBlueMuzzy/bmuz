@@ -287,50 +287,47 @@ test('live look 2026-11-10: an option that stands in for typing ("I\'ll paste th
   for (const ok of ['Read rules.md and notes.txt', 'Look in this folder again', "That's everything", 'No link — ask me the idea instead', 'Keep going', 'Send it to Define', 'Open it up', 'Nothing yet — help me find one'])
     assert.equal(E.fakeTypeOptionProblem(box(ok, 'drop your files here first, then pick this')), null, ok)
   assert.equal(E.fakeTypeOptionProblem(undefined), null)
-  // the refusal points at the paste panel; the old "Paste links or text" option is gone
-  assert.match(E.fakeTypeOptionProblem(box("I'll paste it")) || '', /mcp__bmuz__ask_paste/)
+  // the refusal points at the chat (F232: free answers go in the chat; the next message is the answer)
+  assert.match(E.fakeTypeOptionProblem(box("I'll paste it")) || '', /ask in the chat instead of the box \(their next chat message is the answer\)/)
   assert.equal(E.PASTE_OPTION, undefined)
-  // every live talk step is told: links or long text go to ask_paste, never the box
+  // every live talk step without script lines is told: links or long text go in the chat, never the box
   const notes = E.talkPrompt({ id: 'x', results: [] }, 'craft', '', false)
-  assert.match(notes, /Links, notes or any long text: never the box — call mcp__bmuz__ask_paste/)
+  assert.match(notes, /Links, notes or any long text: never the box — ask in one short line as your whole reply and end your turn; their next chat message is the answer/)
   assert.ok(!/Paste links or text/.test(notes))
 })
 
-test('live look round 5: ask_paste — Claude writes the creative\'s own words; "never mind" in any form; no stall while it is open', () => {
-  assert.equal(E.PASTE_ASK, 'Share your links — paste them with Alt+V. I can read Google Drive folder and/or doc links, GitHub links, and even folder and file links from your computer. If you don\'t want to share any links, just say "never mind".')
-  assert.equal(E.PASTE_RETURNED.say, E.PASTE_ASK)
-  assert.match(E.PASTE_RETURNED.note, /Write exactly the "say" text as your whole reply/)
-  assert.ok(E.pasteResumeLine().endsWith(E.PASTE_ASK))
-  // the craft notes give the same words, and no "look in this folder" option any more
-  for (const note of ['start-opening.md', 'ideate-show.md']) {
-    const text = readFileSync(join(here, '..', 'plugin', 'craft', note), 'utf8')
-    assert.ok(text.includes(E.PASTE_ASK), note)
-    assert.ok(text.includes('mcp__bmuz__ask_paste'), note)
-    assert.ok(!/look in (this|the) folder/i.test(text), note)
-  }
+test('F232 (was live look round 5, ask_paste): the ask for links is the script\'s free line, the creative\'s own words; "never mind" in any form; no stall while any free question is open', () => {
+  const script = E.parseScript(readFileSync(join(here, '..', 'plugin', 'script.md'), 'utf8'))
+  const links = E.renderLine(script, E.LINKS_LINE, {})
+  assert.equal(links.kind, 'free')
+  assert.ok(links.text.endsWith('Share your links — paste them with Alt+V. I can read Google Drive folder and/or doc links, GitHub links, and even folder and file links from your computer. If you don\'t want to share any links, just say "never mind".'))
+  assert.match(E.sayNext(links, false), /Write exactly the "say" text as your whole reply/)
+  const open = { step: 'material', line: E.LINKS_LINE, text: links.text }
+  assert.ok(E.askResumeLine(open).endsWith(links.text))
   for (const t of ['never mind', 'Never mind', '  NEVER MIND  ', '"never mind"', 'Never mind.', '“never mind”', '"Never mind."', 'nevermind', 'never mind!'])
     assert.equal(E.isNeverMind(t), true, t)
   for (const t of ['never mind the drive link, here: https://drive.google.com/x', 'mind', '', 'never'])
     assert.equal(E.isNeverMind(t), false, t)
-  assert.match(E.pasteAnswerNote('Never mind.'), /carry on with the step with no material/)
-  assert.match(E.pasteAnswerNote('https://github.com/a/b'), /take every link and path in it as their material/)
+  assert.match(E.answerNote(open, 'Never mind.'), /carry on with the step with no material/)
+  assert.match(E.answerNote(open, 'https://github.com/a/b'), /take every link and path in it as their material/)
+  // any other free line: the answer is named as the answer to that line
+  assert.match(E.answerNote({ step: 'idea', line: 'ideate.idea', text: '**Your Idea**\nTell me about your game' }, 'A card game'), /answer to the script line "ideate\.idea" \("Your Idea Tell me about your game"\)/)
   // open only while its own step runs
-  const working = { status: 'working', current: 'opening', startedAt: 1, paste: { step: 'opening' } }
-  assert.deepEqual(E.pasteOpen(working), { step: 'opening' })
-  assert.equal(E.pasteOpen({ ...working, current: 'intake' }), null)
-  assert.equal(E.pasteOpen({ ...working, status: 'idle' }), null)
-  assert.equal(E.pasteOpen({ status: 'working', current: 'opening' }), null)
-  // a step waiting on the answer is not stalled; finishing the step closes the ask
-  const P = { id: 't', steps: [{ id: 'opening', kind: 'talk' }] }
+  const working = { status: 'working', current: 'material', startedAt: 1, ask: open }
+  assert.deepEqual(E.askOpen(working), open)
+  assert.equal(E.askOpen({ ...working, current: 'fetch' }), null)
+  assert.equal(E.askOpen({ ...working, status: 'idle' }), null)
+  assert.equal(E.askOpen({ status: 'working', current: 'material' }), null)
+  // a step waiting on the answer is not stalled; finishing the step closes the question
+  const P = { id: 't', steps: [{ id: 'material', kind: 'talk' }] }
   assert.equal(E.isStalled(P, working, 10_000_000, 1000), false)
-  assert.equal(E.isStalled(P, { ...working, paste: null }, 10_000_000, 1000), true)
-  assert.equal(E.finish({ ...working, finished: [], retries: {}, results: {} }, P.steps[0], { where: 'concept' }).paste, null)
-  // auto runs refuse it like the question box; a live step that lists it allows it
-  const S = { id: 't', steps: [{ id: 'opening', kind: 'talk', tools: ['AskUserQuestion', E.PASTE_TOOL] }] }
-  const st = { ...E.freshState('t'), status: 'working', current: 'opening', startedAt: 1 }
-  assert.equal(E.judgeTool(S, st, { tool: E.PASTE_TOOL }, { auto: true }).allow, false)
-  assert.equal(E.judgeTool(S, st, { tool: E.PASTE_TOOL }, { auto: false }).allow, true)
-  assert.equal(E.judgeTool({ id: 't', steps: [{ id: 'opening', kind: 'talk', tools: ['Read'] }] }, st, { tool: E.PASTE_TOOL }).allow, false)
+  assert.equal(E.isStalled(P, { ...working, ask: null }, 10_000_000, 1000), true)
+  assert.equal(E.finish({ ...working, finished: [], retries: {}, results: {} }, P.steps[0], { links: [] }).ask, null)
+  // the say tool: allowed only in a talk step with script lines
+  const S = { id: 't', steps: [{ id: 'material', kind: 'talk', tools: ['AskUserQuestion'], lines: [E.LINKS_LINE] }] }
+  const st = { ...E.freshState('t'), status: 'working', current: 'material', startedAt: 1 }
+  assert.equal(E.judgeTool(S, st, { tool: E.SAY_TOOL }, { auto: false }).allow, true)
+  assert.equal(E.judgeTool({ id: 't', steps: [{ id: 'material', kind: 'talk', tools: ['Read'] }] }, st, { tool: E.SAY_TOOL }).allow, false)
 })
 
 test('live look round 5: one paste, many links — Drive, GitHub repo/tree/blob, Windows paths, quoted paths with spaces, file:///', () => {

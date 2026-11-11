@@ -35,6 +35,8 @@ function world(on: any, files: Record<string, string>, onRun?: (argv: string[]) 
     // (F225: other pipelines, for stage switches, are PIPELINE:<name>)
     const other = unix.match(/plugin\/pipelines\/([\w-]+)[.]json$/) || unix.match(/\/pipelines\/([\w-]+)[.]json$/)
     if (other && !unix.startsWith('/proj/')) return `PIPELINE:${other[1]}`
+    // (F232: the plugin's script, <root>/script.md, is SCRIPT)
+    if (/\/script[.]md$/.test(unix) && !unix.startsWith('/proj/')) return 'SCRIPT'
     // craft notes live in the plugin too: <root>/craft/x.md is craft/x.md
     const craft = unix.match(/(craft\/[\w-]+[.]md)$/)
     return craft ? craft[1] : unix
@@ -253,89 +255,196 @@ test('live look 2026-11-10: a question box closed without an answer (an empty "T
   expect(nudged()).toBe(1)
 })
 
-// ---- Asking for links (live look round 5): ask_paste → Claude writes the creative's words; their next message answers ----
-const PASTE = 'mcp__bmuz__ask_paste'
+// ---- F232 task 2: the script — Claude asks for a line by id, the engine hands back the exact words; free answers in
+// the chat (the next message is the answer, F228's ask for links generalised), choices in the script's own boxes ----
+const SAY = 'mcp__bmuz__say'
 const ASK = 'Share your links — paste them with Alt+V. I can read Google Drive folder and/or doc links, GitHub links, and even folder and file links from your computer. If you don\'t want to share any links, just say "never mind".'
 const BAND = { component: 'AbovePrompt', props: { bodyColumns: 120, hasSurvey: false, isWorking: false, maxRows: 30 } }
+// A small script, in the plugin's format (plugin/script.md).
+const SCRIPT = [
+  '# Test script', '',
+  '## ideate.material · free', '**Your Material**', ASK, '',
+  '## ideate.idea · free', '**Your Idea**', 'Tell me about your game in your own words.', '',
+  '## define.pitch · say', '**The Pitch**', 'The game in a few lines, so anyone gets it in ten seconds.', '',
+  '## define.pitch.how · box', '? How\'s that?', 'header: The pitch', '- Keep it', '- Change something — next, tell me what', '',
+  '## define.long · say', 'x '.repeat(200).trim(), '',
+  '## define.lock.box · box', '? Lock the concept?', 'header: Lock', '- Not yet: change something — next, tell me what', '- Lock it: on to Design', '',
+].join(String.fromCharCode(10))
 
-// The "shown" world with ask_paste in step "ask"'s tools; every prompt keeps its context lines (prompts[i]).
-function pasteWorld(on: any) {
+// The "shown" world, its step "ask" saying script lines; every prompt keeps its context lines (prompts[i]).
+function sayWorld(on: any, opening: string[] | null = null) {
   const s = shown(on)
   const p = JSON.parse(s.w.files.PIPELINE)
-  p.steps[0].tools = ['Read', 'AskUserQuestion', PASTE]
+  p.steps[0].lines = ['ideate.material', 'ideate.idea', 'define.pitch', 'define.pitch.how', 'define.long']
+  if (opening) p.steps[0].opening = opening
   s.w.files.PIPELINE = JSON.stringify(p)
+  s.w.files.SCRIPT = SCRIPT
   return s
 }
 const nudges = (prompts: string[]) => prompts.filter(p => /^BMUZ engine — this message comes from the BMUZ engine, not the creative \(step "ask"\)/.test(p)).length
 const events = (w: any) => w.files['/proj/.bmuz/journal.jsonl'].split('\n').filter(Boolean).map((l: string) => JSON.parse(l))
+const said = (r: any) => JSON.parse(String(r.result))
 
-test('live look round 5: ask_paste opens the ask and hands Claude the creative\'s exact words; nothing is drawn above the prompt but the band', async ($, on) => {
+test('F232: a free line comes back word for word and opens "the next message is the answer"; said as written, the turn ends open with no nudge', async ($, on) => {
   mock.clock(on, { now: 1000 })
-  const { w, prompts } = pasteWorld(on)
+  const { w, prompts } = sayWorld(on)
   await start($, true)
-  const r: any = await $.tool.call({ tool: PASTE } as any)
+  const r: any = await $.tool.call({ tool: SAY, line: 'ideate.material' } as any)
   expect(refused(r)).toBe(false)
-  const said = JSON.parse(String(r.result))
-  expect(said.say).toBe(ASK)
-  expect(said.note).toMatch(/whole reply/)
-  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste).toEqual({ step: 'ask' })
+  expect(said(r).say).toBe(`**Your Material**${String.fromCharCode(10)}${ASK}`)
+  expect(said(r).then).toMatch(/whole reply .* end your turn\. The creative's next chat message is the answer/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask).toMatchObject({ step: 'ask', line: 'ideate.material' })
   const ui = await $.ui.mount({ plugin: 'bmuz', surface: 'terminal', ...BAND } as any)
   expect(await ui.find({ type: 'Text', text: /^BMUZ · / })).toBeDefined()
   expect(await ui.findAll({ type: 'Input' })).toHaveLength(0)
-  expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
   await ui.unmount()
-  // the turn that writes the ask ends open on purpose: no nudge
-  await $.turn.complete({ answer: ASK, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  await $.turn.complete({ answer: `Your Material${String.fromCharCode(10)}${ASK}`, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
   expect(nudges(prompts)).toBe(0)
-  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"ask.paste"/)
+  expect(events(w).find((j: any) => j.ev === 'said')).toMatchObject({ lines: ['ideate.material'], missing: [] })
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"ask.waiting"/)
 })
 
-test('live look round 5: the creative\'s next message is the answer — journaled as their words, the ask closed, Claude told to take its links', async ($, on) => {
+test('F232: the creative\'s next message is the answer — journaled with its line, the question closed, Claude told to take its links', async ($, on) => {
   mock.clock(on, { now: 1000 })
-  const { w, prompts } = pasteWorld(on)
+  const { w, prompts } = sayWorld(on)
   await start($, true)
-  await $.tool.call({ tool: PASTE } as any)
+  await $.tool.call({ tool: SAY, line: 'ideate.material' } as any)
   const links = 'https://drive.google.com/drive/folders/abc1234567\nhttps://github.com/TheBlueMuzzy/lamp C:\\Users\\Muzzy\\notes'
   await $.prompt.submit({ text: links } as any)
-  const answer = events(w).find((j: any) => j.ev === 'answer')
-  expect(answer).toMatchObject({ step: 'ask', via: 'typed', text: links })
-  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste).toBeNull()
+  expect(events(w).find((j: any) => j.ev === 'answer')).toMatchObject({ step: 'ask', line: 'ideate.material', via: 'typed', text: links })
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask).toBeNull()
   const last = prompts[prompts.length - 1]
   expect(last.startsWith(links)).toBe(true)
   expect(last).toMatch(/this message answers your ask for links/)
+  // any other free line: told which line it answers
+  await $.tool.call({ tool: SAY, line: 'ideate.idea' } as any)
+  await $.prompt.submit({ text: 'A card game about gardens.' } as any)
+  expect(prompts[prompts.length - 1]).toMatch(/the creative's answer to the script line "ideate\.idea"/)
 })
 
-test('live look round 5: "never mind" closes the ask as no material', async ($, on) => {
+test('F232: "never mind" closes the ask for links as no material', async ($, on) => {
   mock.clock(on, { now: 1000 })
-  const { w, prompts } = pasteWorld(on)
+  const { w, prompts } = sayWorld(on)
   await start($, true)
-  await $.tool.call({ tool: PASTE } as any)
+  await $.tool.call({ tool: SAY, line: 'ideate.material' } as any)
   await $.prompt.submit({ text: '"Never mind."' } as any)
-  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste).toBeNull()
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask).toBeNull()
   expect(prompts[prompts.length - 1]).toMatch(/said "never mind" to sharing links: carry on with the step with no material/)
-  expect(events(w).find((j: any) => j.ev === 'paste.closed')).toMatchObject({ never: true })
+  expect(events(w).find((j: any) => j.ev === 'ask.closed')).toMatchObject({ never: true })
 })
 
-test('live look round 5: an open ask survives a new window, and a "bmuz go" resume sends the same words again', async ($, on) => {
+test('F232: an open question survives a new window, and a "bmuz go" resume says the same words again', async ($, on) => {
   mock.clock(on, { now: 1000 })
-  const { w, prompts } = pasteWorld(on)
-  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ ...JSON.parse(w.files['/proj/.bmuz/state.json']), paste: { step: 'ask' } })
+  const { w, prompts } = sayWorld(on)
+  const open = { step: 'ask', line: 'ideate.material', text: `**Your Material**\n${ASK}` }
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ ...JSON.parse(w.files['/proj/.bmuz/state.json']), ask: open })
   await start($, true)
   await $.prompt.submit({ text: 'bmuz go' } as any)
   await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as any)
-  expect(prompts.some(p => p.includes(`Your ask for their links is still open: write exactly this as your whole reply and end your turn — ${ASK}`))).toBe(true)
+  expect(prompts.some(p => p.includes(`Your question (script line "ideate.material") is still open: write exactly this as your whole reply and end your turn — **Your Material**\n${ASK}`))).toBe(true)
   // ("bmuz go" itself is not the answer)
-  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste).toEqual({ step: 'ask' })
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask).toEqual(open)
 })
 
-test('F231: after the start, ask_paste is refused when the start already took their links (live run: Ideate asked for the Drive link again)', async ($, on) => {
+test('F232: a line not written word for word gets the engine\'s correction with the exact words (at most twice)', async ($, on) => {
   mock.clock(on, { now: 1000 })
-  const { w } = pasteWorld(on)
-  w.files['/proj/.planning/research/intake.json'] = JSON.stringify({ sources: [], unreadable: [{ path: 'https://drive.google.com/drive/folders/1mGTFuDLcFBOKxRrR2s9ylI7LeQxOFN74', why: 'a link: Ideate reads it next', later: true }] })
+  const { w, prompts } = sayWorld(on)
   await start($, true)
-  const r: any = await $.tool.call({ tool: PASTE } as any)
-  expect(why(r)).toMatch(/the start already took their material \(https:\/\/drive\.google\.com/)
-  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste ?? null).toBeNull()
+  await $.tool.call({ tool: SAY, line: 'define.pitch' } as any)
+  await $.turn.complete({ answer: 'The Pitch: the game in a few short lines.', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  const fix = prompts[prompts.length - 1]
+  expect(fix).toMatch(/The script line "define\.pitch" was not written word for word\. Write exactly this, nothing changed, then carry on:/)
+  expect(fix).toMatch(/\*\*The Pitch\*\*\nThe game in a few lines, so anyone gets it in ten seconds\.$/)
+  expect(events(w).find((j: any) => j.ev === 'said')).toMatchObject({ lines: ['define.pitch'], missing: ['define.pitch'] })
+  // the corrected turn passes
+  await $.turn.complete({ answer: 'The Pitch\nThe game in a few lines, so anyone gets it in ten seconds.', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' } as any)
+  expect(events(w).filter((j: any) => j.ev === 'said')[1]).toMatchObject({ missing: [] })
+})
+
+test('F232: a box comes from the script — asked exactly it reaches the creative; reworded, or with no line asked for, it is refused', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = sayWorld(on)
+  await start($, true)
+  const none: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Happy?', header: 'x', options: [{ label: 'Yes' }, { label: 'No' }] }] } as any)
+  expect(why(none)).toMatch(/every question box in this step comes from the script/)
+  const r: any = await $.tool.call({ tool: SAY, line: 'define.pitch.how' } as any)
+  const box = said(r).box
+  expect(box).toEqual({ question: 'How\'s that?', header: 'The pitch', multiSelect: false, options: [{ label: 'Keep it', description: '' }, { label: 'Change something', description: 'next, tell me what' }] })
+  const reworded: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ ...box, options: [{ label: 'Keep it' }, { label: 'Change it' }] }] } as any)
+  expect(why(reworded)).toMatch(/must have exactly the script's options/)
+  const ok: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [box] } as any)
+  expect(refused(ok)).toBe(false)
+  expect(w.reached).toContain('AskUserQuestion')
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).boxes).toEqual([])
+})
+
+test('F232: a step with an opening says it first — step_done, a box or another line before it are refused', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = sayWorld(on, ['ideate.idea'])
+  await start($, true)
+  expect(why(await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { priorArt: 'no' } } as any))).toMatch(/opens with its script line first: call mcp__bmuz__say with \{"line": "ideate\.idea"\}/)
+  expect(why(await $.tool.call({ tool: SAY, line: 'define.pitch' } as any))).toMatch(/this step opens with "ideate\.idea": say that first/)
+  expect(why(await $.tool.call({ tool: SAY, line: 'nope' } as any))).toMatch(/isn't one of this step's lines/)
+  const r: any = await $.tool.call({ tool: SAY, line: 'ideate.idea' } as any)
+  expect(refused(r)).toBe(false)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).opened).toBe('ask')
+})
+
+test('F232: a long line is shown in a turn of its own; at its end the engine carries the step on', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = sayWorld(on)
+  await start($, true)
+  const r: any = await $.tool.call({ tool: SAY, line: 'define.long' } as any)
+  expect(said(r).then).toMatch(/no question box in this turn/)
+  await $.turn.complete({ answer: 'x '.repeat(200).trim(), durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(prompts[prompts.length - 1]).toMatch(/^BMUZ engine — this message comes from the BMUZ engine, not the creative: carry on with step "ask"/)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"continue","step":"ask"/)
+})
+
+test('F232: in an auto run a free line opens no question (nobody will type) and the box is never asked', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = sayWorld(on)
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz auto' } as any)
+  const r: any = await $.tool.call({ tool: SAY, line: 'ideate.material' } as any)
+  expect(said(r).then).toMatch(/^Auto run: write exactly the "say" text, then take the creative's answer from the test answers/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask ?? null).toBeNull()
+  const b: any = await $.tool.call({ tool: SAY, line: 'define.pitch.how' } as any)
+  expect(said(b).then).toMatch(/Auto run: nobody can answer the box/)
+  expect(why(await $.tool.call({ tool: 'AskUserQuestion', questions: [said(b).box] } as any))).toMatch(/auto run, nobody is here to answer/)
+})
+
+test('F232: the say tool in a step without script lines is refused', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  shown(on)
+  await start($, true)
+  expect(why(await $.tool.call({ tool: SAY, line: 'define.pitch' } as any))).toMatch(/has no script lines to say/)
+})
+
+test('F232: a gate with a script box asks its words: an auto run notes the script\'s question; "bmuz approve" takes the box\'s options', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, base({ current: null, status: 'idle', finished: ['name'] }))
+  w.files.SCRIPT = SCRIPT
+  w.files.PIPELINE = JSON.stringify({ ...PIPE, steps: [PIPE.steps[0], { id: 'approve', kind: 'gate', needs: ['name'], line: 'define.lock.box', approve: 'Lock it: on to Design', backTo: 'name' }] })
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't1')
+  expect(events(w).find((j: any) => j.ev === 'gate.pending')).toMatchObject({ step: 'approve', question: 'Lock the concept?', options: ['Not yet: change something', 'Lock it: on to Design'] })
+  await $.prompt.submit({ text: 'bmuz approve Lock it: on to Design' } as any)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).finished).toContain('approve')
+})
+
+test('F232: a pipeline naming a line the script doesn\'t have refuses to run, with the reason', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = sayWorld(on)
+  const p = JSON.parse(w.files.PIPELINE)
+  p.steps[0].lines.push('define.nope')
+  w.files.PIPELINE = JSON.stringify(p)
+  await start($, true)
+  expect(why(await $.tool.call({ tool: 'Read', file_path: '/proj/x' } as any))).toMatch(/the line "define\.nope" isn't in the script/)
 })
 
 test('F231: the engine\'s own tool rows draw as one dim line, never their raw JSON (ctrl+o still shows all)', async ($, on) => {
@@ -344,7 +453,7 @@ test('F231: the engine\'s own tool rows draw as one dim line, never their raw JS
   await start($, true)
   const row = (tool: string, output: unknown, more: Record<string, unknown> = {}) => ({ tool_use_id: 'toolu_1', tool, input: {}, isRunning: false, isErrored: false, isInterrupted: false, output, ...more })
   const cases: [string, unknown, string][] = [
-    [PASTE, JSON.stringify({ open: true, say: ASK, note: 'Write exactly the "say" text' }), 'BMUZ · asked for your links'],
+    [SAY, JSON.stringify({ say: ASK, then: 'Write exactly the "say" text' }), 'BMUZ · script line'],
     ['mcp__bmuz__step_done', 'Step name done.', 'BMUZ · step recorded'],
     ['mcp__bmuz__step_done', 'Not done: the result has no "name". Fix it and call mcp__bmuz__step_done again (retry 1 of 2).', 'BMUZ · step not done yet'],
   ]
@@ -362,23 +471,6 @@ test('F231: the engine\'s own tool rows draw as one dim line, never their raw JS
   }
 })
 
-test('live look round 5: ask_paste is refused in an auto run', async ($, on) => {
-  mock.clock(on, { now: 1000 })
-  const { w } = pasteWorld(on)
-  await start($, true)
-  await $.prompt.submit({ text: 'bmuz auto' } as any)
-  const r: any = await $.tool.call({ tool: PASTE } as any)
-  expect(why(r)).toMatch(/auto run, nobody is here to answer/)
-  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste ?? null).toBeNull()
-})
-
-test('live look round 5: ask_paste in a step without it in its tools is refused', async ($, on) => {
-  mock.clock(on, { now: 1000 })
-  shown(on)
-  await start($, true)
-  const r: any = await $.tool.call({ tool: PASTE } as any)
-  expect(why(r)).toMatch(/may use only Read, AskUserQuestion/)
-})
 
 test('live check 2026-11-08: "bmuz go" while this try\'s flow launch is on its way does not ask again', async ($, on) => {
   mock.clock(on, { now: 1000 })
@@ -1232,7 +1324,11 @@ test('F228: a script step\'s "show" file goes to the creative in a turn of its o
   // Claude reads the shown copy between steps (allowed), then the turn ends and the next step starts
   const r: any = await $.tool.call({ tool: 'Read', file_path: '/proj/.bmuz/last-shown.md' } as any)
   expect(refused(r)).toBe(false)
+  // F232: the shown text is checked word for word like a script line — a turn that didn't show it gets the correction
   await turn($, 't2')
+  expect(prompts[prompts.length - 1]).toMatch(/The script line "show:so-far\.md" was not written word for word/)
+  expect(prompts.some(p => /^BMUZ step "after"/.test(p))).toBe(false)
+  await $.turn.complete({ answer: '## The game so far\n- Fixed: "standard pong"', durationMs: 1, isAborted: false, turnId: 't3' } as any)
   expect(prompts.some(p => /^BMUZ step "after"/.test(p))).toBe(true)
 })
 
