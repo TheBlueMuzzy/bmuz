@@ -248,6 +248,8 @@ test('5.5 Playtest Notes: each feeling of GDD chapter 1 checked; tuning, bugs, r
     ideas: ['a seasons mode'],
   }
   assert.equal(D.notesProblem(dir, notes), null)
+  assert.match(D.notesProblem(dir, { ...notes, feelings: [{ ...notes.feelings[0], seen: 'kind of' }] }), /needs "seen" \(seen ✓ \/ partly \/ not seen\)/)
+  assert.match(D.notesProblem(dir, { ...notes, bugs: [{ level: 'P2' }] }), /^a bug: the report needs a "title"/)
   writeFileSync(join(dir, '.bmuz/state.json'), JSON.stringify({ pipeline: 'deliver', resultsBy: { notes: { notes } } }))
   const r = D.notesWrite(dir, script, NOW)
   assert.equal(r.added, '1 tuning task, 1 bug, 1 rulebook question and 1 idea')
