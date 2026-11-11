@@ -324,6 +324,33 @@ test('review fix 5: the creative\'s own unsaved changes are never released with 
   assert.deepEqual(calls(dir), [])
 })
 
+test('review fix 4: the scan reads what ships — the build folder (here build/, not dist/), every size — after the last build, right before the push: a key in a 3 MB bundle refuses, nothing pushed', () => {
+  const dir = garden()
+  // the game's build writes build/: an index page and a 3 MB bundle whose last line holds a key
+  mkdirSync(join(dir, 'scripts'), { recursive: true })
+  writeFileSync(join(dir, 'scripts', 'build.mjs'), [
+    "import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'",
+    "const v = JSON.parse(readFileSync('version.json', 'utf8')).version",
+    "mkdirSync('build', { recursive: true })",
+    "writeFileSync('build/index.html', `<h1>Garden Race</h1> version ${v}`)",
+    "writeFileSync('build/app.js', '// bundle' + String.fromCharCode(10) + 'x'.repeat(3000000) + String.fromCharCode(10) + 'const k = \"' + 'sk-ant-' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4' + '\"')",
+  ].join(String.fromCharCode(10)) + String.fromCharCode(10))
+  writeFileSync(join(dir, '.gitignore'), 'dist/\nbuild/\nnode_modules/\n.fake-host\n')
+  spawnSync('git', ['commit', '-qam', 'the build writes build/'], { cwd: dir })
+  D.prep(dir, NOW)
+  spawnSync('npm', ['run', 'build'], { cwd: dir, shell: true })
+  assert.equal(D.shipDir(dir), 'build')
+  const p = withFake({}, () => D.secretsIn(dir))
+  assert.deepEqual(p, [{ file: 'build/app.js', what: 'an API secret key' }])
+  shareSaid(dir)
+  assert.throws(() => publishTest(dir), /Not shared: an API secret key in build\/app\.js \(the build that would go out\)/)
+  assert.equal(git(`${dir}-origin.git`, ['tag']), '', 'nothing pushed')
+  assert.ok(!calls(dir).some(c => /^release /.test(c)), 'caught before the release too')
+  // a Vite game names its own output folder
+  writeFileSync(join(dir, 'vite.config.mjs'), "export default { build: { outDir: 'www' } }\n")
+  assert.equal(D.shipDir(dir), 'www')
+})
+
 test('5.5 Playtest Notes: each feeling of GDD chapter 1 checked; tuning, bugs, rulebook questions and ideas land in the roadmap; the script\'s lines', () => {
   const dir = garden()
   D.prep(dir, NOW)

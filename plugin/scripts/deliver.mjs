@@ -23,7 +23,7 @@
 //   node deliver.mjs notes-write             5.5 the notes into the roadmap (tuning, bugs, rulebook questions, ideas)
 //   (run in the project folder)
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as E from '../hooks/engine.js'
@@ -383,16 +383,45 @@ function* walk(root, rel = '') {
   }
 }
 // Keys and passwords in what the game is made of (the files git keeps) and in the build (dist/): [{ file, what }].
+// (review fix 4) The folder that ships: a Vite game's own build.outDir, else the first of dist/, build/, docs/, out/
+// that is there. null when the game has no build folder.
+export function shipDir(dir) {
+  for (const f of ['vite.config.ts', 'vite.config.mts', 'vite.config.js', 'vite.config.mjs']) {
+    const out = ((readIn(dir, f) || '').match(/outDir\s*:\s*['"`]([^'"`]+)['"`]/) || [])[1]
+    if (out && E.isSafePath(out.replace(/^\.\//, '').replace(/\/$/, ''))) return out.replace(/^\.\//, '').replace(/\/$/, '')
+  }
+  return ['dist', 'build', 'docs', 'out'].find(d => existsSync(join(dir, d)) && statSync(join(dir, d)).isDirectory()) || null
+}
+// The first secret in one file, read in 1 MB pieces (each overlapping the last by 512 bytes, so a key across two pieces
+// is still seen): any size, a bundle of 3 MB as much as a page. → what it is, or null.
+export function secretInFile(path) {
+  let fd
+  try { fd = openSync(path, 'r') } catch (e) { return null }
+  try {
+    const size = fstatSync(fd).size
+    const piece = Buffer.alloc(1 << 20)
+    let tail = ''
+    for (let at = 0; at < size; at += piece.length) {
+      const n = readSync(fd, piece, 0, piece.length, at)
+      const text = tail + piece.toString('latin1', 0, n)
+      for (const [re, what] of SECRETS) if (re.test(text)) return what
+      tail = text.slice(-512)
+    }
+    return null
+  } finally { closeSync(fd) }
+}
+// Keys and passwords in what the game is made of (the files git keeps) and in everything in the folder that ships:
+// [{ file, what }].
 export function secretsIn(dir) {
   const tracked = B.isGitRepo(dir) ? (gitOut(dir, ['ls-files']) || '').split('\n').filter(Boolean) : [...walk(dir)]
-  const built = existsSync(join(dir, 'dist')) ? [...walk(dir, 'dist')] : []
+  const out = shipDir(dir)
+  const built = out ? [...walk(dir, out)] : []
   const found = []
   for (const f of [...new Set([...tracked, ...built])]) {
     if (/(^|\/)\.env(\.[\w-]+)?$/.test(f) && !/\.example$|\.sample$/.test(f)) { found.push({ file: f, what: 'an .env file (secrets belong outside the repo)' }); continue }
-    if (!TEXT_FILE.test(f) || /^(tests?|e2e)\//.test(f)) continue
-    let text = ''
-    try { if (statSync(join(dir, f)).size > 2_000_000) continue; text = readFileSync(join(dir, f), 'utf8') } catch (e) { continue }
-    for (const [re, what] of SECRETS) if (re.test(text)) { found.push({ file: f, what }); break }
+    if (!built.includes(f) && (!TEXT_FILE.test(f) || /^(tests?|e2e)\//.test(f))) continue
+    const what = secretInFile(join(dir, f))
+    if (what) found.push({ file: f, what })
   }
   return found
 }
@@ -449,7 +478,8 @@ export function hostOf(dir) {
 }
 const shots = dir => { try { return readdirSync(join(dir, '.planning', 'screens')).filter(f => /\.png$/i.test(f)) } catch (e) { return [] } }
 export function localLink(dir) {
-  for (const f of ['dist/index.html', 'index.html']) if (existsSync(join(dir, f))) return pathToFileURL(resolve(dir, f)).href
+  const out = shipDir(dir)
+  for (const f of [...(out ? [`${out}/index.html`] : []), 'index.html']) if (existsSync(join(dir, f))) return pathToFileURL(resolve(dir, f)).href
   const scripts = (readJson(dir, 'package.json') || {}).scripts || {}
   return scripts.dev ? '"npm run dev" in the project folder' : scripts.play ? '"npm run play" in the project folder' : 'the project folder'
 }
@@ -617,7 +647,19 @@ function publishNow(dir, script, now) {
       saveRecord(dir, rec)
     }
   }
+  // (review fix 4: what ships is built and scanned for keys before the release, and again after it — the version is in
+  // the build — right before the push and the deploy: a key found there stops everything, nothing pushed)
+  const buildAndScan = () => {
+    if (scripts.build) {
+      const b = B.runIn(dir, ['npm', 'run', 'build'], B.testLimitMs(dir))
+      if (b.exitCode !== 0 || b.timedOut) { saveRecord(dir, rec); throw new Error(`the build fails: ${B.suiteWhy(b)}`) }
+    }
+    const out = shipDir(dir)
+    const found = out ? secretsIn(dir).filter(s => s.file.startsWith(`${out}/`)) : []
+    if (found.length) { saveRecord(dir, rec); throw new Error(`Not shared: ${found.map(s => `${s.what} in ${s.file}`).join('; ')} (the build that would go out). Take it out — a secret belongs in the host's settings, never in the game — then say "bmuz retry". Nothing was pushed.`) }
+  }
   if (!p.tag && !adoptRelease()) {
+    buildAndScan()
     const { tag, version: next } = p.intended
     const head = gitOut(dir, ['rev-parse', '--short', 'HEAD'])
     // (review fix 3: release.mjs reads the release's marks — STATE's Log line, ▶ RESUME HERE, the milestone ✅ released,
@@ -657,7 +699,7 @@ function publishNow(dir, script, now) {
     if (r.status !== 0) { saveRecord(dir, rec); throw new Error(`pushing ${main}: ${(r.stderr || r.stdout || '').trim().slice(0, 400)}`) }
   }
   const deployIt = () => { if (scripts.deploy) step('the deploy', (({ exitCode, out }) => ({ ok: exitCode === 0, out }))(B.runIn(dir, ['npm', 'run', 'deploy'], 540000))) }
-  if (!p.pushed) { pushIt(); p.pushed = true; saveRecord(dir, rec) }
+  if (!p.pushed) { buildAndScan(); pushIt(); p.pushed = true; saveRecord(dir, rec) }
   if (!p.deployed) { deployIt(); p.deployed = true; saveRecord(dir, rec) }
   // 7. is it really live? A failed check puts the last good version back (rollback.mjs), live again, and says so.
   if (!p.live) {
