@@ -16,6 +16,21 @@ test('F231 fix 1: a shape refusal is not "nobody is here"; only "not available i
   assert.equal(E.isNobodyToAsk({ deny: 'BMUZ engine: the option "I\'ll paste it" stands in for typing' }), false)
 })
 
+test('F231 fix 2: a step waiting on the creative is not stalled; the clock counts from their last answer', () => {
+  const P = { id: 't', steps: [{ id: 'opening', kind: 'talk' }] }
+  const s = { status: 'working', current: 'opening', startedAt: 1000 }
+  const limit = 1_200_000
+  // the live run: started 12:08, the box open until 14:31
+  assert.equal(E.isStalled(P, s, 1000 + 2 * limit, limit), true)
+  assert.equal(E.isStalled(P, s, 1000 + 2 * limit, limit, { askOpen: true }), false)
+  // answered at 14:31: counted from then
+  const answered = { ...s, activeAt: 1000 + 2 * limit }
+  assert.equal(E.isStalled(P, answered, 1000 + 2 * limit + 60_000, limit), false)
+  assert.equal(E.isStalled(P, answered, 1000 + 3 * limit + 1, limit), true)
+  // a new try's start counts when it is later than an old answer
+  assert.equal(E.isStalled(P, { ...s, startedAt: 5000, activeAt: 2000 }, 5000 + limit + 1, limit), true)
+})
+
 test('F231 fix 1: the engine refuses a question box with fewer than 2 or more than 4 options, in plain words', () => {
   const q = (n, header = 'Frame') => [{ question: 'Which?', header, options: Array.from({ length: n }, (_, i) => ({ label: `o${i}` })) }]
   assert.match(E.optionCountProblem(q(1)), /"Frame" has 1 option; the question box takes 2 to 4 real options\. With only one way forward/)

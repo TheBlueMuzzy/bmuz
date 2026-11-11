@@ -31,6 +31,14 @@ let nudges = { key: '', n: 0 }
 // answer, so the turn's open end isn't nudged. (An open ask for links, state.paste, isn't nudged either.)
 let quietWait = ''
 let quietTurn = false
+// F231 (live run 2026-11-10: the watchdog restarted the opening at 12:28 while its first question box waited on a
+// creative away until 14:31; the restart message, queued behind the open turn, arrived after they had answered).
+// asksOpen: question boxes in flight right now (a step waiting on the creative is not stalled). turnRunning: the main
+// loop's turn is running (a restart sent now would queue behind it). heldStall: a stall seen while a turn ran, judged
+// again at that turn's end — dropped if the creative answered meanwhile (state.activeAt), else the step restarts there.
+let asksOpen = 0
+let turnRunning = false
+let heldStall: null | { step: string, at: number } = null
 // creativeTurn: the turn began with the creative's own typed message (not the engine's, not a bmuz command)
 let creativeTurn = false
 
@@ -793,6 +801,13 @@ async function askPaste($: any, e: any) {
   return { result: JSON.stringify(E.PASTE_RETURNED) }
 }
 
+// The creative did something (answered a box, closed it, typed a message): a talk step's stall clock starts again.
+async function markActive($: any) {
+  if (!ctx || ctx.state.status !== 'working') return
+  ctx.state = { ...ctx.state, activeAt: await $.clock.now() }
+  await save($)
+}
+
 async function watchdog($: any) {
   if (!ctx || ctx.broken || watchdogBusy) return
   watchdogBusy = true
@@ -801,8 +816,17 @@ async function watchdog($: any) {
     const now = await $.clock.now()
     // The helper finished; its result is on the way. If it hasn't come in 5 minutes, it was lost: a stall after all.
     if (ctx.state.flow?.late && now - ctx.state.flow.late < 300000) return
-    if (!E.isStalled(ctx.pipeline, ctx.state, now, limit)) return
+    if (!E.isStalled(ctx.pipeline, ctx.state, now, limit, { askOpen: asksOpen > 0 })) return
     const step = E.stepById(ctx.pipeline, ctx.state.current)
+    // A talk step's turn still running: a restart sent now would queue behind it and arrive whenever it ends (live
+    // run: two hours later, after the creative had answered). Held, and judged again at that turn's end.
+    if (step.kind === 'talk' && turnRunning) {
+      if (!heldStall) {
+        heldStall = { step: step.id, at: now }
+        await journal($, { ev: 'watchdog.held', step: step.id, limitMs: limit })
+      }
+      return
+    }
     // Each await below lets a step_done or a flow result finish the step; act only if it is still this try.
     const stillThisTry = () => ctx.state.current === step.id && ctx.state.status === 'working'
     await journal($, { ev: 'watchdog', step: step.id, limitMs: limit, taskId: ctx.state.flow?.taskId ?? null })
@@ -826,19 +850,44 @@ async function watchdog($: any) {
       }
     }
     if (!stillThisTry()) return
-    const next = await settle($, step, { ok: false, why: `stalled past ${Math.round(limit / 1000)}s (watchdog)` }, null)
-    if (next === 'retry') {
-      ctx.state = { ...ctx.state, current: step.id, status: 'idle' }
-      await save($)
-      try {
-        await advance($, false)
-      } catch (err) {
-        await journal($, { ev: 'watchdog.restart-failed', step: step.id, why: String(err).slice(0, 200) })
-      }
-    }
+    await restartStalled($, step, limit)
   } finally {
     watchdogBusy = false
   }
+}
+
+// A stalled step: a failed try, then (retries left) started again.
+async function restartStalled($: any, step: any, limit: number) {
+  const next = await settle($, step, { ok: false, why: `stalled past ${Math.round(limit / 1000)}s (watchdog)` }, null)
+  if (next === 'retry') {
+    ctx.state = { ...ctx.state, current: step.id, status: 'idle' }
+    await save($)
+    try {
+      await advance($, false)
+    } catch (err) {
+      await journal($, { ev: 'watchdog.restart-failed', step: step.id, why: String(err).slice(0, 200) })
+    }
+  }
+}
+
+// At a turn's end: a stall held while it ran restarts the step now, unless the creative answered meanwhile, the step
+// moved on, or its ask for links is open (then it's dropped). Returns true when it restarted the step.
+async function judgeHeldStall($: any) {
+  const h = heldStall
+  heldStall = null
+  if (!h || !ctx) return false
+  const limit = ctx.cfg.watchdogMs ?? ctx.pipeline.watchdogMs ?? 1200000
+  const now = await $.clock.now()
+  const step = E.stepById(ctx.pipeline, ctx.state.current)
+  const same = step && step.id === h.step && ctx.state.status === 'working'
+  if (!same || !E.isStalled(ctx.pipeline, ctx.state, now, limit, { askOpen: asksOpen > 0 })) {
+    await journal($, { ev: 'watchdog.dropped', step: h.step, why: !same ? 'the step moved on' : 'the creative answered (or the ask is open)' })
+    return false
+  }
+  await journal($, { ev: 'watchdog', step: step.id, limitMs: limit, taskId: null })
+  $.ui.toast(`BMUZ watchdog: step ${step.id} ran past ${Math.round(limit / 1000)}s; stopping it`)
+  await restartStalled($, step, limit)
+  return true
 }
 
 // The step_done tool, the commands and the timers: once per session start (or at "bmuz new" mid-session).
@@ -852,6 +901,9 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const r = await next(e)
     lastBand = ''
+    asksOpen = 0
+    turnRunning = false
+    heldStall = null
     sessionInteractive = (e as any).isInteractive === true
     sessionAuto = false
     flowAskedHere = ''
@@ -926,7 +978,15 @@ export const register: Register = on => {
           }
         }
       }
-      const res: any = await next(e)
+      let res: any
+      asksOpen += 1
+      try {
+        res = await next(e)
+      } finally {
+        asksOpen = Math.max(0, asksOpen - 1)
+      }
+      // (answered or closed by the creative: the stall clock counts from now)
+      if ((!res?.deny && !res?.isError) || E.isPersonDeclining(res)) await markActive($)
       if (!res?.deny && !res?.isError) { nudges = { key: '', n: 0 }; quietWait = '' }
       if ((res?.deny || res?.isError) && E.isPersonDeclining(res)) quietWait = 'declined'
       if ((res?.deny || res?.isError) && !E.isPersonDeclining(res)) {
@@ -1016,6 +1076,7 @@ export const register: Register = on => {
     if (kind === 'plugin' || kind === 'peer') return next(e)
     quietTurn = false
     creativeTurn = true
+    if (!ctx.broken && ctx.state.status === 'working') await markActive($)
     // The creative's message while the ask for links is open is its answer (their words, journaled for ideate-doc's
     // quote check); the ask closes and Claude is told, beside it, what it means ("never mind" = no material).
     const openPaste = !ctx.broken && E.pasteOpen(ctx.state)
@@ -1089,9 +1150,23 @@ export const register: Register = on => {
     return { drop: 'BMUZ engine hit an error in its own code reading this prompt, so it held it back to be safe. Run /bmuz-doctor, then send it again.' }
   })
 
+  on('turn.start', ($, e, next) => {
+    if (!(e as any).agentId) turnRunning = true
+    return next(e)
+  })
+
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
-    if (!ctx || (e as any).agentId) return r
+    if ((e as any).agentId) return r
+    turnRunning = false
+    if (!ctx) return r
+    // F231: a stall the watchdog held while this turn ran is judged now (the engine's own work belongs here).
+    if (heldStall && pending) heldStall = null
+    if (heldStall && (await judgeHeldStall($))) {
+      quietTurn = false
+      creativeTurn = false
+      return r
+    }
     if (pending && typeof pending === 'object' && 'card' in pending) {
       // The hand-off card, as the engine's own message; the next step starts when that turn ends.
       // (handOff already saved the card's text in .bmuz/last-card.md; the message points Claude at it)

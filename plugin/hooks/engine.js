@@ -1107,13 +1107,19 @@ export function taskAlreadyEnded(text) {
 }
 
 // Watchdog: is the current step past its time limit?
-export function isStalled(p, state, now, defaultMs) {
+// opts.askOpen: a question box is open right now (the motor sees it in flight). F231 (live run 2026-11-10: the
+// watchdog restarted the opening at 12:28 while its first box waited on a creative away until 14:31): a step waiting
+// on the creative — a box open, or its ask for links open — is not stalled, and the clock counts from the creative's
+// last answer (state.activeAt), not from the step's start.
+export function isStalled(p, state, now, defaultMs, opts = {}) {
   if (state.status !== 'working' || !state.startedAt) return false
+  if (opts.askOpen) return false
   // (a talk step with its ask for links open is waiting on the creative, not stalled)
   if (pasteOpen(state)) return false
   const step = stepById(p, state.current)
   const limit = (step && step.timeoutMs) || defaultMs
-  return now - state.startedAt > limit
+  const since = Math.max(state.startedAt, Number(state.activeAt) || 0)
+  return now - since > limit
 }
 
 // The status band's words.

@@ -158,6 +158,71 @@ test('F231: a question box Claude Code refuses for its shape is a failed ask, ne
   expect(why(again)).not.toMatch(/auto run/)
 })
 
+// A live talk step with a 1 s watchdog ticking every 500 ms; prompts recorded.
+function stallWorld(on: any) {
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  on('turn.start', (_: any, e: any) => ({ text: e.text, turnId: e.turnId }))
+  const w = world(on, base({ current: 'name', status: 'working', startedAt: 1000 }))
+  w.files['/proj/bmuz.json'] = '{"pipeline":"hello","watchdogMs":1000,"watchdogTickMs":500}'
+  const evs = (ev: string) => (w.files['/proj/.bmuz/journal.jsonl'] || '').split('\n').filter(l => l.includes(`"ev":"${ev}"`)).length
+  return { w, prompts, evs }
+}
+
+// A live start picks the run up from a timer: let that turn end, so the step is running before the test begins.
+async function pickedUp($: any, clock: any) {
+  await clock.advance(1600)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't0' } as any)
+}
+
+test('F231: the watchdog never counts a step as stalled while its question box waits on the creative; the clock restarts at their answer', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  let answer: (v: any) => void = () => {}
+  on('tool.call', { tool: 'AskUserQuestion' }, () => new Promise(res => { answer = res }))
+  const { evs } = stallWorld(on)
+  await start($, true)
+  const asked: any = $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Where is your game?', options: [{ label: 'a' }, { label: 'b' }] }] } as any)
+  await clock.advance(10_000) // the creative is away; the box stays open
+  expect(evs('watchdog')).toBe(0)
+  answer({ result: 'Your questions have been answered: "Where is your game?"="a".' })
+  await asked
+  await clock.advance(600) // just answered: not stalled
+  expect(evs('watchdog')).toBe(0)
+  await clock.advance(2000) // then nothing for longer than the limit: a stall as before
+  expect(evs('watchdog')).toBe(1)
+})
+
+test('F231: a stall seen while a turn runs is held to that turn\'s end, and dropped when the creative answered meanwhile', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { prompts, evs } = stallWorld(on)
+  await start($, true)
+  await pickedUp($, clock)
+  await $.turn.start({ text: '', turnId: 't1' } as any)
+  await clock.advance(5000)
+  expect(evs('watchdog.held')).toBe(1)
+  expect(evs('retry')).toBe(0) // no restart sent behind the running turn
+  await $.prompt.submit({ text: 'here are my notes' } as any) // the creative answers
+  const before = prompts.length
+  await $.turn.complete({ answer: 'Thanks.', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(evs('watchdog.dropped')).toBe(1)
+  expect(evs('retry')).toBe(0)
+  expect(prompts.slice(before).some(p => /^BMUZ step "name"/.test(p))).toBe(false)
+})
+
+test('F231: a held stall with no answer meanwhile restarts the step at the turn\'s end', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { prompts, evs } = stallWorld(on)
+  await start($, true)
+  await pickedUp($, clock)
+  await $.turn.start({ text: '', turnId: 't1' } as any)
+  await clock.advance(5000)
+  expect(evs('retry')).toBe(0)
+  await $.turn.complete({ answer: 'Working on it.', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(evs('retry')).toBe(1)
+  expect(prompts.some(p => /^BMUZ step "name"/.test(p))).toBe(true)
+})
+
 test('F231: the engine refuses a question with one option (or more than 4) itself, plainly, before Claude Code sees it', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const w = world(on, base({ current: 'name', status: 'working' }))
