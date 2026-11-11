@@ -46,6 +46,7 @@ export const RECORD = `${DEV}/sprint.json`
 export const PROPOSE = `${DEV}/propose.json`
 export const BRIEF = `${DEV}/brief.md`
 export const TRIES = `${DEV}/tries.md`
+export const REVIEW = `${DEV}/review.md`
 export const LOOKBACK = `${DEV}/lookback.json`
 // the lines a step shows (composed from the script here, so they are word for word)
 export const SAY = { plan: `${DEV}/say-plan.md`, progress: `${DEV}/say-progress.md`, stuck: `${DEV}/say-stuck.md`, ready: `${DEV}/say-ready.md`, lookback: `${DEV}/say-lookback.md` }
@@ -354,6 +355,7 @@ function briefMd(dir, rec, f) {
     '', '## Tasks', ...f.tasks.map((t, i) => `${i + 1}. ${t.who} ${t.text}`),
     '', `## Check`, f.check,
     '', '## Read first', `- ${R.RULEBOOK} (the rules: the single truth; every rule this feature builds gets a test)`, `- ${G.GDD} and ${D.TDD} (what the game is, how it is built)`, '- content/ (the settings and tables the game reads; values live there, never in code)',
+    ...(hasUi(dir) ? ['', '## Screens', 'This game has a UI: every screen this feature changes gets a phone (390×844) and a desktop (1280×800) screenshot.'] : []),
     '', `## Earlier tries`, `If ${TRIES} has anything in it, an earlier try failed its check: read why, and after two failed tries take a simpler way.`,
   ].join('\n') + '\n'
 }
@@ -364,9 +366,22 @@ export function buildResult(dir) {
   for (let i = lines.length - 1; i >= 0; i--) {
     let j
     try { j = JSON.parse(lines[i]) } catch (e) { continue }
+    // (F216: the builder that fixed the reviewer's findings, after it, reports the tests as they are now)
+    if (j.ev === 'flow.result' && j.step === 'fix' && j.result && typeof j.result === 'object' && Array.isArray(j.result.tests) && j.result.tests.length) return j.result
     if (j.ev === 'flow.result' && j.step === 'build') return j.result && typeof j.result === 'object' ? j.result : null
   }
   return null
+}
+// The reviewer's confirmed findings (the review step's flow result), written for the builder that fixes them.
+export function reviewSave(dir) {
+  const lines = (readIn(dir, '.bmuz/journal.jsonl') || '').split('\n').filter(Boolean)
+  let r = null
+  for (const l of lines) { try { const j = JSON.parse(l); if (j.ev === 'flow.result' && j.step === 'review') r = j.result } catch (e) { /* a torn line */ } }
+  const found = listOf(r && r.findings).filter(f => f && clean(f.what))
+  write(dir, REVIEW, found.length
+    ? ['# Confirmed findings (a reviewer who did not build it, each one checked by another)', ...found.map((f, i) => `${i + 1}. ${clean(f.file)}: ${clean(f.what)} — ${clean(f.why)}`)].join('\n') + '\n'
+    : 'There are no confirmed findings: nothing to fix.\n')
+  return found
 }
 // A project with a UI (an index.html, or a "dev" script): every screen size gets a screenshot.
 export const hasUi = dir => existsSync(join(dir, 'index.html')) || !!((readJson(dir, 'package.json') || {}).scripts || {}).dev
@@ -728,6 +743,9 @@ if (isMain) {
     } else if (mode === 'prove') {
       const p = prove(dir)
       say(true, `✔ ${p.feature}: ${p.tests.length} tests for its rules pass, ${p.passed} in all; the suite is green${p.ui ? '; phone and desktop screenshots' : ''}`)
+    } else if (mode === 'review-save') {
+      const f = reviewSave(dir)
+      say(true, `✔ ${REVIEW}: ${f.length} confirmed finding${f.length === 1 ? '' : 's'}`)
     } else if (mode === 'ready') {
       ready(dir)
       say(true, `✔ ${SAY.ready}`)
