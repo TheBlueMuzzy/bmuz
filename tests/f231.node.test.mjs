@@ -51,7 +51,7 @@ test('F231 fix 3, as F232 has it: the start is folded into Ideate, so the links 
     const p = JSON.parse(readFileSync(new URL(f, dir), 'utf8'))
     for (const s of p.steps) if ((s.lines || []).includes(E.LINKS_LINE)) saying.push(`${p.id}/${s.id}`)
   }
-  assert.ok(saying.length <= 1, saying.join(', '))
+  assert.deepEqual(saying, ['ideate/material'])
   // the old start-took-it check is gone with the start
   assert.equal(E.materialTaken, undefined)
 })

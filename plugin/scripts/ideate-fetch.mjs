@@ -131,7 +131,12 @@ function main() {
   const json = f => { try { return JSON.parse(read(f) || 'null') } catch (e) { return null } }
   const state = json('.bmuz/state.json')
   if (!state) { console.log('✘ no .bmuz/state.json: this runs inside an ideate run'); process.exit(1) }
-  const show = (state.resultsBy && state.resultsBy.show) || {}
+  // (F232: Ideate's 1.1 "Your Idea" (step "idea") and 1.2 "Your Material" (step "material"); "show" was F228's one step)
+  const by = state.resultsBy || {}
+  const show = by.show || {
+    breath: [...listOf(by.idea && by.idea.idea), ...listOf(by.idea && by.idea.spark)],
+    pasted: by.material && by.material.pasted, files: by.material && by.material.files, links: by.material && by.material.links,
+  }
   const intake = json('.planning/research/intake.json') || {}
   const c = collector()
   // 1. Their own words: the one-breath answer and anything pasted (here and at the start).

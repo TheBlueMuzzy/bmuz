@@ -109,19 +109,7 @@ const runIn = (dir, prompt, tools, stream = false) => {
   console.log(`      (${Math.round((Date.now() - took) / 1000)} s; last lines: ${out.trim().split('\n').slice(-4).join(' / ').slice(0, 400)})`)
   return out
 }
-const LIGHTHOUSE_CONCEPT = 'Lamplight: a cosy game about keeping a lighthouse. You are the keeper of a lighthouse on a small rocky island. The feeling I want most is quiet care: being the calm one who keeps everyone safe. Each night you trim the wick, wind the clockwork and polish the lens while storms roll in, and you guide the fishing boats home with the light. It is not a stressful time-management game: no timers racing you. It reminds me of Unpacking and A Short Hike.'
-const ENTRY_CONCEPT_ANSWERS = {
-  opening: {
-    "Where's your game right now?": 'A concept',
-    'What do you want from this pass?': 'Pin it down',
-    'Paste it here, or name the files': LIGHTHOUSE_CONCEPT,
-  },
-  propose: { 'Start there?': 'Start there' },
-  ...DEFINE_ANSWERS,
-  // (the lighthouse answers gave their own wording for "You are" and "not this", which the concept also says: a run that
-  // followed the answers kept nothing word for word — headless 2026-11-10. Here the creative keeps the concept's lines.)
-  direction: { ...DEFINE_ANSWERS.direction, 'You are a…': "Keep my concept's own line, word for word.", 'What is it NOT?': "Keep my concept's own line, word for word.", 'Anything my concept already says': 'Keep it, exactly as my concept says it.' },
-}
+
 const RULEBOOK = [
   '# Tidekeeper — rules (draft 3)',
   'You are the keeper of a lighthouse on a rocky island, keeping the light burning through one stormy night.',
@@ -136,64 +124,70 @@ const RULEBOOK = [
   '## Playtest notes',
   'Played twice with my partner: the storms felt tense in a good way; trimming felt like busywork after round 5.',
 ].join('\n') + '\n'
-const ENTRY_RULEBOOK_ANSWERS = {
-  opening: {
-    "Where's your game right now?": 'Something written',
-    'What do you want from this pass?': 'Work it out',
-    'Paste it here, or name the files': 'Read rules.md in this folder: that is my rulebook, with my playtest notes at the end.',
+// ---- F232: Ideate and Define on the script, with the script's own made-up example (the garden race) ----
+// bmuz-design-doc.html "Example · Ideate, filled in" / "Example · Define, filled in". Each test answer is what the
+// creative would type (free answers) or pick (boxes), keyed by the words of the question it answers.
+const GARDEN_IDEA = "A card game where two friends race to grow the best garden. You draw seed cards and plant them, but weather cards can wreck the other person's rows. I'd like it on phones, quick games."
+const GARDEN_IDEATE = {
+  idea: { 'Your Idea': GARDEN_IDEA },
+  material: { 'Your Material (share your links)': 'never mind' },
+  next: { 'What next?': 'Carry on in Ideate (Recommended)' },
+  feelings: {
+    'Feelings & Hopes (answer all three in one message)': "1. Your best row survives the hailstorm your friend sent, and you still win by one flower. 2. \"I sent a hailstorm into her best row and she still beat me!\" 3. I hope it becomes our go-to three-minute game. It would disappoint me if the weather felt mean or random.",
   },
-  propose: { 'Start there?': 'Somewhere else', 'Where would you like to start?': 'Not now' },
+  'open-ideas': {
+    'Open Ideas, round 1 (one message)': 'Both: passing one phone in the same room, or online with a friend. A game ends when the seed deck runs out, about three minutes; the most blooming flowers wins. A good player keeps a weather card for the moment it hurts most. The smallest version: two players, one deck, no online yet. Games get tenser as the deck thins; seasons could come later. A computer opponent would be nice for playing alone. The look: bright hand-drawn flowers and soft rain sounds.',
+    'Another round?': "That's enough for now",
+  },
+  sketches: {
+    'Which of these should we sketch? Pick any.': 'Pick the first two you offer.',
+    'Anything else you\'re unsure about?': "that's all",
+  },
 }
+// Where the script's growth chart says each chapter ends (bmuz-design-doc.html "4 · How the GDD grows").
+const CHART = {
+  ideate: { 1: 'loose', 2: 'empty', 3: 'loose', 4: 'loose', 5: 'loose', 6: 'loose', 7: 'loose', 8: 'loose', 9: 'empty', 10: 'loose', 11: 'loose', 12: 'loose', 13: 'empty', 14: 'empty' },
+  define: { 1: 'chosen', 2: 'chosen', 3: 'chosen', 4: 'chosen', 5: 'chosen', 6: 'chosen', 7: 'chosen', 8: 'loose', 9: 'empty', 10: 'loose', 11: 'loose', 12: 'loose', 13: 'empty', 14: 'empty' },
+}
+const gardenScratch = name => {
+  if (!/^bmuz-garden-/.test(name)) throw new Error(`the garden scenarios use .scratch/bmuz-garden-* folders only, not ${name}`)
+  const dir = join(here, '..', '..', '.scratch', name)
+  rmSync(dir, { recursive: true, force: true })
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+const plain = t => String(t ?? '').replace(/\r\n/g, '\n').replace(/\*\*|__/g, '').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/^[ \t]*[-*•·][ \t]+/gm, '· ').replace(/\s+/g, ' ').trim()
+const levelsOf = dir => {
+  const gdd = existsSync(join(dir, '.planning/GDD.md')) ? readFileSync(join(dir, '.planning/GDD.md'), 'utf8') : ''
+  const out = {}
+  let n = null
+  for (const l of gdd.split('\n')) {
+    const h = l.match(/^###\s+(\d+)\s*·/)
+    if (h) n = Number(h[1])
+    const lv = l.match(/^Level:\s*(.+)$/)
+    if (lv && n && !out[n]) out[n] = lv[1].trim()
+  }
+  return out
+}
+// The script checks of one stage's run: every fixed line the engine handed out (journal "line") and every shown file
+// is in what Claude wrote, word for word; every line the stage must say was said; the chapters end where the chart says.
+function scriptChecks(dir, out, stage, js, mustSay) {
+  const lines = js.filter(j => j.ev === 'line')
+  const said = lines.filter(j => j.kind !== 'box')
+  const missing = said.filter(j => !plain(out).includes(plain(j.text)))
+  check(`F232 (${stage}): every fixed line the engine handed out (${said.length}) is in Claude's words word for word`, said.length > 0 && missing.length === 0, missing.map(j => `${j.line}: ${plain(j.text).slice(0, 120)}`).join(' | '))
+  const shows = js.filter(j => j.ev === 'show')
+  const shownMissing = shows.filter(j => { const t = existsSync(join(dir, j.path)) ? readFileSync(join(dir, j.path), 'utf8') : ''; return !t || !plain(out).includes(plain(t)) })
+  check(`F232 (${stage}): every file the engine showed (${shows.map(j => j.step).join(', ') || 'none'}) is in Claude's words word for word`, shows.length > 0 && shownMissing.length === 0, shownMissing.map(j => j.path).join(', '))
+  const ids = new Set(lines.map(j => j.line))
+  const notSaid = mustSay.filter(id => !ids.has(id))
+  check(`F232 (${stage}): the script's lines for this run were all said (${mustSay.length})`, notSaid.length === 0, `not said: ${notSaid.join(', ')}`)
+  const lv = levelsOf(dir)
+  const off = Object.entries(CHART[stage]).filter(([n, l]) => lv[n] !== l).map(([n, l]) => `${n}: ${lv[n] || '?'} (chart: ${l})`)
+  check(`F232 (${stage}): the GDD's chapters end where the script's growth chart says`, off.length === 0, off.join(' · '))
+}
+const trailOf = js => js.map(j => j.ev + (j.step ? ':' + j.step : '') + (j.line ? `[${j.line}]` : '') + (j.why ? ` (${String(j.why).slice(0, 140)})` : '')).join(' ')
 
-// ---- F228: Ideate's scenarios (each in its own .scratch/bmuz-ideate-* folder) ----
-const IDEATE_GAPS = {
-  'Frame — where and how is it played?': 'Phone browser, held upright. One player, alone. About ten minutes a night.',
-  'Rules — how does a night end?': 'Dawn ends it; you count the boats that made it home. Nobody loses.',
-  'Skill — what does a good player do that a new one doesn\'t?': 'Knows when to tend the lamp and when to watch the sea.',
-  'Smallest — the smallest version worth playing?': 'One night, one boat, one storm.',
-}
-const IDEATE_NOTHING_ANSWERS = {
-  opening: { "Where's your game right now?": 'Nothing yet, or just a spark' },
-  propose: { 'Start there?': 'Start there' },
-  show: { 'In one breath: what\'s the idea?': 'Nothing yet — help me find one', 'Anything I should read?': 'Nothing to read' },
-  gaps: {
-    'Your ideas — what games do you love playing lately?': 'Cosy games like A Short Hike, and old lighthouse stories.',
-    'Feel — a feeling you\'d like a game to give?': 'Quiet care: being the calm one who keeps everyone safe.',
-    ...IDEATE_GAPS,
-  },
-}
-const IDEATE_CONCEPT_ANSWERS = {
-  opening: { "Where's your game right now?": 'A concept', 'What do you want from this pass?': 'Open it up', 'Your material': LIGHTHOUSE_CONCEPT },
-  propose: { 'Start there?': 'Start there' },
-  show: { 'Anything else to show me?': "That's everything" },
-  gaps: IDEATE_GAPS,
-  ...DEFINE_ANSWERS, // (for the second "bmuz go": Define builds on this run's IDEATE.md)
-}
-const IDEATE_RULEBOOK_ANSWERS = {
-  opening: { "Where's your game right now?": 'Something written', 'What do you want from this pass?': 'Open it up', 'Your material': 'Read rules.md in this folder: that is my rulebook, with my playtest notes at the end.' },
-  propose: { 'Start there?': 'Start there' },
-  show: { 'Anything else to show me?': 'Read the art folder too.' },
-  gaps: IDEATE_GAPS,
-}
-// What every Ideate run must reach: the start moved into Ideate; show → fetch → read → so-far → gaps → save in order;
-// version 1 and version 2 of the game so far shown by the engine; IDEATE.md per need with Fixed / Idea / Open lines
-// and the creative's words marked; the offer of Define noted (an auto run never answers it).
-function ideateChecks(dir, out, { from, quotedBy }) {
-  const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
-  const all = journalOf(dir)
-  const trail = () => all.map(j => j.ev + (j.step ? ':' + j.step : '') + (j.why ? ` (${String(j.why).slice(0, 140)})` : '')).join(' ')
-  const starts = [...new Set(all.filter(j => j.ev === 'step.start').map(j => j.step))]
-  check(`F228 (${from}): the start moved into Ideate, which ran show → fetch → read → so-far → gaps → save and finished`, JSON.parse(read('bmuz.json') || '{}').pipeline === 'ideate' && all[0]?.ev === 'stage.enter' && JSON.stringify(starts) === JSON.stringify(['show', 'fetch', 'read', 'so-far', 'gaps', 'save']) && all.some(j => j.ev === 'pipeline.done'), trail())
-  check(`F228 (${from}): Ideate opened with its intro, once`, all.filter(j => j.ev === 'intro').length === 1 && all.find(j => j.ev === 'intro')?.step === 'show')
-  check(`F228 (${from}): the engine showed the game so far twice, each in a turn of its own (version 1 and version 2)`, all.filter(j => j.ev === 'show').map(j => j.step).join(',') === 'so-far,save' && /version 2: with your answers/.test(out) && /\(version 1: what you shared\)/.test(out), trail())
-  const so = read('.planning/research/ideate-so-far.md') || ''
-  check(`F228 (${from}): version 2 names every need, frame first, with fixed / ideas / open lines and the open questions that matter most`, /^## The game so far.*\(version 2: with your answers\)/.test(so) && so.indexOf('**Frame**') > 0 && so.indexOf('**Frame**') < so.indexOf('**Core loop**') && /\n- (Fixed|Ideas|Open): /.test(so) && /\*\*The open questions that matter most\*\*\n(1\. |- none)/.test(so), so.slice(0, 900))
-  const doc = read('.planning/IDEATE.md') || ''
-  check(`F228 (${from}): IDEATE.md holds the game so far per need, the creative's own words marked "${quotedBy}"`, /\n### Frame — /.test(doc) && /\n- (Fixed|Idea): .* — run 1 · /.test(doc) && new RegExp(` — run 1 · ${quotedBy.replace(/'/g, "'")}`).test(doc), doc.split('## Runs')[0].slice(-900))
-  check(`F228 (${from}): the gap questions added the creative's answers (frame, how it ends)`, /Frame —[^\n]*\n(- [^\n]*\n)*- (Fixed|Idea): "[^"]*(upright|Phone|ten minutes)/i.test(doc) || /(upright|ten minutes)/i.test(so), so.slice(0, 600))
-  check(`F228 (${from}): Ideate ended with the offer of Define (an auto run notes it for the creative)`, /Ideate is done\. On to Define\? \(say "bmuz go" to move on\)/.test(read('.bmuz/questions.md') || '') && all.some(j => j.ev === 'stage.offer' && j.to === 'define'), (read('.bmuz/questions.md') || '').slice(0, 400))
-  check(`F228 (${from}): no research ran in Ideate`, !all.some(j => j.ev === 'flow.launched'))
-}
 
 const scenarios = {
   // Checks 1, 8, 9, 15 (headless part): the engine starts every step itself; an auto run takes a
@@ -381,115 +375,52 @@ const scenarios = {
     console.log(`      GDD Part 1: ${(gdd.split('## Part 1 — The concept')[1] || '').split('## Part 2')[0].split('\n').filter(l => /^\*\*/.test(l)).length} fields · DISCOVER.md marks: ${marked} · lint: ${lint.stdout.trim().split('\n')[0]}`)
   },
 
-  // F225 (a): "bmuz new" in an empty folder → the start's opening (an auto run takes "Nothing yet") → no proposal
-  // question (nothing to read) → Discover's first step, opened with Discover's intro. Stopped there: the rest is the
-  // discover scenario's (an hour of research).
-  async 'entry-nothing'() {
-    const dir = scratch('bmuz-entry-nothing')
-    rmSync(join(dir, 'bmuz.json'), { force: true })
-    const child = spawn('claude', ['-p', 'bmuz new', ...base, '--allowedTools', TOOLS], { cwd: dir, env, stdio: 'ignore' })
-    const took = Date.now()
-    const evsIn = () => journalOf(dir)
-    for (let i = 0; i < 900 && !evsIn().some(j => j.ev === 'intro') && child.exitCode === null; i++) await wait(1000)
-    child.kill('SIGKILL')
-    await wait(2000)
-    console.log(`      (${Math.round((Date.now() - took) / 1000)} s)`)
+  // F232: "bmuz new" in an empty folder → Ideate on the script, 1.0–1.7, with the garden race (the script's own example):
+  // the welcome and every fixed line word for word, the GDD's chapters loose as the chart says, the sketch list, the
+  // project page opened (a test run only says it would) — then, with no answer for "Ready for Define?", it stays.
+  async 'ideate-garden'() {
+    const dir = gardenScratch('bmuz-garden-ideate')
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'ideate', testAnswers: GARDEN_IDEATE }, null, 2))
+    const out = runIn(dir, 'bmuz go', `${TOOLS} ToolSearch mcp__bmuz__say`, true)
+    writeFileSync(join(dir, 'run-output.txt'), out)
+    const js = journalOf(dir)
     const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
-    const start = (read('.bmuz/stages/1-start/journal.jsonl') || '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l) } catch (e) { return {} } })
-    const trail = js => js.map(j => j.ev + (j.step ? ':' + j.step : '') + (j.why ? ` (${String(j.why).slice(0, 120)})` : '')).join(' ')
-    check('F225: "bmuz new" made the folder a BMUZ project and ran the start: opening → intake → propose', JSON.stringify([...new Set(start.filter(j => j.ev === 'step.done').map(j => j.step))]) === JSON.stringify(['opening', 'intake', 'propose']), trail(start))
-    const opening = (start.find(j => j.ev === 'step.done' && j.step === 'opening') || {}).result || {}
-    const propose = (start.find(j => j.ev === 'step.done' && j.step === 'propose') || {}).result || {}
-    check('F228: "Nothing yet" (the auto run\'s pick) went straight to Ideate, nothing read', opening.where === 'nothing' && propose.stage === 'ideate' && ['first', 'show'].includes(propose.at) && /Nothing to read yet/.test(read('.planning/research/intake.md') || '') && !existsSync(join(dir, '.planning/DISCOVER.md')), JSON.stringify({ opening, propose }))
-    const now = evsIn()
-    const intro = now.find(j => j.ev === 'intro')
-    check('F228: the project moved on to Ideate (start\'s record kept) and its first step opened with the intro', JSON.parse(read('bmuz.json') || '{}').pipeline === 'ideate' && now[0]?.ev === 'stage.enter' && now[0]?.from === 'start' && intro?.step === 'show' && intro?.stage === 'ideate' && JSON.parse(read('.bmuz/stages.json') || '[]')[0]?.pipeline === 'start', trail(now))
+    const starts = [...new Set(js.filter(j => j.ev === 'step.start').map(j => j.step))]
+    check('F232 (ideate): Ideate ran 1.1–1.7 in order and finished', JSON.stringify(starts) === JSON.stringify(['idea', 'material', 'fetch', 'read', 'so-far', 'next', 'next-gdd', 'feelings', 'feelings-gdd', 'open-ideas', 'open-gdd', 'sketches', 'sketch-gdd', 'page', 'ready', 'ready-gdd']) && js.some(j => j.ev === 'pipeline.done'), trailOf(js))
+    check('F232 (ideate): it opened with "Welcome to BMUZ" and "Your Idea"; no "where\'s your game?" question', js.find(j => j.ev === 'line')?.line === 'ideate.welcome' && /Welcome to BMUZ/.test(out) && !/where'?s your game/i.test(out), trailOf(js.slice(0, 12)))
+    scriptChecks(dir, out, 'ideate', js, ['ideate.welcome', 'ideate.idea', 'ideate.material', 'ideate.next', 'ideate.feelings', 'ideate.open', 'ideate.open.ask', 'ideate.added', 'ideate.round', 'ideate.sketch', 'ideate.sketch.pick', 'ideate.sketch.more', 'ideate.sketch.added', 'ideate.ready'])
+    const gdd = read('.planning/GDD.md') || ''
+    check('F232 (ideate): the idea\'s own words are in the GDD in quotes', /"[^"]*two friends race to grow the best garden[^"]*"/.test(gdd) || /"[^"]*draw seed cards and plant them[^"]*"/.test(gdd), gdd.slice(0, 800))
+    check('F232 (ideate): the sketch list is in the GDD (S01…)', /\n- S01 .+ — answers: /.test(gdd), (gdd.split('## Sketches')[1] || '').slice(0, 300))
+    check('F232 (ideate): the project page was built and opened (a test run says it would)', existsSync(join(dir, '.planning/project-page.html')) && js.some(j => j.ev === 'script.ran' && j.step === 'page' && /would open file:\/\//.test(j.stdout || '')), JSON.stringify(js.find(j => j.ev === 'script.ran' && j.step === 'page')))
+    check('F232 (ideate): with no answer for "Ready for Define?" an auto run stays in Ideate', JSON.parse(read('bmuz.json') || '{}').pipeline === 'ideate', read('bmuz.json'))
   },
 
-  // F225 (b): a pasted lighthouse concept, "Pin it down" → the proposal says Define → Define runs with what the concept
-  // already chose shown as one-tap Keep, every step in order to the lock gate (an auto run never answers it).
-  async 'entry-concept'() {
-    const dir = scratch('bmuz-entry-concept')
-    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'start', testAnswers: ENTRY_CONCEPT_ANSWERS }, null, 2))
-    const out = runIn(dir, 'bmuz go', `${TOOLS} ToolSearch`)
-    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
-    const all = journalOf(dir)
-    const trail = () => all.map(j => j.ev + (j.step ? ':' + j.step : '') + (j.why ? ` (${String(j.why).slice(0, 140)})` : '')).join(' ')
-    const intake = JSON.parse(read('.planning/research/intake.json') || '{}')
-    // Every stage's line is there; how much Define it already covers is the model's reading of the concept ("the
-    // feeling I want most" went once to Define's picks, once to Discover's shelf — full check 2026-11-09), so not asserted.
-    check('F225: the concept was read and the proposal said Define (pin it down), with the gap map for all six stages', intake.proposal?.stage === 'define' && /## Proposal\n[\s\S]*Ideate \(the material\): [\s\S]*Define \(the blocks\): [\s\S]*Design \(assembling them\): [\s\S]*Develop \(the production model\): [\s\S]*Deliver \(ready to hand over\): [\s\S]*Release \(the public\): /.test(read('.planning/research/intake.md') || ''), JSON.stringify(intake.proposal))
-    const discover = read('.planning/DISCOVER.md') || ''
-    check('F225: the concept\'s material is on DISCOVER.md\'s shelves in the creative\'s own words, marked "from your material"', (discover.match(/ — run 1 · from your material$/gm) || []).length >= 2 && /\n- From your material: pasted text\n/.test(discover), discover.split('## Runs')[0].slice(-800))
-    const UP_TO_LOCK = ['digest', 'direction', 'story', 'bricks', 'pillars', 'fit-check', 'tensions', 'scope', 'risks', 'write', 'concept-lint', 'concept-review', 'review', 'lock']
-    const starts = [...new Set(all.filter(j => j.ev === 'step.start').map(j => j.step))]
-    check('F225: the project moved on to Define, which ran every step in order to the lock gate', JSON.parse(read('bmuz.json') || '{}').pipeline === 'define' && all[0]?.ev === 'stage.enter' && JSON.stringify(starts) === JSON.stringify(UP_TO_LOCK) && all.some(j => j.ev === 'gate.pending' && j.step === 'lock'), trail())
-    check('F225: Define opened with its intro, once', all.filter(j => j.ev === 'intro').length === 1 && all.find(j => j.ev === 'intro')?.step === 'direction')
-    // Keep: an item the concept already chose comes back in Define's result, word for word
-    const state = JSON.parse(read('.bmuz/state.json') || '{}')
-    const given = state.given || {}
-    const texts = v => (Array.isArray(v) ? v : [v]).map(x => String(x && typeof x === 'object' ? x.text : x || '').toLowerCase())
-    const kept = Object.entries(given).filter(([k, v]) => Array.isArray(v) && v.length && Object.values(state.resultsBy || {}).some(r => r && r[k] !== undefined && texts(r[k]).some(t => texts(v).includes(t))))
-    check('F225: what the concept already chose was kept (one tap) in Define\'s results', kept.length >= 1, `given keys: ${Object.keys(given).join(', ')}; direction: ${JSON.stringify((state.resultsBy || {}).direction).slice(0, 300)}`)
-    const card = read('.bmuz/last-card.md') || ''
-    check('F225: it ended with Define\'s concept card', /^## Concept.* — ready for you to check\n/.test(card) && out.includes(card.trim().split('\n')[0]), card.slice(0, 300))
-  },
-
-  // F225 (c): a short rulebook in the folder → read → the proposal screen with its gap map (Design partly: rules
-  // written), shown to the creative; "Somewhere else → Not now" stops there, nothing moves.
-  async 'entry-rulebook'() {
-    const dir = scratch('bmuz-entry-rulebook')
-    writeFileSync(join(dir, 'rules.md'), RULEBOOK)
-    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'start', testAnswers: ENTRY_RULEBOOK_ANSWERS }, null, 2))
-    const out = runIn(dir, 'bmuz go', TOOLS, true)
-    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
-    const all = journalOf(dir)
-    const trail = () => all.map(j => j.ev + (j.step ? ':' + j.step : '') + (j.why ? ` (${String(j.why).slice(0, 140)})` : '')).join(' ')
-    const intake = JSON.parse(read('.planning/research/intake.json') || '{}')
-    const md = read('.planning/research/intake.md') || ''
-    check('F225: the rulebook file was read (rules.md is the source) and the gap map covers all six stages, Design at least partly', (intake.sources || []).some(s => s.name === 'rules.md') && ['ideate', 'define', 'design', 'develop', 'deliver', 'release'].every(s => intake.gaps?.[s]) && intake.gaps.design !== 'not yet', JSON.stringify({ sources: intake.sources, gaps: intake.gaps }))
-    check('F225: the proposal screen: what I read, what it covers, where I\'d start you with one line why, "Start there" first', /\*\*What I read:\*\*\n- "/.test(md) && /\*\*Where I'd start you:\*\* \w+.* — .+/.test(md) && /## Options\n- Start there: /.test(md), md.slice(0, 900))
-    check('F225: the rulebook\'s own words are on the shelves, marked "from your material"', /from your material$/m.test(read('.planning/DISCOVER.md') || ''), (read('.planning/DISCOVER.md') || '').slice(0, 400))
-    check('F225: the creative was shown the proposal (the engine\'s own turn, F228); "Not now" kept them in the start, nothing moved', /What it already covers/.test(out) && all.some(j => j.ev === 'show' && j.step === 'intake') && JSON.parse(read('bmuz.json') || '{}').pipeline === 'start' && all.some(j => j.ev === 'pipeline.done') && !existsSync(join(dir, '.bmuz/stages.json')) && (all.find(j => j.ev === 'step.done' && j.step === 'propose') || {}).result?.stage === 'later', `${trail()}\n      out: ${out.slice(-400)}`)
-  },
-
-  // F228 (a): "Nothing yet" → Ideate helps find one: the game so far from the gap answers alone, then the offer of Define.
-  async 'ideate-nothing'() {
-    const dir = scratch('bmuz-ideate-nothing')
-    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'start', testAnswers: IDEATE_NOTHING_ANSWERS }, null, 2))
-    const out = runIn(dir, 'bmuz go', `${TOOLS} ToolSearch`, true)
-    ideateChecks(dir, out, { from: 'nothing', quotedBy: "the creative's words" })
-  },
-
-  // F228 (b): a pasted concept, "Open it up" → Ideate: the concept's own words on the needs, a gap round, version 2.
-  async 'ideate-concept'() {
-    const dir = scratch('bmuz-ideate-concept')
-    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'start', testAnswers: IDEATE_CONCEPT_ANSWERS }, null, 2))
-    const out = runIn(dir, 'bmuz go', `${TOOLS} ToolSearch`, true)
-    ideateChecks(dir, out, { from: 'concept', quotedBy: 'from your material' })
-    // Then "bmuz go" (the creative's yes to the offer): Define builds on IDEATE.md, frame first, to the lock gate.
-    runIn(dir, 'bmuz go', `${TOOLS} ToolSearch`)
-    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
-    const all = journalOf(dir)
-    const digest = read('.planning/research/define-digest.md') || ''
-    check('F228 → F218: "bmuz go" moved on to Define, whose digest reads IDEATE.md by need (frame first), and it reached the lock gate', JSON.parse(read('bmuz.json') || '{}').pipeline === 'define' && /^Read: \.planning\/IDEATE\.md through Ideate run 1/m.test(digest) && /\n### Frame \[FR\]/.test(digest) && all.some(j => j.ev === 'gate.pending' && j.step === 'lock'), `${digest.slice(0, 400)}\n      ${all.map(j => j.ev + (j.step ? ':' + j.step : '')).join(' ').slice(-600)}`)
-    const ideate = read('.planning/IDEATE.md') || ''
-    const lint = spawnSync('node', [join(plugin, 'scripts', 'concept-lint.mjs'), '.planning/GDD.md'], { cwd: dir, encoding: 'utf8' })
-    check('F228 → F218: the concept lint passes against IDEATE.md\'s marks; what Define chose is marked there, nothing removed', lint.status === 0 && /→ chosen \(Define run 1/.test(ideate) && /from IDEATE\.md's shelves/.test(read('.planning/GDD.md') || ''), `${lint.stdout}`)
-  },
-
-  // F228 (c): a rulebook file and an art folder → Ideate reads the text, lists the art by what it appears to be.
+  // F232: "I'm not sure yet" → the spark questions; a rulebook file and an art folder shared → read, the art listed by
+  // what it appears to be (1.2), and the game so far says what couldn't be read.
   async 'ideate-rulebook'() {
-    const dir = scratch('bmuz-ideate-rulebook')
+    const dir = gardenScratch('bmuz-garden-rulebook')
     writeFileSync(join(dir, 'rules.md'), RULEBOOK)
     mkdirSync(join(dir, 'art'), { recursive: true })
     writeFileSync(join(dir, 'art', 'lamp.psd'), Buffer.from([56, 66, 80, 83, 0, 1, 0, 0]))
-    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'start', testAnswers: IDEATE_RULEBOOK_ANSWERS }, null, 2))
-    const out = runIn(dir, 'bmuz go', `${TOOLS} ToolSearch`, true)
-    ideateChecks(dir, out, { from: 'rulebook', quotedBy: 'from your material' })
+    const answers = {
+      idea: { 'Your Idea': "I'm not sure yet.", 'The three spark questions': 'Lately I love short cosy games. A night keeping a lighthouse lit through a storm. Weather and caring for something.' },
+      material: { 'Your Material (share your links)': 'rules.md and the art folder' },
+      next: { 'What next?': 'Carry on in Ideate (Recommended)' },
+      feelings: { 'Feelings & Hopes': 'Quiet care while the storm rolls in. I would hate it to feel like a stressful timer game.' },
+      'open-ideas': { 'Open Ideas, round 1': 'Phone, one player, about ten minutes a night.', 'Another round?': "That's enough for now" },
+      sketches: { 'Which of these should we sketch?': 'the first one', 'Anything else?': "that's all" },
+    }
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'ideate', testAnswers: answers }, null, 2))
+    const out = runIn(dir, 'bmuz go', `${TOOLS} ToolSearch mcp__bmuz__say`, true)
+    const js = journalOf(dir)
+    check('F232 (ideate, not sure yet): the spark questions were asked, word for word', js.some(j => j.ev === 'line' && j.line === 'ideate.spark') && /Three quick questions to find a spark/.test(out), trailOf(js.slice(0, 20)))
     const shared = readFileSync(join(dir, '.planning/research/shared.md'), 'utf8')
-    check('F228: the rulebook was read and the art listed by what it appears to be, not read', /\n- rules\.md \(\d+ characters/.test(shared) && /\n- art\/lamp\.psd — a Photoshop file \(art\)/.test(shared), shared.slice(0, 700))
+    check('F232 (ideate): the rulebook was read and the art listed by what it appears to be, not read', /\n- rules\.md \(\d+ characters/.test(shared) && /\n- art\/lamp\.psd — a Photoshop file \(art\)/.test(shared), shared.slice(0, 700))
+    const so = existsSync(join(dir, '.planning/research/ideate-so-far.md')) ? readFileSync(join(dir, '.planning/research/ideate-so-far.md'), 'utf8') : ''
+    check('F232 (ideate): the game so far counts the file shared and says what couldn\'t be read', /from your idea and the \d+ files? you shared\./.test(so) && /I couldn't read: 1 Photoshop file/.test(so), so.slice(0, 900))
   },
+
 
   // Check 16: motor B — "bmuz next" from a shell reads the same pipeline and state.
   async motorb() {

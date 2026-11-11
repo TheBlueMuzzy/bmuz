@@ -1271,24 +1271,25 @@ test('F225: a stage switch cut short by a crash is finished at the next start', 
   expect(refused(r)).toBe(false)
 })
 
-test('F225: "bmuz new" in a folder without bmuz.json makes it a BMUZ project on the start pipeline; "bmuz go" there only says how', async ($, on) => {
+test('F225, F232: "bmuz new" in a folder without bmuz.json makes it a BMUZ project that starts Ideate (the start is folded in); "bmuz go" there only says how', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const prompts: string[] = []
   on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(String.fromCharCode(10))); return { text: e.text } })
   on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
-  const w = world(on, { 'craft/name.md': 'Ask where the game is.' })
-  w.files['PIPELINE:start'] = JSON.stringify(START)
+  const w = world(on, { 'craft/name.md': 'Say the welcome, then ask for the idea.' })
+  w.files['PIPELINE:ideate'] = JSON.stringify({ id: 'ideate', version: 1, steps: [{ id: 'idea', kind: 'talk', no: '1.1', title: 'Your Idea', tools: ['Read'], craft: 'craft/name.md', results: ['idea'] }] })
   delete w.files['/proj/bmuz.json']
   await start($, true)
   await $.prompt.submit({ text: 'bmuz go' } as any)
-  expect(prompts[0]).toMatch(/"bmuz new" starts a game here/)
+  expect(prompts[0]).toMatch(/"bmuz new" starts a game here — it begins with their idea/)
   expect(w.files['/proj/bmuz.json']).toBeUndefined()
   await $.prompt.submit({ text: 'bmuz new' } as any)
-  expect(JSON.parse(w.files['/proj/bmuz.json'])).toEqual({ pipeline: 'start' })
+  expect(JSON.parse(w.files['/proj/bmuz.json'])).toEqual({ pipeline: 'ideate' })
   expect(prompts[1]).toMatch(/now a BMUZ project/)
   await turn($, 't1')
-  expect(prompts.some(p => /^BMUZ step "propose"/.test(p) && /Ask where the game is\./.test(p))).toBe(true)
-  const done: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { stage: 'later', at: 'first' } } as any)
+  expect(prompts.some(p => /BMUZ step "idea" — Ideate · 1 of 1 · Your Idea/.test(p) && /Say the welcome, then ask for the idea\./.test(p))).toBe(true)
+  expect(prompts.some(p => /Where's your game right now/.test(p))).toBe(false)
+  const done: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { idea: 'A garden race' } } as any)
   expect(String(done.result)).toMatch(/Recorded/)
 })
 

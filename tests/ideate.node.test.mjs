@@ -243,14 +243,14 @@ test('the engine: "show" shows a script step\'s file in a turn of its own; "when
   assert.deepEqual([s.finished, s.skipped], [['ask', 'look'], ['look']])
 })
 
-test('the ideate pipeline: show → fetch → read → so-far (shown) → gaps → save (shown), then Define; no research', () => {
+test('the ideate pipeline (F232: the script\'s 1.1–1.7): idea → material → fetch → read → so-far (shown) → next → … → page (shown) → ready, then Define on the creative\'s pick; no research', () => {
   const p = JSON.parse(readFileSync(join(here, '..', 'plugin', 'pipelines', 'ideate.json'), 'utf8'))
   assert.deepEqual(E.checkPipeline(p), [])
-  assert.deepEqual(p.steps.map(s => s.id), ['show', 'fetch', 'read', 'so-far', 'gaps', 'save'])
-  assert.deepEqual(p.steps.filter(s => s.show).map(s => s.id), ['so-far', 'save'])
+  assert.deepEqual(p.steps.map(s => s.id), ['idea', 'material', 'fetch', 'read', 'so-far', 'next', 'next-gdd', 'feelings', 'feelings-gdd', 'open-ideas', 'open-gdd', 'sketches', 'sketch-gdd', 'page', 'ready', 'ready-gdd'])
+  assert.deepEqual(p.steps.filter(s => s.show).map(s => s.id), ['so-far', 'page'])
   assert.ok(!p.steps.some(s => s.kind === 'flow')) // research is on demand (F229), never a default step
   assert.ok(!E.stepById(p, 'read').tools.includes('AskUserQuestion')) // the reading step can't ask
-  assert.equal(p.next.pipeline, 'define')
+  assert.equal(p.next.pipeline, '{onward}')
   assert.ok(existsSync(join(here, '..', 'plugin', 'pipelines', 'discover.json'))) // kept on disk, no longer a stage
 })
 

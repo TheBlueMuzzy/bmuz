@@ -1,0 +1,261 @@
+// Ideate on the script (F232 task 3; framework .planning/research/bmuz-vision/bmuz-design-doc.html, Stage 1).
+//   node ideate.mjs so-far        1.3 The Game So Far: the reading checked, written into the GDD (version 1, every chapter
+//                                 loose or plainly open), and the 1.3 message composed from the script word for word
+//   node ideate.mjs add <step>    1.4–1.7: what a step gathered, added to its chapters (loose; nothing replaced)
+//   node ideate.mjs page          1.7 Your Project Page: opens the page and composes the 1.7 message
+//   (run in the project folder)
+//
+// Claude READS and sorts (talk steps); this script WRITES, the same way every time. Every quote Claude hands back as the
+// creative's own words ({"text", "his": true}) is checked against what they actually wrote — the shared material
+// (.planning/research/shared.json, from ideate-fetch.mjs) and their answers (the engine journals each one; a test
+// run's stand-in answers count when BMUZ_TEST=1). A quote not found there is kept as "my reading", never as theirs.
+// Nothing is chosen in Ideate, and the pillars stay empty on purpose (script, "How the GDD grows").
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import * as E from '../hooks/engine.js'
+import * as G from './gdd.mjs'
+import { answersFrom } from './ideate-doc.mjs'
+import { isVerbatim, normalise } from './intake.mjs'
+
+export const SO_FAR = '.planning/research/ideate-so-far.md'
+export const SO_FAR_JSON = '.planning/research/ideate-so-far.json'
+export const PAGE_MD = '.planning/research/ideate-page.md'
+const SHARED_JSON = '.planning/research/shared.json'
+// The order gaps are raised in: what's hardest to change later first (script 1.5: how and where a game is played, and
+// the shape of its rules, caused the most rework), then the concept's chapters.
+export const GAP_ORDER = [5, 8, 4, 1, 3, 6, 10, 11, 12, 7, 9, 13, 14]
+// Never written in Ideate: "Pillars stay empty in Ideate on purpose: they're made once the ideas exist."
+export const NOT_IN_IDEATE = [2]
+
+const clean = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim()
+const listOf = v => (Array.isArray(v) ? v : v == null || v === '' ? [] : [v])
+const here = dirname(fileURLToPath(import.meta.url))
+export const loadScript = () => E.parseScript(readFileSync(join(here, '..', 'script.md'), 'utf8'))
+
+// One item as the creative will read it: their words in quotes (checked), else marked "my reading".
+function checkItem(x, src) {
+  const it = typeof x === 'string' ? { text: clean(x), his: false } : x && typeof x === 'object' ? { text: clean(x.text ?? ''), his: x.his === true } : { text: '' }
+  const text = it.text.replace(/^["“]|["”]$/g, '')
+  if (!text) return null
+  const theirs = it.his && (isVerbatim(text, src.material) || isVerbatim(text, src.answers))
+  return { text, theirs, shown: theirs ? `"${text}"` : `${text} (my reading)`, claimed: it.his }
+}
+
+// A reading by chapter ({ "5": { fixed, ideas, open } }), checked. Returns { chapters: { n: { fixed, ideas, open } },
+// notQuoted }. A chapter that isn't 1–14 is left out; the pillars are never written here.
+export function checkReading(reading, src) {
+  const out = {}
+  let notQuoted = 0
+  const r = reading && typeof reading === 'object' && !Array.isArray(reading) ? reading : {}
+  for (const [k, parts] of Object.entries(r)) {
+    const n = Number(k)
+    if (!G.chapterName(n) || NOT_IN_IDEATE.includes(n) || !parts || typeof parts !== 'object') continue
+    const c = { fixed: [], ideas: [], open: [] }
+    for (const part of ['fixed', 'ideas']) {
+      for (const x of listOf(parts[part])) {
+        const it = checkItem(x, src)
+        if (!it) continue
+        if (it.claimed && !it.theirs) notQuoted++
+        if (!c[part].some(y => normalise(y.text) === normalise(it.text))) c[part].push(it)
+      }
+    }
+    for (const q of listOf(parts.open)) {
+      const t = clean(typeof q === 'string' ? q : q && (q.text || q.q))
+      if (t && !c.open.includes(t)) c.open.push(t)
+    }
+    if (c.fixed.length || c.ideas.length || c.open.length) out[n] = c
+  }
+  return { chapters: out, notQuoted }
+}
+
+// A chapter's lines in the GDD: Clear (facts they brought) · Idea · Open.
+export function chapterLines(c) {
+  return [
+    ...c.fixed.map(x => `Clear: ${x.shown}`),
+    ...c.ideas.map(x => `Idea: ${x.shown}`),
+    ...c.open.map(q => `Open: ${q}`),
+  ]
+}
+
+// Adds lines to a chapter's own text (Ideate only gathers: nothing replaced, nothing twice).
+export function addLines(doc, n, lines, by) {
+  const ch = G.readGdd(doc)[n]
+  const have = ch && ch.text && ch.text.trim() !== G.NOTHING ? ch.text.split('\n').map(l => l.replace(/^- /, '')) : []
+  const norm = s => normalise(s)
+  const merged = [...have]
+  for (const l of lines) if (!merged.some(m => norm(m) === norm(l))) merged.push(l)
+  if (merged.length === have.length) return doc
+  return G.writeChapter(doc, n, merged, 'loose', by).text
+}
+
+// Where the game stands, worked out from it (script 1.1: never asked).
+export function standsFrom(chapters, shared, said = '') {
+  const s = clean(said)
+  if (s && s.length <= 80) return s.replace(/\.$/, '')
+  const listed = listOf(shared && shared.listed).map(l => String(l.kind || ''))
+  if (listed.some(k => /code|unity|godot|project|script/i.test(k))) return 'a prototype'
+  const rules = chapters[8] ? chapters[8].fixed.length : 0
+  const any = Object.values(chapters).some(c => c.fixed.length || c.ideas.length)
+  if (!any) return 'nothing yet'
+  return rules >= 2 ? 'a concept with some rules written down' : 'a concept'
+}
+
+// What the shared material couldn't give as text, by what it appears to be ("2 Photoshop files (pictures, not text)").
+export function unreadLine(shared) {
+  const kinds = {}
+  for (const l of listOf(shared && shared.listed)) {
+    const k = clean(String(l.kind || 'a file').replace(/^an? /, '').replace(/\s*\(.*$/, ''))
+    kinds[k] = (kinds[k] || 0) + 1
+  }
+  for (const u of listOf(shared && shared.unread)) kinds[clean(u.why || 'unreadable')] = (kinds[clean(u.why || 'unreadable')] || 0) + 1
+  const parts = Object.entries(kinds).map(([k, n]) => `${n} ${k}${n > 1 && !/s$/.test(k) ? 's' : ''}`)
+  return parts.join(', ')
+}
+
+// The sources: the shared text and every answer of the creative's (journaled, the idea itself, a test run's stand-ins).
+function sources(project, state) {
+  const read = f => (existsSync(join(project, f)) ? readFileSync(join(project, f), 'utf8') : null)
+  let shared = null
+  try { shared = JSON.parse(read(SHARED_JSON) || 'null') } catch (e) { shared = null }
+  const material = listOf(shared && shared.sources).map(s => String(s.text || '')).join('\n\n')
+  const answers = answersFrom((read('.bmuz/journal.jsonl') || '').split('\n'))
+  if (process.env.BMUZ_TEST === '1') {
+    try {
+      const cfg = JSON.parse(read('bmuz.json') || '{}')
+      for (const v of Object.values(cfg.testAnswers || {})) answers.push(...Object.values(v && typeof v === 'object' ? v : { a: v }).map(String))
+    } catch (e) { /* no test answers */ }
+  }
+  const by = state.resultsBy || {}
+  for (const x of [...listOf(by.idea && by.idea.idea), ...listOf(by.idea && by.idea.spark)]) answers.push(typeof x === 'string' ? x : String((x && x.text) || ''))
+  return { shared, src: { material: normalise(material), answers: normalise(answers.join('\n\n')) } }
+}
+
+function by(state, step) {
+  return { step, stage: 'Ideate', day: new Date().toISOString().slice(0, 10) }
+}
+
+// ---- 1.3 The Game So Far ----
+export function soFar(project, state, script = loadScript()) {
+  const { shared, src } = sources(project, state)
+  const read = (state.resultsBy || {}).read || {}
+  const { chapters, notQuoted } = checkReading(read.sofar, src)
+  let doc = G.readFileIn(project, G.GDD) || G.newGdd(read.name)
+  if (read.name && !G.gameName(doc)) doc = G.setName(doc, read.name)
+  const b = by(state, 'read')
+  for (const [n, c] of Object.entries(chapters)) doc = addLines(doc, Number(n), chapterLines(c), b)
+  // The open questions go on the GDD's running list, each with its chapter.
+  const open = GAP_ORDER.flatMap(n => (chapters[n] ? chapters[n].open.map(q => ({ n, q })) : []))
+  doc = G.addToList(doc, 'Open Questions', open.map(o => `${o.q} (${G.chapterName(o.n)})`)).text
+  writeFile(project, G.GDD, doc)
+  G.writePage(project)
+  // The message, from the script, word for word.
+  const all = Object.values(chapters)
+  const fixed = all.flatMap(c => c.fixed)
+  const clear = [...fixed.filter(x => x.theirs), ...fixed.filter(x => !x.theirs)].slice(0, 4).map(x => x.shown)
+  const ideas = all.flatMap(c => c.ideas).slice(0, 4).map(x => x.shown)
+  const gaps = GAP_ORDER.filter(n => chapters[n] && chapters[n].open.length).map(n => `${chapters[n].open[0]} (${G.chapterName(n)})`)
+  const emptyGaps = GAP_ORDER.filter(n => !chapters[n] && !NOT_IN_IDEATE.includes(n)).map(n => `nothing yet (${G.chapterName(n)})`)
+  const files = listOf(shared && shared.sources).filter(s => !/^(your |pasted text)/.test(String(s.name || ''))).length
+  const slots = {
+    files: files ? `${files} file${files > 1 ? 's' : ''}` : '',
+    clear: clear.length ? clear : ['nothing yet'],
+    ideas: ideas.length ? ideas : ['nothing yet'],
+    open: [...gaps, ...emptyGaps].slice(0, Math.max(3, Math.min(5, gaps.length))),
+    stands: standsFrom(chapters, shared, read.stands),
+    unread: unreadLine(shared),
+    link: G.pageLink(project),
+  }
+  const r = E.renderLine(script, 'ideate.sofar', slots)
+  if (r.error) throw new Error(r.error)
+  writeFile(project, SO_FAR, r.text + '\n')
+  // "Jump to Define" is offered only when the material already covers the feelings, pitch and core loop.
+  // (their own words, checked: my reading of their notes doesn't count as their notes covering it)
+  const covered = [1, 3, 4].filter(n => chapters[n] && chapters[n].fixed.some(x => x.theirs))
+  const jump = covered.length === 3
+  writeFile(project, SO_FAR_JSON, JSON.stringify({ jump, covers: jump ? 'your notes already cover the feelings, pitch and core loop' : '', stands: slots.stands, chapters: Object.keys(chapters).map(Number), notQuoted }, null, 2) + '\n')
+  return { chapters, notQuoted, jump, text: r.text }
+}
+
+// ---- 1.4–1.7: what a step gathered, added to its chapters ----
+// The step's result: chapters { n: [items] } (an item: text, or { text, his }), sketches [{ name, question }],
+// questions [text] (still open, for the GDD's list), ideas [text] (Ideas for Later), name.
+export function addStep(project, state, step) {
+  const { src } = sources(project, state)
+  const r = (state.resultsBy || {})[step] || {}
+  let doc = G.readFileIn(project, G.GDD) || G.newGdd(r.name)
+  const b = by(state, step)
+  let notQuoted = 0
+  const touched = []
+  const chapters = r.chapters && typeof r.chapters === 'object' && !Array.isArray(r.chapters) ? r.chapters : {}
+  for (const [k, v] of Object.entries(chapters)) {
+    const n = Number(k)
+    if (!G.chapterName(n) || NOT_IN_IDEATE.includes(n)) continue
+    const lines = []
+    for (const x of listOf(v)) {
+      const raw = typeof x === 'string' ? x : x && x.text
+      const label = /^(Clear|Idea|Open):\s*/i.exec(clean(raw))
+      const it = checkItem(label ? (typeof x === 'string' ? clean(x).slice(label[0].length) : { ...x, text: clean(raw).slice(label[0].length) }) : x, src)
+      if (!it) continue
+      if (it.claimed && !it.theirs) notQuoted++
+      const kind = label ? label[1][0].toUpperCase() + label[1].slice(1).toLowerCase() : 'Idea'
+      lines.push(kind === 'Open' ? `Open: ${it.text}` : `${kind}: ${it.shown}`)
+    }
+    const before = doc
+    doc = addLines(doc, n, lines, b)
+    if (doc !== before) touched.push(n)
+  }
+  const out = G.applyResult(doc, { sketches: r.sketches, questions: r.questions, ideas: r.ideas, name: r.name }, null, b)
+  writeFile(project, G.GDD, out.text)
+  G.writePage(project)
+  return { touched, notQuoted, added: out.added }
+}
+
+// ---- 1.7 Your Project Page ----
+export function page(project, state, script = loadScript(), env = process.env) {
+  const doc = G.readFileIn(project, G.GDD) || G.newGdd()
+  const ch = G.readGdd(doc)
+  const loose = Object.values(ch).filter(c => c.level === 'loose').length
+  const sketches = G.readList(doc, 'Sketches').length
+  // The three questions that matter most for Define: the open ones in Define's chapters first (1–7, in its order).
+  const qs = G.readList(doc, 'Open Questions')
+  const rank = q => { const m = q.match(/\(([^()]+)\)\s*$/); const c = m ? G.CHAPTERS.find(x => x[1] === m[1]) : null; return c ? c[0] : 99 }
+  const top = [...qs].sort((a, b) => rank(a) - rank(b)).slice(0, 3)
+  G.writePage(project)
+  const opened = G.openPage(project, env)
+  const r = E.renderLine(script, 'ideate.page', { loose: String(loose), sketches: String(sketches), top: top.length ? top : ['none: the game so far covers what Define needs first'] })
+  if (r.error) throw new Error(r.error)
+  writeFile(project, PAGE_MD, r.text + '\n')
+  return { loose, sketches, top, opened, text: r.text }
+}
+
+function writeFile(dir, rel, text) {
+  mkdirSync(dirname(join(dir, rel)), { recursive: true })
+  writeFileSync(join(dir, rel), text)
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  const [mode, step] = process.argv.slice(2)
+  const project = process.cwd()
+  let state = null
+  try { state = JSON.parse(readFileSync(join(project, '.bmuz/state.json'), 'utf8')) } catch (e) { state = null }
+  if (!state) { console.log('✘ no .bmuz/state.json: this runs inside an ideate run'); process.exit(1) }
+  try {
+    if (mode === 'so-far') {
+      const r = soFar(project, state)
+      console.log(`✔ ${G.GDD}: version 1 — chapters ${Object.keys(r.chapters).join(', ') || 'none'} loose${r.notQuoted ? ` (${r.notQuoted} given as quotes but not found in their words: kept as my reading)` : ''}; ${SO_FAR}${r.jump ? ' · Jump to Define offered' : ''}`)
+    } else if (mode === 'add' && /^[a-z][a-z0-9-]*$/.test(String(step || ''))) {
+      const r = addStep(project, state, step)
+      console.log(`✔ ${G.GDD}: ${step} — chapters ${r.touched.join(', ') || 'none'}${Object.entries(r.added).map(([l, a]) => `; ${a.length} on ${l}`).join('')}${r.notQuoted ? ` (${r.notQuoted} quotes not found in their words: kept as my reading)` : ''}`)
+    } else if (mode === 'page') {
+      const r = page(project, state)
+      console.log(`✔ ${PAGE_MD}: ${r.loose} chapters loose, ${r.sketches} sketches · ${r.opened}`)
+    } else {
+      console.log('✘ use: node ideate.mjs so-far | add <step> | page')
+      process.exit(1)
+    }
+  } catch (err) {
+    console.log(`✘ ${String(err && err.message ? err.message : err).slice(0, 300)}`)
+    process.exit(1)
+  }
+}

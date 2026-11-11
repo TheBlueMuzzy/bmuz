@@ -1,35 +1,35 @@
-Craft note (ideate, step "read" — framework .planning/research/bmuz-vision/stages.md: per need, what's fixed · what ideas they have · what's open; design-gaps-evidence.md: the needs that cost the most rework when nobody wrote them down; discover-live-review-2026-11-09.md section 5: "the game so far, from his answers only").
-Purpose: read everything they shared and sort it onto the needs, so the creative sees their own game written back clearer than they walked in with it. This step asks nothing (it has no question tool): it reads and sorts. The next step shows the result; the one after asks only about the gaps.
+Craft note (ideate, step "read" — the script's 1.3 The Game So Far, the reading; framework .planning/research/bmuz-vision/bmuz-design-doc.html, "The GDD's chapters" and "How the GDD grows").
+Purpose: read everything they shared and sort it into the GDD's chapters, so the creative sees their own game written back clearer than they walked in with it. This step asks nothing and says nothing to the creative: read, sort, call step_done. The engine writes the GDD and shows "The Game So Far" itself.
 
-Read, all of it (Read with offset/limit for a long file; never skim):
-- .planning/research/shared.md: every text they shared (their one-breath answer, pasted text, files, folders, Google Drive docs), then what was only listed by name (a Unity scene, a Photoshop file…) and what couldn't be read.
-- .planning/research/intake.json if it exists ("given": what the start already sorted, and its "brief").
+Read, all of it (Read with offset/limit for a long file; never skim): .planning/research/shared.md (their idea, pasted text, files, folders, Drive and GitHub docs, then what was only listed by name and what couldn't be read).
 
-The needs (the keys), and what goes under each:
-- "frame": platform, which way up it's held, players (how many, vs AI, online, local), online people problems (someone leaves, goes quiet, joins late, plays again), how long one game lasts, controls
-- "loop": what the player does, in verbs, over and over
-- "things": the pieces in play and the states they can be in
-- "rules": how a turn or a moment goes, how it scores, how it ends, odd cases
-- "decisions": the choices players make and why they're hard; what a good player does that a new one doesn't (the real skill)
-- "feel": the feeling it's after, what they fear it becomes, and how we'll know it works
-- "change": what changes during a game (escalation) and from game to game
-- "smallest": the smallest version worth playing, the first release
-- "look": the look and the sound
-- "also": anything else that matters (opponents/AI, who sees what, screens, names, teaching, a prototype that exists)
+The chapters (the keys of "sofar") and what goes in each:
+- "1" The Feelings: the feeling it's after, moments they want players to have, how we'd know
+- "3" The Pitch: what the game is, in their words; the familiar part and the new part
+- "4" The Core Loop: what the player does, over and over
+- "5" Platform & Play Structure: where it's played (phone, computer…), solo / together / online / by turns / against the computer, how long a game lasts
+- "6" Scope: the smallest version, what's in or out
+- "7" Risks & Unknowns: what they fear it becomes, what they're unsure about
+- "8" Rulebook: components, setup, how a turn goes, scoring, how it ends, how to win
+- "10" Change Over Time: what changes within a game and between games
+- "11" Players & Opponents: a computer opponent, online people, saves and accounts
+- "12" Look & Sound: style, references, audio mood
+- "9" Content & Balance, "13" Screens & Menus, "14" Teaching: only if the material really says something about them
+Never "2" (The 3 Pillars): pillars stay empty in Ideate on purpose; Define makes them.
 
-For each need, three lists:
-- "fixed": facts and limits they brought — said as settled ("online against a friend, no local", "classic black and white", a number in their prototype's code). A prototype's code is material too: what it already does is a fact.
-- "ideas": their ideas, half-formed welcome ("2–10 all have other abilities"). An idea stays an idea even when it's specific: deciding is Define's.
-- "open": what this game needs here that the material doesn't say yet, each as one short plain question in their terms ("What do 2–10 do?", "How does a match end?"). Every need with nothing in the material gets at least one open question; things they said they can't remember become open questions ("the ideas I can't quite remember" → "Which ideas for the numbers do you remember?").
+For each chapter the material touches, three lists:
+- "fixed": what's already clear — facts and limits they brought, said as settled. A prototype's code is material too.
+- "ideas": their ideas, half-formed welcome. An idea stays an idea even when it's specific: choosing is Define's.
+- "open": what this game needs here that the material doesn't say yet, each one short plain question in their terms ("How does a game end?"). Things they said they can't remember become open questions.
 
 Rules:
-- Their words, exactly: a fixed item or an idea is {"text": "<their exact words>", "his": true} — copy them (cut short with "…" if long; never reword, never fix spelling). The script checks every quote against what they shared: a quote it can't find there is shown as your reading, not theirs. Your own summary of something spread over a page is plain text (shown as "my reading").
-- Never invent: no feature, rule or feeling that isn't in the material. A need the material doesn't touch gets open questions, not guesses.
-- The game's own terms: no fiction questions for a game with no fiction (an abstract Pong variant has no "who are you"), no jargon (MDA, "toy", "this feeling").
-- Each item once, under the need it feeds most.
-- What was only listed (a .unity, a .psd) goes under "also" as a fixed fact in plain words ("a Unity project exists: ReversePong.unity, Ball.cs, Paddle.cs — the scene itself wasn't read"), never as if you read it.
+- Their words, exactly: a fixed item or an idea in their words is {"text": "<their exact words>", "his": true} (cut long ones with "…"; never reword, never fix spelling). The script checks every quote against what they wrote; one it can't find is shown as "my reading". Your own summary of something spread over a page is plain text (shown as "my reading").
+- Never invent: nothing that isn't in the material. A chapter the material doesn't touch gets open questions only where this game obviously needs it (how a game ends, where it's played), or nothing.
+- The game's own terms; no jargon. Each item once, in the chapter it feeds most.
+- What was only listed (a .unity, a .psd) is a fixed fact in plain words in the chapter it belongs to ("a Unity project exists: the scene itself wasn't read"), never as if you read it.
 
 Hand back:
-- "sofar": {"frame": {"fixed": [...], "ideas": [...], "open": ["...?"]}, "loop": {...}, … every need key, each with all three lists ([] when empty)}
-- "brief": the idea in one line, in their words ("" when there's no idea yet)
-Nothing yet (nothing shared, no idea): every need's "open" holds the questions that help find one — "What games do you love playing lately?", "A feeling or a moment you'd like a game to give?", "A mechanic or a theme you keep thinking about?" (under "feel", "loop" and "also").
+- "sofar": {"5": {"fixed": [...], "ideas": [...], "open": ["...?"]}, "8": {...}, …} (only the chapters with something)
+- "stands": where the game stands, in a few plain words: "nothing yet", "a concept", "a concept with some rules written down", "written rules", "a prototype" (worked out, never asked)
+- "name": the game's name if the material gives one, else ""
+Nothing shared and no idea yet: "sofar" holds open questions that help find one (in "1", "4" and "3").

@@ -1121,11 +1121,12 @@ export const register: Register = on => {
       const typed = String((e as any).text)
       const origin = (e as any).origin?.kind
       const typedHere = origin !== 'plugin' && origin !== 'peer' && origin !== 'task-notification'
-      // F225: "bmuz new" makes this folder a BMUZ project and opens with "Where's your game right now?". Only this
+      // F225, F232: "bmuz new" makes this folder a BMUZ project and starts Ideate (Welcome to BMUZ, then "Your Idea";
+      // where the game stands is worked out, never asked). Only this
       // typed command does it: a stray "bmuz go" in some other folder never writes a file.
       if (typedHere && /^\s*bmuz new\s*$/i.test(typed)) {
         const dir = String(await $.session.cwd()).replace(/\\/g, '/')
-        await $.fs.write(`${dir}/bmuz.json`, JSON.stringify({ pipeline: 'start' }, null, 2))
+        await $.fs.write(`${dir}/bmuz.json`, JSON.stringify({ pipeline: 'ideate' }, null, 2))
         const ok = await startEngine($)
         if (!ctx) return next(e)
         await armSession($)
@@ -1136,7 +1137,7 @@ export const register: Register = on => {
         return next({ ...(e as any), text: `${typed}\n(BMUZ engine: this folder is now a BMUZ project (bmuz.json written). Reply with one short line; the engine asks the first question itself.)` })
       }
       if (typedHere && /^\s*bmuz (go|approve|auto|undo|retry|doctor|stage)\b/i.test(typed)) {
-        return next({ ...(e as any), text: `${typed}\n(BMUZ engine: off in this folder: there is no bmuz.json here, so nothing runs. Tell the creative that in plain words: BMUZ steps run inside a BMUZ project folder, and "bmuz new" starts a game here — it asks where the game is right now and puts them in at the right stage.)` })
+        return next({ ...(e as any), text: `${typed}\n(BMUZ engine: off in this folder: there is no bmuz.json here, so nothing runs. Tell the creative that in plain words: BMUZ steps run inside a BMUZ project folder, and "bmuz new" starts a game here — it begins with their idea and whatever they want to share.)` })
       }
       return next(e)
     }
