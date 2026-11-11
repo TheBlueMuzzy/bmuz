@@ -579,6 +579,14 @@ function publishNow(dir, script, now) {
   if (p.rolledBack) throw new Error(`${rolledBackLine()} Fix what the check found in Develop, then deliver again.`)
   const step = (name, r) => { if (!r.ok) { saveRecord(dir, rec); throw new Error(`${name}: ${r.out.slice(-900)}`) } return r }
   const scripts = (readJson(dir, 'package.json') || {}).scripts || {}
+  // (review fix 5: release.mjs commits every changed .planning/ and .md file with the release, so a change the creative
+  // hasn't saved would go out with it. Before anything is released: the uncommitted changes BMUZ didn't make — its own
+  // are the engine's record of its steps' edits, .bmuz/own.json, the project page and bmuz.json — refuse it.)
+  if (!p.tag) {
+    const mine = new Set([...S.ownFiles(dir), G.PAGE, 'bmuz.json'])
+    const theirs = B.dirtyFiles(dir).filter(f => !mine.has(f))
+    if (theirs.length) throw new Error(`You have unsaved changes in ${theirs.join(', ')}; they'd go out with the release. Save or undo them, then say "bmuz retry" to share it.`)
+  }
   // 1. the work branch into main
   if (!p.merged) {
     const branch = rec.branch || (/^dev\//.test(branchNow(dir) || '') ? branchNow(dir) : null)

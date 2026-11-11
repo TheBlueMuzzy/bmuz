@@ -314,7 +314,7 @@ test('review fix 2: the version is bumped once: a release that tagged and then d
   assert.equal(calls(two).filter(c => /^release /.test(c)).length, 1, 'release.mjs ran once')
 })
 
-test('review fix 5: the creative\'s own unsaved changes are never released with BMUZ\'s: publish refuses, naming them, before anything is merged', { todo: 'review fix 5: its fix comes in its own commit' }, () => {
+test('review fix 5: the creative\'s own unsaved changes are never released with BMUZ\'s: publish refuses, naming them, before anything is merged', () => {
   const dir = garden()
   shareSaid(dir)
   appendFileSync(join(dir, '.planning', 'GDD.md'), '\nmy half-written note\n')
