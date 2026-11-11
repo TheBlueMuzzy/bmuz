@@ -577,6 +577,25 @@ export function featureEnd(dir, now = new Date()) {
   return { feature: f.id, status: f.status, commit: c }
 }
 
+// A feature run that ended early: "blocked" (an auto run moved past a block; a live "bmuz go" builds it again) or
+// "parked" (the creative set it aside: a later sprint takes it up again). The block's reason is the run's own.
+export function setStatus(dir, id, status, now = new Date()) {
+  if (!['blocked', 'parked'].includes(status)) throw new Error(`"${status}" isn't blocked or parked`)
+  const rec = recordOf(dir)
+  const f = rec.features.find(x => x.id === id)
+  if (!f) throw new Error(`${id} isn't in this sprint`)
+  f.status = status
+  saveRecord(dir, rec)
+  const runs = readJson(dir, '.bmuz/feature-runs.json') || []
+  const last = [...runs].reverse().find(r => r.feature === id)
+  const st = last ? readJson(dir, `${last.record}/state.json`) : null
+  const why = clean(st && st.blocked && st.blocked.why).slice(0, 300)
+  write(dir, SPRINT, sprintEdit(readIn(dir, SPRINT) || '', id, { note: status === 'blocked' ? `BLOCKED ${day(now)} in an auto run${why ? `: ${why}` : ''}` : `parked by you ${day(now)}: a later sprint takes it up again` }))
+  if (status === 'parked') write(dir, ROADMAP, setStates(readIn(dir, ROADMAP) || '', { [id]: '🟢' }))
+  G.writePage(dir, now)
+  return f
+}
+
 // ---- A new idea, any time ----
 export function idea(dir, words, now = new Date()) {
   const rm = readIn(dir, ROADMAP)
@@ -723,6 +742,9 @@ if (isMain) {
     } else if (mode === 'feature-end') {
       const r = featureEnd(dir)
       say(true, `✔ ${r.feature}: ${r.status}${r.commit && r.commit.hash ? ` · committed ${r.commit.hash}` : ''}`)
+    } else if (mode === 'status') {
+      const f = setStatus(dir, a, b)
+      say(true, `✔ ${named(f)}: ${f.status}`)
     } else if (mode === 'idea') {
       const r = idea(dir, a)
       say(true, r.added ? `✔ ${ROADMAP}: ${r.added}` : `✔ already on the roadmap's Ideas: ${r.idea}`)

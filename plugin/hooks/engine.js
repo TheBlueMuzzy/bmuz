@@ -92,11 +92,14 @@ const STEP_KEYS = {
   // must: the ones it always says, so step_done is refused until each was handed out (the rest depend on the game)
   talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results', 'wrapTo', 'recap', 'lines', 'opening', 'must'],
   // line (F232): the gate's question and options come from that script box
-  gate: ['question', 'options', 'approve', 'backTo', 'line'],
+  gate: ['question', 'options', 'approve', 'backTo', 'line', 'auto'],
   // show: a .md file the script wrote; after the step passes, the engine shows it to the creative word for word
   // in a turn of its own (F228: Ideate's "the game so far"), then goes on
-  script: ['run', 'writes', 'done', 'show'],
-  flow: ['workflow', 'args', 'agentTools', 'writes', 'craft', 'done'],
+  // loop (F216): the step runs another pipeline once per item its script names, each run a kept side trip (Develop's
+  // feature runs); the step finishes when the script names none
+  script: ['run', 'writes', 'done', 'show', 'loop'],
+  // stuck (F216): a .md file the done-check writes when the step is stuck twice; said before the last try
+  flow: ['workflow', 'args', 'agentTools', 'writes', 'craft', 'done', 'stuck'],
 }
 const DONE_KEYS = {
   'result-has': ['type', 'key'],
@@ -105,7 +108,8 @@ const DONE_KEYS = {
   // A command the engine runs after the step (like the research flow's source check): passes on exit 0.
   'script-ok': ['type', 'run'],
 }
-const BUILT_IN_HOLES = ['project', 'plugin']
+// (F216: {auto} is "auto" in an auto run, else "live": a script that must never answer for the creative needs to know)
+const BUILT_IN_HOLES = ['project', 'plugin', 'auto']
 
 // A path the engine may read, write or delete inside the project (or plugin):
 // relative, forward slashes, no "..", not the engine's own .bmuz folder.
@@ -120,9 +124,10 @@ export function isSafePath(path) {
 }
 
 // A script step's "show" file: inside the project, or (F215 review fix 8) one of the bug pipeline's own lines in
-// .bmuz/bug/, which the engine's scripts write so nothing of a fix run is left in the creative's project.
+// .bmuz/bug/, which the engine's scripts write so nothing of a fix run is left in the creative's project; (F216) and
+// Develop's lines in .bmuz/develop/, written by sprint.mjs.
 export function isShowPath(path) {
-  return isSafePath(path) || /^\.bmuz\/bug\/[a-z0-9-]+\.md$/.test(String(path))
+  return isSafePath(path) || /^\.bmuz\/(bug|develop)\/[a-z0-9-]+\.md$/.test(String(path))
 }
 
 const isList = v => Array.isArray(v) && v.every(x => typeof x === 'string' && x.trim())
@@ -225,6 +230,9 @@ export function checkPipeline(p) {
       else if (s.options[0] === s.approve) problems.push(`${at} (gate): "${s.approve}" can't be the first option; a stray Enter would approve it. Put the safe choice first`)
       if (s.backTo !== undefined && !byId.has(s.backTo)) problems.push(`${at} (gate): "backTo" "${s.backTo}" is not an earlier step`)
     }
+    if (s.kind === 'gate' && s.auto !== undefined && !['stop', 'carry'].includes(s.auto)) problems.push(`${at} (gate): "auto" must be "stop" (an auto run stops at the gate, the default) or "carry" (it notes the question and carries on with the plan as it stands)`)
+    if (s.kind === 'script' && s.loop !== undefined && !(typeof s.loop === 'string' && NAME_RE.test(s.loop))) problems.push(`${at} (script): "loop" must be the name of the pipeline it runs for each item, like "feature"`)
+    if (s.kind === 'flow' && s.stuck !== undefined && !(isShowPath(s.stuck) && s.stuck.endsWith('.md'))) problems.push(`${at} (flow): "stuck" must be a .md file the done-check writes, like .bmuz/develop/say-stuck.md`)
     if (s.show !== undefined && !(isShowPath(s.show) && s.show.endsWith('.md') && !/\{/.test(s.show))) problems.push(`${at}: "show" must be a .md file inside the project with no {holes}, like .planning/research/so-far.md`)
     if (s.when !== undefined && !(typeof s.when === 'string' && /^\{\w+\}$/.test(s.when))) problems.push(`${at}: "when" must be one {hole}: a result of a talk step this step needs, like "{priorArt}"`)
     if (s.kind === 'script' && (!isList(s.run) || s.run.length === 0)) problems.push(`${at} (script) needs "run": the command as a list, like ["node", "{plugin}/scripts/x.mjs"]`)
@@ -528,10 +536,12 @@ export function cardPrompt(path) {
 // The guard pins the Workflow call's name and inputs to these whatever Claude sends.
 // tryNo: 1 for the first try. A retry says so: the same words twice looked like the engine asking again
 // for a run already going, and Claude refused the real retry (live check 2026-11-08).
-export function flowPrompt(step, args, tryNo = 1) {
+// stuck (F216): the script's stuck-twice line, written to the creative word for word before the last try starts.
+export function flowPrompt(step, args, tryNo = 1, stuck = '') {
   return [
     `BMUZ step "${step.id}" — this message comes from the BMUZ engine, not the creative; don't comment on it or offer to stop it.`,
-    ...(tryNo > 1 ? [`This is try ${tryNo} of ${MAX_RETRIES + 1}: the engine itself stopped the last try (it ran too long or failed its check), so no earlier run is still going. Start this fresh one.`] : []),
+    ...(tryNo > 1 ? [`This is try ${tryNo} of ${retriesOf(step) + 1}: the engine itself stopped the last try (it ran too long or failed its check), so no earlier run is still going. Start this fresh one.`] : []),
+    ...(stuck ? [`First write this to the creative, word for word, as its own paragraph:\n\n${stuck}\n`] : []),
     `Call the Workflow tool now with name "${step.workflow}" and args ${JSON.stringify(args)}. Then end your turn; the engine checks the result itself.`,
   ].join('\n')
 }
@@ -1012,6 +1022,8 @@ export function judgeTool(p, state, call, opts = {}) {
   // F215: the creative may step in with a bug at any moment (between steps, at a gate, during a helper's run): the report
   // is a side trip that leaves the step's record as it was (the motor writes it through bugs.mjs).
   if (call.tool === BUG_TOOL && !call.agentId) return { allow: true }
+  // F216: so may a new idea, noted on the roadmap's Ideas (Develop)
+  if (call.tool === IDEA_TOOL && !call.agentId) return { allow: true }
   // step_done only closes an open talk step; called between steps, it has nothing to finish.
   if (call.tool === ENGINE_TOOL && !call.agentId && !(state.status === 'working' && (stepById(p, state.current) || {}).kind === 'talk')) {
     return { allow: false, why: 'BMUZ engine: no talk step is open, so there is nothing to finish. End your turn; the engine starts the next step itself.' }
@@ -1026,6 +1038,11 @@ export function judgeTool(p, state, call, opts = {}) {
   if (opts.dir && ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(call.tool)) {
     const target = (call.input || {}).file_path ?? (call.input || {}).notebook_path
     if (!projectPath(opts.dir, target)) return { allow: false, why: `BMUZ engine: ${call.tool} may only change files inside this project, and not in its .bmuz folder (${String(target ?? '').slice(0, 160)})` }
+  }
+  // F216: a Bash command (Develop's builder helper, Setup) stays inside the project too.
+  if (opts.dir && call.tool === 'Bash') {
+    const why = bashProblem(opts.dir, (call.input || {}).command)
+    if (why) return { allow: false, why: `BMUZ engine: Bash stays inside this project while a pipeline runs, and this command ${why}: ${String((call.input || {}).command ?? '').slice(0, 160)}` }
   }
   const step = stepById(p, state.current)
   if (!step) return { allow: false, why: `BMUZ engine: no current step (state says ${state.current}); run /bmuz-doctor` }
@@ -1601,6 +1618,10 @@ export function stepPlace(p, step) {
 // I'll fix it [after F07]." The report never touches the step it interrupts: its record (results, retries, the lines
 // said, the box it asked) stays as it was, and the step carries on where it was.
 export const BUG_TOOL = 'mcp__bmuz__bug'
+// F216: a new idea mid-loop (Develop's step-in list: "it goes on Ideas for Later and comes back at the milestone where
+// it fits"): noted by the engine's tool, never built now.
+export const IDEA_TOOL = 'mcp__bmuz__idea'
+export const IDEA_RULE = `A new idea (the creative brings something new, not a tweak to what we're building and not a bug): it isn't built now. Note it with ${IDEA_TOOL} {"idea": "their idea in a few words"}, write the line it returns word for word, then carry on exactly where the step was.`
 // The P-levels, from the /bug skill (the script itself names only "P2 — annoying, not blocking").
 export const BUG_LEVELS = 'P0 = a crash, the game can\'t go on, data lost, or the live build broken · P1 = a feature doesn\'t work as designed · P2 = minor, or has a workaround · P3 = cosmetic'
 // The focus rule (the /bug skill): fix now only for these; everything else is logged and fixed in order.
@@ -1676,9 +1697,58 @@ export function isFixNow(report) {
 export function sideProblem(side) {
   if (!side || typeof side !== 'object') return 'it is not an object'
   if (!NAME_RE.test(String(side.pipeline)) || !NAME_RE.test(String(side.from))) return 'its "pipeline" or "from" is not a pipeline name'
-  if (!/^B\d{3,}$/.test(String(side.bug))) return 'its "bug" is not a bug number like B004'
+  // (F216: a feature run of Develop's loop carries its feature, F07, instead of a bug)
+  if (side.feature !== undefined ? !/^F\d+$/.test(String(side.feature)) : !/^B\d{3,}$/.test(String(side.bug))) return side.feature !== undefined ? 'its "feature" is not a feature number like F07' : 'its "bug" is not a bug number like B004'
   if (!['enter', 'on', 'leave'].includes(side.phase)) return 'its "phase" is not enter, on or leave'
   if (!Number.isInteger(side.n) || side.n < 1) return 'its "n" is not a run number'
+  if (side.at !== undefined && side.at !== null && !NAME_RE.test(String(side.at))) return 'its "at" is not a step name'
+  return null
+}
+
+// ---- Loops (F216): a script step with "loop" runs another pipeline once per item, each run a side trip ----
+// What a side trip is about (a bug, or a feature of Develop's loop), its record folder and its list of runs.
+export const sideItem = side => (side && side.feature !== undefined ? side.feature : side && side.bug)
+export const sideRuns = side => (side && side.feature !== undefined ? 'feature-runs' : 'bug-runs')
+export const sideRecord = side => `${sideRuns(side)}/${side.n}-${sideItem(side)}`
+
+// A loop script's answer, its last line of JSON: { start: { feature, at } } (run the loop's pipeline for it) ·
+// { wait: [ids], features: [names] } (nothing an auto run may do now: the rest waits for the creative) · { done: true }.
+// Returns that, or { error } in plain words.
+export function loopAnswer(stdout) {
+  const last = String(stdout || '').trim().split('\n').pop() || ''
+  let j
+  try { j = JSON.parse(last) } catch (err) { return { error: `the loop script didn't answer with one line of JSON: ${last.slice(0, 160)}` } }
+  if (j && j.start && /^F\d+$/.test(String(j.start.feature)) && (j.start.at == null || NAME_RE.test(String(j.start.at)))) return { start: { feature: j.start.feature, at: j.start.at || null } }
+  if (j && Array.isArray(j.wait)) return { wait: j.wait.map(String), features: Array.isArray(j.features) ? j.features.map(String) : j.wait.map(String) }
+  if (j && j.done === true) return { done: true }
+  return { error: `the loop script's answer isn't start, wait or done: ${last.slice(0, 160)}` }
+}
+
+// F216: while a pipeline runs, a Bash command (the builder helper's, or a setup step's) stays inside the project: no
+// path outside it, no "..", nothing in the engine's own .bmuz folder, no push, no home folder. A guard against
+// mistakes, not a sandbox. Returns the reason it's refused, or null.
+export function bashProblem(dir, command) {
+  const c = String(command || '')
+  const root = String(dir || '').replace(/\\/g, '/').replace(/\/+$/, '')
+  if (!c.trim()) return null
+  if (/(^|[\s"'=/])\.\.([\/\\\s"']|$)/.test(c)) return 'it reaches outside the project ("..")'
+  if (/(^|[\s"'=/\\])\.bmuz([\/\\\s"']|$)/i.test(c)) return 'it touches the engine\'s own .bmuz folder'
+  if (/(^|[\s;&|(])(~|\$HOME|%USERPROFILE%|\$env:USERPROFILE)/i.test(c)) return 'it reaches the home folder'
+  if (/\bgit\s+(push|remote|config\s+--global)\b/.test(c)) return 'pushing or changing git\'s remotes and settings is the creative\'s call'
+  // an absolute path must be inside the project (Windows paths compare without case)
+  const win = /^[A-Za-z]:/.test(root)
+  for (const m of c.matchAll(/(?:^|[\s"'=(])((?:[A-Za-z]:)?[\/\\][^\s"';|&)]*)/g)) {
+    const p = m[1].replace(/\\/g, '/')
+    if (p === '/dev/null') continue
+    const a = win ? p.toLowerCase() : p
+    const r = win ? root.toLowerCase() : root
+    // (git-bash writes C:\x as /c/x)
+    const posix = win ? r.replace(/^([a-z]):/, '/$1') : r
+    if (a === r || a.startsWith(r + '/') || a === posix || a.startsWith(posix + '/')) continue
+    // (a flag like /c or a URL path is not a file path)
+    if (/^\/[a-z]$/i.test(p) || /^\/\//.test(p)) continue
+    return `it names a path outside the project (${p.slice(0, 80)})`
+  }
   return null
 }
 

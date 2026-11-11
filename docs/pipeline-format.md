@@ -67,17 +67,20 @@ Every fixed line BMUZ says lives in ONE file, `plugin/script.md` (its head expla
 - `approve` (needed): the option that says yes, word for word. It can't be the first option. Any other answer goes back to `backTo`.
 - An auto run (nobody can answer: `-p`, a background session, or `"auto": true` in bmuz.json) never answers a gate: the run stops there and the question goes into `.bmuz/questions.md`.
 - `backTo`: an earlier step to redo when the creative doesn't approve. That step and the steps needing it are run again.
+- `auto` (F216): `"stop"` (the default: an auto run stops at the gate, as above) or `"carry"`: an auto run notes the question in `.bmuz/questions.md` ("an auto run carried on with the plan as it stands; nothing was approved for you", with the `bmuz undo` that changes it) and carries on with the plan as it is (journaled `gate.carried`). For a gate that would otherwise stop a night's run before anything is built (Develop's "Start with …?" and "Build this sprint?"); never for a gate that approves the creative's work.
 
 **script** — the engine runs a command itself, no Claude involved.
 - `run` (needed): the command as a list, like `["node", "{plugin}/scripts/write-plan.mjs", "{project}", "{name}"]`. It runs in the project folder.
 - A command that exits with an error is a failed try, and what it printed is the reason (the retry, the BLOCK and the band say it). A script that refuses should print why in plain words, like Define's stage: "Not ready for Design: the pillars (step "pillars") is still open…".
 - `show` (F228): a `.md` file inside the project (no `{holes}`) the script wrote. After the step passes, the engine copies it to `.bmuz/last-shown.md` and its own message asks Claude to show it word for word, asking nothing, in a turn of its own; the next step starts when that turn ends. For anything the creative must read before the next question (Ideate's "the game so far", the start's proposal): text written in the same turn as a question box ends up hidden behind the box (live review 2026-11-09). A missing or empty file shows nothing (journaled `show.missing`) and the run goes on.
+- `loop` (F216): the name of a pipeline the step runs once per item, each run a side trip (see "Stepping in"). The step's command answers with one line of JSON: `{"start": {"feature": "F07", "at": null}}` (run the pipeline for it, from its first step or from `at`), `{"wait": [ids], "features": [names]}` (an auto run: nothing more it may do now; the question is noted, the step is put back between steps and the run ends, saying the script's `develop.waiting` line; "bmuz go" asks again) or `{"done": true}` (the step passes, with its done-check). After each run the stage comes back to the same step, which asks again. Develop's `features` step (`sprint.mjs next {auto}`).
 - `done`, `writes`.
 
 **flow** — the engine launches a saved workflow with its inputs pinned (Claude can't change them) and reads its result. Every workflow a pipeline launches must be pre-approved in `plugin/settings/auto-run.json` (`Workflow(<plugin:name>)`), so an overnight run never stops at Claude Code's "run this workflow?" question; the check refuses a pipeline whose workflow isn't listed.
 - `workflow` (needed): `plugin:name`, like `bmuz:hello-flow` → `plugin/workflows/hello-flow.js`.
 - `args`: the workflow's inputs, `{holes}` allowed.
 - `agentTools`: the only tools the workflow's helpers may use.
+- `stuck` (F216): a `.md` file (inside the project, or `.bmuz/develop/`) the step's done-check writes when it has failed twice; before the last try the engine's launch message has Claude write it to the creative word for word (journaled as a `line`, checked at the turn's end). Develop's build: "… isn't working, and two tries haven't fixed it …".
 - `craft`, `done`, `writes`.
 
 ## Wrapping up early (`wrapTo`, `always`)
@@ -134,7 +137,7 @@ The engine checks this again right before it saves or puts back a file, so a han
 
 ## `{holes}`
 Text in `question`, `run`, `args` and a done-check's `path` / `text` / `run` can carry `{holes}`, filled in when the step runs:
-- `{project}`: the project folder; `{plugin}`: the plugin folder.
+- `{project}`: the project folder; `{plugin}`: the plugin folder; `{auto}` (F216): `auto` in an auto run, else `live` (a script that must never answer for the creative needs to know: `sprint.mjs approval {answer} {auto}`).
 - A result from a talk step this step needs, directly or through other steps: `{name}` if an earlier talk step's done-check is `result-has` `name`, or any key in its `results`.
 - In a flow's `args`, a value that is one whole hole (`"{assumptions}"`) gets the result itself, so a list or an object reaches the workflow as a list or an object; holes inside longer text fill as text.
 
