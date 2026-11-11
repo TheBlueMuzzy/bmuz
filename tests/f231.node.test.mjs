@@ -57,3 +57,11 @@ test('F231 fix 3: what the start already took — Ideate never asks for it again
   assert.match(note, /Write ONE short line saying what will be read next/)
   assert.match(note, /the idea itself is missing .* ask ONLY the one-breath question/)
 })
+
+test('F231 fix 4: the engine\'s own tool rows get one plain line; other tools and refusals are left alone', () => {
+  assert.equal(E.toolRowLabel(E.PASTE_TOOL, JSON.stringify(E.PASTE_RETURNED), false), 'BMUZ · asked for your links')
+  assert.equal(E.toolRowLabel(E.ENGINE_TOOL, 'Step name done.', false), 'BMUZ · step recorded')
+  assert.equal(E.toolRowLabel(E.ENGINE_TOOL, 'Not done: the result has no "name".', false), 'BMUZ · step not done yet')
+  assert.equal(E.toolRowLabel(E.ENGINE_TOOL, 'x', true), null)
+  assert.equal(E.toolRowLabel('Bash', 'x', false), null)
+})

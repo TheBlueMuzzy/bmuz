@@ -338,6 +338,30 @@ test('F231: after the start, ask_paste is refused when the start already took th
   expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste ?? null).toBeNull()
 })
 
+test('F231: the engine\'s own tool rows draw as one dim line, never their raw JSON (ctrl+o still shows all)', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  world(on, base({ current: 'name', status: 'working' }))
+  await start($, true)
+  const row = (tool: string, output: unknown, more: Record<string, unknown> = {}) => ({ tool_use_id: 'toolu_1', tool, input: {}, isRunning: false, isErrored: false, isInterrupted: false, output, ...more })
+  const cases: [string, unknown, string][] = [
+    [PASTE, JSON.stringify({ open: true, say: ASK, note: 'Write exactly the "say" text' }), 'BMUZ · asked for your links'],
+    ['mcp__bmuz__step_done', 'Step name done.', 'BMUZ · step recorded'],
+    ['mcp__bmuz__step_done', 'Not done: the result has no "name". Fix it and call mcp__bmuz__step_done again (retry 1 of 2).', 'BMUZ · step not done yet'],
+  ]
+  for (const surface of ['terminal', 'desktop'] as const) {
+    for (const [tool, output, label] of cases) {
+      const ui = await $.ui.mount({ plugin: 'bmuz', surface, component: 'ToolUse', props: row(tool, output) } as any)
+      const texts = (await ui.findAll({ type: 'Text' })).map((t: any) => t.text)
+      expect(texts).toEqual([label])
+      await ui.unmount()
+      const res = await $.ui.mount({ plugin: 'bmuz', surface, component: 'ToolResult', props: { tool_use_id: 'toolu_1', tool, output, isErrored: false } } as any)
+      expect(await res.findAll({ type: 'Text' })).toHaveLength(0)
+      expect(await res.find({ key: 'bmuz-quiet' })).toBeDefined() // the engine's own (empty) drawing, not a skipped hook
+      await res.unmount()
+    }
+  }
+})
+
 test('live look round 5: ask_paste is refused in an auto run', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const { w } = pasteWorld(on)

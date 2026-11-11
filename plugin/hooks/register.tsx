@@ -1282,6 +1282,26 @@ export const register: Register = on => {
     return { text: out.text }
   })
 
+  // F231: the engine's own tool rows (step_done, ask_paste) as one dim line, never their raw JSON. ctrl+o (expanded)
+  // still shows everything; a refusal shows its reason as Claude Code draws it.
+  on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
+    const p: any = (e as any).props || {}
+    const label = E.toolRowLabel(p.tool, p.output, p.isErrored)
+    if (!label || p.isExpanded) return next(e)
+    const { Box, Text } = $.ui.resolve(e)
+    return (
+      <Box>
+        <Text dimColor>{label}</Text>
+      </Box>
+    )
+  })
+  on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
+    const p: any = (e as any).props || {}
+    if (!E.toolRowLabel(p.tool, p.output, p.isErrored) || p.isExpanded) return next(e)
+    const { Box } = $.ui.resolve(e)
+    return <Box key="bmuz-quiet" />
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const b = (await read($, band)) as BmuzBand | null
     if (!b) return next(e)

@@ -867,6 +867,15 @@ export const PASTE_TOOL = 'mcp__bmuz__ask_paste'
 export const PASTE_ASK = 'Share your links — paste them with Alt+V. I can read Google Drive folder and/or doc links, GitHub links, and even folder and file links from your computer. If you don\'t want to share any links, just say "never mind".'
 export const PASTE_RETURNED = { open: true, say: PASTE_ASK, note: 'Write exactly the "say" text as your whole reply — nothing before or after it, no question box — and end your turn. The creative\'s next chat message is the answer.' }
 
+// The engine's own tool rows in the transcript, as one dim line instead of their raw JSON (F231, live look: "bmuz -
+// ask_paste (MCP) { open: true, say: … }"). null = not the engine's tool, or a refusal (its reason is shown as is).
+export function toolRowLabel(tool, output, isErrored) {
+  if (isErrored) return null
+  if (tool === ENGINE_TOOL) return /^\s*"?Not done/.test(typeof output === 'string' ? output : JSON.stringify(output ?? '')) ? 'BMUZ · step not done yet' : 'BMUZ · step recorded'
+  if (tool === PASTE_TOOL) return 'BMUZ · asked for your links'
+  return null
+}
+
 // What the start already took (F231, live run 2026-11-10: Ideate asked for the Drive link the start had): the names of
 // intake.json's sources and of the links and paths it left for Ideate to read ("later"). [] when none.
 export function materialTaken(intake) {
