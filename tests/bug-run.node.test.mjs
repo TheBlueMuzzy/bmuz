@@ -70,14 +70,20 @@ test('the fix run on the bug-garden: refused while the test passes, proven faili
   writeFileSync(join(dir, 'tests/b001-first-row.test.mjs'), REPRO)
   r = bugs(dir, 'repro', 'tests/b001-first-row.test.mjs')
   assert.equal(r.status, 0, r.stdout)
-  const proof = JSON.parse(read(dir, '.planning/bugs/B001.json'))
+  // (review fix 1: the proof and the current-bug pointer live under .bmuz/, where Write / Edit are refused; nothing of
+  // it is in the project's own folders, so a hand-made proof there counts for nothing)
+  assert.ok(!existsSync(join(dir, '.planning/bugs/B001.json')) && !existsSync(join(dir, '.planning/bugs/current.json')))
+  const proof = JSON.parse(read(dir, '.bmuz/bug/B001.json'))
   assert.ok(proof.repro.exitCode !== 0 && proof.repro.sha)
+  assert.equal(JSON.parse(read(dir, '.bmuz/bug/current.json')).id, 'B001')
+  const P0 = { ...E.freshState('bug'), current: 'fix', status: 'working', finished: ['pick'] }
+  assert.equal(E.judgeTool(P, P0, { tool: 'Write', input: { file_path: join(dir, '.bmuz', 'bug', 'B001.json') } }, { dir: dir.replace(/\\/g, '/') }).allow, false)
   assert.equal(bugs(dir, 'say-repro').status, 0)
   assert.equal(read(dir, B.SAY.repro), 'Reproduced: tests/b001-first-row.test.mjs fails, as it should while the bug is there.\n')
   // fix: refused before the fix, refused when the test was changed to pass, passes after the real fix
   assert.match(bugs(dir, 'verify').stdout, /still fails/)
   writeFileSync(join(dir, 'tests/b001-first-row.test.mjs'), REPRO.replace('), 4)', '), 1)'))
-  assert.match(bugs(dir, 'verify').stdout, /changed after it failed\. Fix the code, not the test/)
+  assert.match(bugs(dir, 'verify').stdout, /the test changed after it was shown failing\. Fix the code, not the test/)
   writeFileSync(join(dir, 'tests/b001-first-row.test.mjs'), REPRO)
   writeFileSync(join(dir, 'src/score.js'), read(dir, 'src/score.js').replace('let i = 1', 'let i = 0'))
   r = bugs(dir, 'verify')
@@ -109,7 +115,7 @@ test('the fix run on the bug-garden: refused while the test passes, proven faili
   assert.equal(log[1], 'Fix B001: Final score misses the first row')
   assert.match(log[0], /^Bug B001: fixed in [0-9a-f]{7,}$/)
   const inFix = git(dir, 'show', '--name-only', '--format=', 'HEAD~1').stdout.split('\n').filter(Boolean).sort()
-  assert.deepEqual(inFix, ['.planning/BUGS.md', '.planning/STATE.md', '.planning/bugs/B001.json', 'src/bonus.js', 'src/score.js', 'tests/b001-also-bonus.test.mjs', 'tests/b001-first-row.test.mjs'])
+  assert.deepEqual(inFix, ['.planning/BUGS.md', '.planning/STATE.md', 'src/bonus.js', 'src/score.js', 'tests/b001-also-bonus.test.mjs', 'tests/b001-first-row.test.mjs'])
   assert.equal(git(dir, 'status', '--porcelain', '--', 'src', 'tests').stdout.trim(), '')
   // the closing line, from the script; run again, nothing is added twice
   const done = read(dir, B.SAY.done)

@@ -528,7 +528,7 @@ const scenarios = {
     const bj = rec && existsSync(join(rec, 'journal.jsonl')) ? readFileSync(join(rec, 'journal.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)) : journalOf(dir)
     const starts = [...new Set(bj.filter(j => j.ev === 'step.start').map(j => j.step))]
     check('F215 (bug): the fix run went pick → reproduce → cause → fix → matching → matching fix → record, and finished', JSON.stringify(starts) === JSON.stringify(['pick', 'reproduce', 'repro-show', 'cause', 'fix', 'matching', 'matching-fix', 'record']) && bj.some(j => j.ev === 'pipeline.done'), trailOf(bj))
-    const proof = JSON.parse(read('.planning/bugs/B001.json') || '{}')
+    const proof = JSON.parse(read('.bmuz/bug/B001.json') || '{}')
     const reproRan = bj.filter(j => j.ev === 'check.ran' && j.step === 'reproduce').pop()
     const fixRan = bj.filter(j => j.ev === 'check.ran' && j.step === 'fix').pop()
     check('F215 (bug): the test failed first (a script ran it and recorded the failing exit) and passes after, unchanged', !!proof.repro && proof.repro.exitCode !== 0 && !!reproRan && reproRan.exitCode === 0 && !!fixRan && fixRan.exitCode === 0 && !!proof.verify && existsSync(join(dir, proof.repro.test)), JSON.stringify({ repro: proof.repro && { ...proof.repro, out: undefined }, reproRan, fixRan }))

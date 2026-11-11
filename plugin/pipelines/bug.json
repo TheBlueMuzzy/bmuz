@@ -16,7 +16,7 @@
       ],
       "writes": [
         ".planning/BUGS.md",
-        ".planning/bugs/current.json",
+        
         ".planning/bugs/say-start.md"
       ],
       "show": ".planning/bugs/say-start.md"

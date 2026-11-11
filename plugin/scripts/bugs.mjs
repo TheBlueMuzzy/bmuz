@@ -316,14 +316,17 @@ export function commitFiles(dir, files, message) {
 // refused if it passes) → the root cause written down → the fix → the same test passing, unchanged, with the suite and
 // check:fast green → the same mistake looked for in matching places (each one fixed with its own test, proven failing
 // first, or logged as a new bug) → BUGS.md fixed + "Guarded by:", a "Don't re-break" line, committed "Fix B###: …".
-// The proof lives in .planning/bugs/<B###>.json; the lines BMUZ says come from the script, composed here and shown.
+// The proof (each test's fingerprint and run results) and the current-bug pointer live in .bmuz/bug/, written only by
+// these scripts: Claude's Write / Edit are refused in .bmuz/ (review fix 1: a proof Claude could edit could be faked).
+// The lines BMUZ says come from the script, composed here and shown.
 export const FIX_RUN = ['pick', 'repro', 'say-repro', 'verify', 'hits-fail', 'hits-pass', 'record']
-export const CURRENT = '.planning/bugs/current.json'
+export const BUG_DIR = '.bmuz/bug'
+export const CURRENT = `${BUG_DIR}/current.json`
 export const STATE_MD = '.planning/STATE.md'
 export const SAY = { start: '.planning/bugs/say-start.md', repro: '.planning/bugs/say-repro.md', done: '.planning/bugs/say-done.md' }
 const here = dirname(fileURLToPath(import.meta.url))
 export const loadScript = () => E.parseScript(readFileSync(join(here, '..', 'script.md'), 'utf8'))
-const proofPath = id => `.planning/bugs/${id}.json`
+const proofPath = id => `${BUG_DIR}/${id}.json`
 const sha = text => createHash('sha1').update(String(text)).digest('hex').slice(0, 12)
 const readJsonIn = (dir, rel) => { try { return JSON.parse(readIn(dir, rel) || 'null') } catch (e) { return null } }
 
@@ -420,9 +423,10 @@ export function sayRepro(dir) {
   writeIn(dir, SAY.repro, line('bug.fix.reproduced', { test: proof.repro.test }) + '\n')
 }
 
-// One proven test, checked again: unchanged since it failed, passing now.
+// One proven test, checked again: its fingerprint worked out from the file on disk now, against the one recorded when it
+// was shown failing (in .bmuz/bug/, out of Claude's reach); then passing now.
 function passesNow(dir, t) {
-  if (sha(readIn(dir, t.test) ?? '') !== t.sha) return `${t.test} changed after it failed. Fix the code, not the test: put the test back as it was when it failed`
+  if (!t || !t.sha || sha(readIn(dir, t.test) ?? '') !== t.sha) return `${t && t.test}: the test changed after it was shown failing. Fix the code, not the test: put the test back as it was when it failed`
   const ran = runIn(dir, testCommand(dir, t.test))
   return ran.exitCode === 0 ? null : `${t.test} still fails (${ran.cmd}): ${ran.out.slice(-400)}`
 }
@@ -551,7 +555,7 @@ export function record(dir, now = new Date()) {
   // the commit: the tests, the fixed files, BUGS.md, STATE.md and the proof, nothing else
   const changed = [...new Set([...(r.fix && Array.isArray(r.fix.files) ? r.fix.files : []), ...(r['matching-fix'] && Array.isArray(r['matching-fix'].alsoFiles) ? r['matching-fix'].alsoFiles : [])].map(f => String(f).replace(/\\/g, '/')))]
   const message = `Fix ${c.id}: ${c.title}`
-  const files = [proof.repro.test, ...fixedHits.map(h => h.test), ...changed, BUGS, STATE_MD, proofPath(c.id)]
+  const files = [proof.repro.test, ...fixedHits.map(h => h.test), ...changed, BUGS, STATE_MD]
   const done = commitFiles(dir, files, message)
   let commit = null
   if (done.hash) {
