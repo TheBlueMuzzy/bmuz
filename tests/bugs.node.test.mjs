@@ -96,3 +96,8 @@ test('the project page gets a Bugs tab when .planning/BUGS.md exists', () => {
   assert.match(page, /B001 · P2 · open/)
   assert.ok(!/bmuz bug:b001/.test(page), 'the marks are not on the page')
 })
+
+test('review fix 6: a sweep\'s list is the open P0–P2 bugs as they are now, in fix order (P3 and closed ones left out)', () => {
+  const hand = '# X — Bugs\nOpen: 3\n## Open\n### B003 · P2 · open · found 2026-10-01\nA\n### B004 · P1 · fixing · found 2026-10-02\nB\n### B005 · P3 · open · found 2026-10-02\nC\n## Fixed (newest first)\n### B001 · P0 · fixed 2026-10-01\nD\n'
+  assert.deepEqual(B.openForSweep(hand), ['B004', 'B003'])
+})

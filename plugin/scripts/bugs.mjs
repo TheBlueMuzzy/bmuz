@@ -249,6 +249,12 @@ export function noteBug(text, id, notes, by = {}) {
 }
 
 // The bug a fix run takes: the one named (if it is still open), else the first open by level P0 → P3, then number.
+// A sweep's list (review fix 6): the open P0–P2 bugs as they are now, in the order a fix run takes them.
+export function openForSweep(text) {
+  return readEntries(text).filter(e => !CLOSED.includes(e.status) && e.status !== "can't reproduce" && ['P0', 'P1', 'P2'].includes(e.level))
+    .sort((a, b) => a.level.localeCompare(b.level) || Number(a.id.slice(1)) - Number(b.id.slice(1))).map(e => e.id)
+}
+
 export function pickBug(text, id = null) {
   const open = readEntries(text).filter(e => !CLOSED.includes(e.status) && e.status !== "can't reproduce")
   if (id) {
@@ -675,6 +681,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
       writeIn(dir, BUGS, text)
       refreshPage(dir)
       say({ ok: true, id: a, status: b, bug: bugWords(text, a) })
+    } else if (cmd === 'open') {
+      say({ ok: true, ids: openForSweep(readIn(dir, BUGS) || '') })
     } else if (cmd === 'list') {
       say(listText(readIn(dir, BUGS) || newBugs()))
     } else if (FIX_RUN.includes(cmd)) {

@@ -1772,3 +1772,48 @@ for (let at = 1; at <= 24; at++) {
     expect(w.files['/proj/.bmuz/bug-runs/1-B004/last-card.md']).toBe('THE FIX RUN CARD\n')
   })
 }
+
+// Review fix 6: an auto run can't loop on step-ins; a sweep takes only the bugs open when it started.
+test('F215 review fix 6: in an auto run, a step this session started gets at most 2 step-in turns for free; the third counts as a failed try', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = bugWorld(on, { current: null, status: 'idle', finished: [] })
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't0')
+  for (let i = 1; i <= 3; i++) {
+    await $.tool.call(REPORT as any)
+    await $.turn.complete({ answer: LOGGED, durationMs: 1, isAborted: false, turnId: `t${i}`, reason: 'answer' } as any)
+  }
+  const js = events(w)
+  expect(js.filter((j: any) => j.ev === 'stepin.back').length).toBe(2)
+  expect(js.filter((j: any) => j.ev === 'retry' && j.step === 'name').length).toBe(1)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).retries).toEqual({ name: 1 })
+})
+
+test('F215 review fix 6: "bmuz bug sweep" fixes the open P0–P2 bugs it started with, one after the other, and never one logged after it began', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, base({ current: 'name', status: 'working' }), (argv: string[]) => {
+    if (!/bugs[.]mjs$/.test(String(argv[1] ?? ''))) return { exitCode: 0, stdout: '{}' }
+    const one = (id: string) => ({ exitCode: 0, stdout: JSON.stringify({ ok: true, id, level: 'P2', bug: `${id} · x · P2 — annoying, not blocking` }) })
+    if (argv[2] === 'open') return { exitCode: 0, stdout: JSON.stringify({ ok: true, ids: ['B004', 'B005'] }) }
+    // (a bug logged during the sweep, B006, comes first by number for "next" without an id: it must never be taken)
+    if (argv[2] === 'next') return one(argv[3] || 'B006')
+    return { exitCode: 0, stdout: '{"ok":true}' }
+  })
+  w.files['PIPELINE:bug'] = JSON.stringify(BUG_PIPE)
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz bug sweep' } as any)
+  await turn($, 't1')
+  for (let i = 2; i <= 6; i++) {
+    const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+    if (st.pipeline !== 'bug') break
+    await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { files: [] } } as any)
+    await turn($, `t${i}`)
+  }
+  const runs = JSON.parse(w.files['/proj/.bmuz/bug-runs.json'])
+  expect(runs.map((r: any) => r.bug)).toEqual(['B004', 'B005'])
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'hello', current: 'name' })
+})
