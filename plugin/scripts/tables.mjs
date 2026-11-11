@@ -319,10 +319,14 @@ export function push(dir, id, { force = false, sheets = sheetsRunner() } = {}) {
     const w = sheets.write(x.entry.sheet.id, x.entry.sheet.account, data)
     if (!w.ok) return { ok: false, say: `✘ couldn't write the Sheet: ${w.why}` }
   }
+  // The Sheet's side is recorded as the Sheet now holds it (kept formula cells, rows only it has), read back; recorded
+  // from the JSON, status said "the Sheet changed" right after a push and the next push was refused (F227 review).
+  const back = sheets.read(x.entry.sheet.id, x.entry.sheet.tab, x.entry.sheet.account)
+  const backT = back.ok ? fromSheet(x.table, back.values) : null
   const sync = readSync(dir)
-  sync.tables[id].sheet = { ...x.entry.sheet, ...synced(x.table, x.table) }
+  sync.tables[id].sheet = { ...x.entry.sheet, ...synced(x.table, backT && backT.ok ? backT.table : x.table) }
   writeJson(dir, SYNC, sync)
-  return { ok: true, say: `✔ ${x.table.name} pushed to the Sheet: ${data.length} cells written (values only; formulas and other columns left alone)${formulaKept.length ? `. Not written, the Sheet works these out with a formula: ${formulaKept.join(', ')} (pull to take the Sheet's values)` : ''}`, cells: data, formulaKept }
+  return { ok: true, say: `✔ ${x.table.name} pushed to the Sheet: ${data.length} cells written (values only; formulas and other columns left alone)${formulaKept.length ? `. Not written, the Sheet works these out with a formula: ${formulaKept.join(', ')} (pull to take the Sheet's values)` : ''}${backT && backT.ok ? '' : '. (The Sheet couldn\'t be read back, so status may say it changed)'}`, cells: data, formulaKept }
 }
 
 export function status(dir, sheets = sheetsRunner()) {

@@ -153,3 +153,15 @@ test('F227 review A3: a row they added by hand keeps their values when BMUZ late
   const m = T.merge(cur, last, next)
   assert.deepEqual(m.table.rows, [{ Name: 'Rose', Cost: 3 }, { Name: 'Daisy', Cost: 7 }])
 })
+
+test('F227 review A5: after a push the Sheet\'s fingerprint is what the Sheet holds (a kept formula cell, a row only the Sheet has), so status says in sync and the next push isn\'t refused', () => {
+  const { dir, sheets, editWorld } = setup()
+  editWorld(t => { t.values.push(['Fern', 1, 1, 2, '']) })
+  T.link(dir, 'seed-cards', SHEET, '', sheets)
+  editJson(dir, t => { t.rows[0].Value = 99; t.rows[0].Quantity = 8 })
+  assert.equal(T.push(dir, 'seed-cards', { sheets }).ok, true)
+  assert.deepEqual(T.status(dir, sheets).pop(), 'Seed cards: linked to "Seed cards" · in sync')
+  editJson(dir, t => { t.rows[1].Quantity = 5 })
+  const again = T.push(dir, 'seed-cards', { sheets })
+  assert.equal(again.ok, true, again.say)
+})
