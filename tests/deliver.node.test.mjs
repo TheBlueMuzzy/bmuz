@@ -1,44 +1,38 @@
 // F219 tasks 2–4: deliver.mjs — Deliver on the plan files and the release scripts, without Claude, on the garden race
 // at Develop's end (tests/fixtures/garden-developed: v0.1's musts approved, a dev/vertical-slice branch, a tiny game).
-// Every push goes to a bare repository in a temp folder and every "live" page to the stand-in host on 127.0.0.1
-// (tests/fixtures/fake-host.mjs): nothing here reaches anything real, and the tests check that.
-import { test, after } from 'node:test'
+// Every push goes to a bare repository in a temp folder and every deploy into a folder beside the project: nothing here
+// reaches anything real, and the tests check that. The release scripts are the stand-ins in tests/fixtures/fake-release
+// (review fix 7: they always run, on any machine; each logs its call); headless deliver-garden runs the real ones.
+import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { spawn, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import * as E from '../plugin/hooks/engine.js'
 import * as D from '../plugin/scripts/deliver.mjs'
 import * as S from '../plugin/scripts/sprint.mjs'
 import * as B from '../plugin/scripts/bugs.mjs'
-import { toolsDir } from '../plugin/scripts/release-tools.mjs'
 import { setupDevelopedGarden } from './fixtures/garden-developed-setup.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const script = E.parseScript(readFileSync(join(here, '..', 'plugin', 'script.md'), 'utf8'))
 const NOW = new Date('2026-11-11T18:05:00')
-// The release scripts live in ~/.claude/config/bmuz (the BMUZ config); without them the tests that run them are skipped.
-const noTools = !existsSync(join(toolsDir(), 'release.mjs')) && 'the release scripts (~/.claude/config/bmuz/scripts) are not on this machine'
-process.env.BMUZ_CLEANUP = join(here, 'fixtures', 'noop-cleanup.sh')
-process.env.BMUZ_LIVE_TRIES = '2'
-process.env.BMUZ_POLL_MS = '300'
-
-const hosts = []
-after(() => { for (const h of hosts) h.kill() })
-// The stand-in host on a free port; resolves once it listens.
-function fakeHost(folder) {
-  const port = 41000 + Math.floor(Math.random() * 2000)
-  const child = spawn(process.execPath, [join(here, 'fixtures', 'fake-host.mjs'), folder, String(port)], { stdio: ['ignore', 'pipe', 'inherit'] })
-  hosts.push(child)
-  return new Promise(res => child.stdout.on('data', d => { if (/listening/.test(String(d))) res(port) }))
+process.env.BMUZ_RELEASE_TOOLS = join(here, 'fixtures', 'fake-release', 'scripts')
+// The stand-ins' calls, one line each ("release milestone …"), for the tests that count them.
+const calls = dir => (existsSync(`${dir}-release.log`) ? readFileSync(`${dir}-release.log`, 'utf8').split('\n').filter(Boolean) : [])
+// A stand-in told to fail (or die after its tag) for the length of fn: FAKE_LIVE_CHECK=fail, FAKE_RELEASE=die-after-tag.
+function withFake(set, fn) {
+  const was = Object.fromEntries(Object.keys(set).map(k => [k, process.env[k]]))
+  Object.assign(process.env, set)
+  try { return fn() } finally { for (const [k, v] of Object.entries(was)) { if (v === undefined) delete process.env[k]; else process.env[k] = v } }
 }
-const stopHosts = () => { for (const h of hosts) h.kill() }
 function garden({ port = 1 } = {}) {
   const dir = join(mkdtempSync(join(tmpdir(), 'bmuz-deliver-')), 'garden')
   setupDevelopedGarden(dir, { port })
   mkdirSync(join(dir, '.bmuz'), { recursive: true })
+  process.env.BMUZ_FAKE_RELEASE_LOG = `${dir}-release.log`
   return dir
 }
 const read = (dir, f) => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
@@ -56,7 +50,7 @@ test('prep: the milestone Develop marked ready, as a Playable build; the first t
   assert.deepEqual([D.stageOf('alpha').kind, D.stageOf('beta').rank, D.stageOf('1.0').kind, D.stageOf('').key], ['stage', 2, 'major', 'playable'])
 })
 
-test('5.1 the Release Check: musts · blocking bugs · every check, each ✓; ready', { skip: noTools }, async () => {
+test('5.1 the Release Check: musts · blocking bugs · every check, each ✓; ready', async () => {
   const dir = garden()
   D.prep(dir, NOW)
   const rec = await D.check(dir, script)
@@ -64,7 +58,7 @@ test('5.1 the Release Check: musts · blocking bugs · every check, each ✓; re
   assert.equal(read(dir, D.SAY.check), '**Release Check** · Playable\n✓ every must for this stage is done (3 of 3)\n✓ no blocking bugs\n✓ every check passes\n')
 })
 
-test('5.1 not ready: an open must and a P0 bug are named in the script\'s "Not ready yet…" line; a P2 doesn\'t block a Playable build', { skip: noTools }, async () => {
+test('5.1 not ready: an open must and a P0 bug are named in the script\'s "Not ready yet…" line; a P2 doesn\'t block a Playable build', async () => {
   const dir = garden()
   writeFileSync(join(dir, S.ROADMAP), read(dir, S.ROADMAP).replace('- ✅ F03 🎮 Weather cards', '- 🎛️ F03 🎮 Weather cards'))
   B.addIn(dir, { title: 'Hail freezes the game', level: 'P0', steps: ['play hail'], expected: 'the turn passes', actual: 'it freezes' })
@@ -82,7 +76,7 @@ test('5.1 not ready: an open must and a P0 bug are named in the script\'s "Not r
   assert.match(D.choiceProblem(dir, 'maybe', 'live'), /must be "finish"/)
 })
 
-test('"move it to the next stage": the must moves to Alpha with its tag and its graph node, the roadmap says so; a bug left still sends it back', { skip: noTools }, async () => {
+test('"move it to the next stage": the must moves to Alpha with its tag and its graph node, the roadmap says so; a bug left still sends it back', async () => {
   const dir = garden()
   writeFileSync(join(dir, S.ROADMAP), read(dir, S.ROADMAP).replace('- ✅ F03 🎮 Weather cards', '- 🎛️ F03 🎮 Weather cards'))
   // (committed: a roadmap with the creative's unsaved changes is theirs to commit, and BMUZ leaves it uncommitted)
@@ -103,7 +97,7 @@ test('"move it to the next stage": the must moves to Alpha with its tag and its 
   assert.match(git(dir, ['log', '-1', '--format=%s']), /^Plan: F03 moved to the next stage$/)
 })
 
-test('"finish it first": back to Develop with the milestone current again, the script\'s added line', { skip: noTools }, async () => {
+test('"finish it first": back to Develop with the milestone current again, the script\'s added line', async () => {
   const dir = garden()
   B.addIn(dir, { title: 'Hail freezes the game', level: 'P0' })
   D.prep(dir, NOW)
@@ -117,7 +111,7 @@ test('"finish it first": back to Develop with the milestone current again, the s
   assert.equal(D.readRecord(dir).go, false)
 })
 
-test('5.2 Polish & Stand-ins: the placeholders by name (release-check.mjs finds them); "None" ships, a pick goes on the roadmap and back to Develop', { skip: noTools }, async () => {
+test('5.2 Polish & Stand-ins: the placeholders by name (release-check.mjs finds them); "None" ships, a pick goes on the roadmap and back to Develop', async () => {
   const dir = garden()
   D.prep(dir, NOW)
   await D.check(dir, script)
@@ -132,7 +126,7 @@ test('5.2 Polish & Stand-ins: the placeholders by name (release-check.mjs finds 
   assert.throws(() => D.polish(dir, ['the music'], script, NOW), /isn't one of the placeholders/)
 })
 
-test('5.3 Safety & Legal: no keys, every asset licensed, Beta and 1.0 named; a key or an unlicensed file refuses', { skip: noTools }, async () => {
+test('5.3 Safety & Legal: no keys, every asset licensed, Beta and 1.0 named; a key or an unlicensed file refuses', async () => {
   const dir = garden()
   D.prep(dir, NOW)
   assert.deepEqual(await D.safety(dir, script), [])
@@ -147,7 +141,7 @@ test('5.3 Safety & Legal: no keys, every asset licensed, Beta and 1.0 named; a k
   assert.match(read(dir, D.SAY.safety), /✗ passwords or keys in the build: an API secret key in src\/keys\.js\n✗ not licensed for this use yet: public\/title\.png/)
 })
 
-test('5.4 the build card: built, a link for you (the build on this machine) and one to share (STATE\'s Live link)', { skip: noTools }, () => {
+test('5.4 the build card: built, a link for you (the build on this machine) and one to share (STATE\'s Live link)', () => {
   const dir = garden({ port: 4321 })
   D.prep(dir, NOW)
   const b = D.build(dir, script)
@@ -157,7 +151,7 @@ test('5.4 the build card: built, a link for you (the build on this machine) and 
   assert.match(read(dir, D.SAY.build), /^\*\*Build & Share\*\*\nThe playable build is ready and tested on desktop:\n· For you: file:\/\/\/.+\n· To share: http:\/\/127\.0\.0\.1:4321\/garden-race\/\n$/)
 })
 
-test('"Share it" only with the creative\'s own answer after this build: none, "Not yet", or an earlier one refuses, changing nothing', { skip: noTools }, () => {
+test('"Share it" only with the creative\'s own answer after this build: none, "Not yet", or an earlier one refuses, changing nothing', () => {
   const dir = garden()
   D.prep(dir, NOW)
   journal(dir, [{ ev: 'gate.answer', step: 'share', answer: 'Share it' }, { ev: 'step.done', step: 'build' }])
@@ -184,23 +178,31 @@ test('"Not yet": what\'s missing goes on the roadmap in the creative\'s words, t
   assert.equal(read(dir, D.SAY.back), "Back to Develop to add what's missing: A title screen. Friends need to know what the game is.\n")
 })
 
-test('5.4 "Share it": merged, versioned v0.1.0 and tagged, smoke pass, pushed to the local origin only, deployed to the stand-in host, the live check passes', { skip: noTools, timeout: 600000 }, async () => {
-  const pre = garden()
-  const port = await fakeHost(`${pre}-host`)
-  const dir = pre
-  writeFileSync(join(dir, '.planning', 'STATE.md'), read(dir, '.planning/STATE.md').replace('127.0.0.1:1/', `127.0.0.1:${port}/`))
-  spawnSync('git', ['commit', '-qam', 'the host\'s port'], { cwd: dir })
+// "Share it" for this run: the build step done, then the creative's own answer, journaled.
+function shareSaid(dir) {
   D.prep(dir, NOW)
   D.build(dir, script)
   journal(dir, [{ ev: 'step.done', step: 'build' }, { ev: 'gate.answer', step: 'share', answer: 'Share it' }])
+}
+// (BMUZ_TEST: a push may only go to a folder on this machine; today's real date, as release.mjs checks it)
+const publishTest = dir => withFake({ BMUZ_TEST: '1' }, () => D.publish(dir, script))
+// The garden after a first release (v0.1.0), with a second slice approved on dev/second-slice, ready to deliver.
+function secondSlice(dir) {
+  writeFileSync(join(dir, S.ROADMAP), read(dir, S.ROADMAP).replace(/^## v0\.2 — Alpha {2}← current {2}\(→ alpha\)$/m, '## v0.2 — Second slice  (→ playable)  ✅ ready to deliver 2026-11-11').replace('- 🟢 F04 🎮 Computer opponent — play alone against the computer — must:alpha', '- ✅ F04 🎮 Computer opponent — play alone against the computer — must:playable'))
+  spawnSync('git', ['commit', '-qam', 'Plan: the second slice is approved'], { cwd: dir })
+  spawnSync('git', ['checkout', '-q', '-b', 'dev/second-slice'], { cwd: dir })
+  appendFileSync(join(dir, 'src', 'garden.js'), '// F04: the computer opponent\n')
+  spawnSync('git', ['commit', '-qam', 'F04: done — Computer opponent'], { cwd: dir })
+}
+
+test('5.4 "Share it": merged, versioned v0.1.0 and tagged, smoke pass, pushed to the local origin only, deployed, the live check passes', () => {
+  const dir = garden({ port: 4321 })
+  shareSaid(dir)
   // (the engine's bmuz.json, never committed yet: hidden from git while the release scripts run, like .bmuz/)
   writeFileSync(join(dir, 'bmuz.json'), '{ "pipeline": "deliver" }\n')
-  const was = process.env.BMUZ_TEST
-  process.env.BMUZ_TEST = '1'
-  let r
-  // (today's real date: release.mjs checks the Log line and the milestone heading are dated today)
-  try { r = D.publish(dir, script) } finally { process.env.BMUZ_TEST = was }
-  assert.deepEqual(r, { tag: 'v0.1.0', link: `http://127.0.0.1:${port}/garden-race/` })
+  const r = publishTest(dir)
+  assert.deepEqual(r, { tag: 'v0.1.0', link: 'http://127.0.0.1:4321/garden-race/' })
+  assert.deepEqual(calls(dir).map(c => c.split(' ')[0]), ['merge', 'release', 'smoke-pass', 'live-check'])
   assert.equal(git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']), 'main')
   assert.equal(JSON.parse(read(dir, 'version.json')).version, '0.1.0')
   const origin = `${dir}-origin.git`
@@ -208,32 +210,27 @@ test('5.4 "Share it": merged, versioned v0.1.0 and tagged, smoke pass, pushed to
   assert.equal(git(origin, ['rev-parse', 'main']), git(dir, ['rev-parse', 'main']), 'main is pushed to the local origin')
   assert.equal(git(dir, ['remote', 'get-url', 'origin']), origin, 'the only remote is the folder on this machine')
   assert.match(read(`${dir}-host`, 'garden-race/index.html'), /version 0\.1\.0/)
-  assert.match(read(dir, '.planning/live-pass'), /v0\.1\.0 http:\/\/127\.0\.0\.1/)
   assert.match(read(dir, S.ROADMAP), /^## v0\.1 — Vertical slice {2}\(→ playable\) {2}✅ released \d{4}-\d\d-\d\d \(v0\.1\.0\)$/m)
   assert.match(read(dir, S.ROADMAP), /^Release target: alpha/m)
   assert.match(read(dir, '.planning/archive/releases/v0.1.0.md'), /^# v0\.1\.0\n\n## Highlights\nVertical slice: one full game for two on one phone\.\n\n## New\n- Turn engine: draw a card/)
-  assert.match(git(dir, ['log', '--format=%s']), /^Live check for v0\.1\.0\n(Smoke pass for v0\.1\.0\n)?Release v0\.1\.0: Vertical slice: the playable build\nMerge dev\/vertical-slice into main/)
-  assert.equal(read(dir, D.SAY.live), `It's live: http://127.0.0.1:${port}/garden-race/ (version 0.1.0).\n`)
+  assert.match(git(dir, ['log', '--format=%s']), /^Live check for v0\.1\.0\nSmoke pass for v0\.1\.0\nRelease v0\.1\.0: Vertical slice: the playable build\nMerge dev\/vertical-slice into main/)
+  assert.equal(read(dir, D.SAY.live), "It's live: http://127.0.0.1:4321/garden-race/ (version 0.1.0).\n")
   // a try after this one carries on where it stopped: nothing is done twice
-  assert.deepEqual(D.publish(dir, script), r)
+  assert.deepEqual(publishTest(dir), r)
+  assert.equal(calls(dir).length, 4)
   assert.ok(!/\.bmuz/.test(read(dir, '.git/info/exclude') || ''), 'the engine\'s record is hidden from git only while the release scripts run')
+})
 
-  // The next build's live check fails (the host is down): the last good version (v0.1.0) is put back by rollback.mjs as
-  // a new commit, pushed and deployed again, and the step says so.
-  writeFileSync(join(dir, S.ROADMAP), read(dir, S.ROADMAP).replace(/^## v0\.2 — Alpha {2}← current {2}\(→ alpha\)$/m, '## v0.2 — Second slice  (→ playable)  ✅ ready to deliver 2026-11-11').replace('- 🟢 F04 🎮 Computer opponent — play alone against the computer — must:alpha', '- ✅ F04 🎮 Computer opponent — play alone against the computer — must:playable'))
-  spawnSync('git', ['commit', '-qam', 'Plan: the second slice is approved'], { cwd: dir })
-  spawnSync('git', ['checkout', '-q', '-b', 'dev/second-slice'], { cwd: dir })
-  appendFileSync(join(dir, 'src', 'garden.js'), '// F04: the computer opponent\n')
-  spawnSync('git', ['commit', '-qam', 'F04: done — Computer opponent'], { cwd: dir })
-  stopHosts()
-  D.prep(dir, NOW)
-  D.build(dir, script)
-  journal(dir, [{ ev: 'step.done', step: 'build' }, { ev: 'gate.answer', step: 'share', answer: 'Share it' }])
-  process.env.BMUZ_TEST = '1'
-  try { assert.throws(() => D.publish(dir, script), /the live check failed for v0\.2\.0: .*Put back v0\.1\.0, the last good version, and sent it live again\./s) } finally { process.env.BMUZ_TEST = was }
+test('a failed live check puts the last good version back (rollback.mjs), pushed and deployed again, and the step says so', () => {
+  const dir = garden()
+  shareSaid(dir)
+  publishTest(dir)
+  secondSlice(dir)
+  shareSaid(dir)
+  withFake({ FAKE_LIVE_CHECK: 'fail' }, () => assert.throws(() => publishTest(dir), /the live check failed for v0\.2\.0: .*Put back v0\.1\.0, the last good version, and sent it live again\./s))
   assert.match(git(dir, ['log', '-1', '--format=%s']), /^Rollback to v0\.1\.0: undo v0\.2\.0/)
   assert.equal(git(dir, ['diff', 'v0.1.0', 'HEAD', '--', 'src']), '', 'the code is v0.1.0\'s again')
-  assert.equal(git(origin, ['rev-parse', 'main']), git(dir, ['rev-parse', 'main']), 'the rollback is pushed (to the local origin)')
+  assert.equal(git(`${dir}-origin.git`, ['rev-parse', 'main']), git(dir, ['rev-parse', 'main']), 'the rollback is pushed (to the local origin)')
   assert.equal(D.readRecord(dir).publish.rolledBack, 'v0.1.0')
 })
 
