@@ -139,7 +139,8 @@ export function chapterText(v) {
 // Returns { text, changed, kept } (kept = the creative's own edit inside the marks was kept).
 export function writeChapter(text, n, body, level, by = {}) {
   let doc = nl(text)
-  if (!readGdd(doc)[n]) doc = newGdd() // (a file that isn't a GDD yet: callers pass a real one)
+  if (!doc.trim()) doc = newGdd() // (an empty file: callers pass a real one)
+  if (!readGdd(doc)[n]) doc = addChapter(doc, n) // (F232 review: a missing chapter goes back in its place; the rest is kept)
   const ch = readGdd(doc)[n]
   const lines = doc.split('\n')
   const want = chapterText(body)
@@ -173,6 +174,36 @@ export function writeChapter(text, n, body, level, by = {}) {
     changed = changed || goal > have
   }
   return { text: lines.join('\n'), changed, kept }
+}
+
+// Puts back a chapter whose heading is missing, empty, in chapter order: after the chapter before it in its part,
+// else before the chapter after it in its part, else under its part's heading, else before the running lists.
+// Everything else in the file stays as it is.
+function addChapter(doc, n) {
+  const lines = doc.split('\n')
+  const [, name, holds, part] = CHAPTERS.find(c => c[0] === n)
+  const have = readGdd(doc)
+  const sameP = CHAPTERS.filter(c => c[3] === part && have[c[0]]).map(c => c[0])
+  const before = sameP.filter(m => m < n).pop()
+  const after = sameP.find(m => m > n)
+  let at
+  if (before) {
+    at = have[before].at.head + 1
+    while (at < lines.length && !/^#{2,3}\s/.test(lines[at])) at++
+  } else if (after) {
+    at = have[after].at.head
+  } else {
+    const p = lines.findIndex(l => l.trim() === `## ${PARTS.find(x => x[0] === part)[1]}`)
+    if (p >= 0) at = p + 1 < lines.length && lines[p + 1].trim() === '' ? p + 2 : p + 1
+    else {
+      at = lines.findIndex(l => LISTS.concat(CHANGES).some(x => l.trim() === `## ${x}`))
+      if (at < 0) at = lines.length
+    }
+  }
+  const add = [`### ${n} · ${name}`, `*${holds}*`, '', 'Level: empty', block(n, NOTHING), '']
+  if (at > 0 && lines[at - 1].trim() !== '') add.unshift('')
+  lines.splice(at, 0, ...add)
+  return lines.join('\n')
 }
 
 // Adds items to a running list (never twice: same words). Sketches are numbered on: S01, S02…
