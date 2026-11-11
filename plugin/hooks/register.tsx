@@ -910,7 +910,7 @@ export const register: Register = on => {
       const cur = E.stepById(ctx.pipeline, ctx.state.current)
       if (cur && cur.kind === 'talk' && ctx.state.status === 'working') {
         // An option standing in for typing ("I'll paste the link") never gets through (live look 2026-11-10).
-        const fake = E.fakeTypeOptionProblem((e as any).questions)
+        const fake = E.optionCountProblem((e as any).questions) || E.fakeTypeOptionProblem((e as any).questions)
         if (fake) {
           await journal($, { ev: 'deviation', step: cur.id, tool: 'AskUserQuestion', agentId: null, why: fake })
           return { deny: fake }
@@ -930,8 +930,14 @@ export const register: Register = on => {
       if (!res?.deny && !res?.isError) { nudges = { key: '', n: 0 }; quietWait = '' }
       if ((res?.deny || res?.isError) && E.isPersonDeclining(res)) quietWait = 'declined'
       if ((res?.deny || res?.isError) && !E.isPersonDeclining(res)) {
-        ctx.auto = true
-        await journal($, { ev: 'auto.detected', why: 'the question tool was refused: nobody can answer in this session' })
+        // F231: only "the tool can't be used here" means nobody can answer; a shape refusal (too few options) or any
+        // other refusal is a failed ask, handed back to Claude as it is (it reads why and asks again).
+        if (E.isNobodyToAsk(res)) {
+          ctx.auto = true
+          await journal($, { ev: 'auto.detected', why: 'the question tool was refused: nobody can answer in this session' })
+        } else {
+          await journal($, { ev: 'ask.refused', step: ctx.state.current, why: E.answerText(res).slice(0, 300) })
+        }
       } else if (!res?.deny && !res?.isError) {
         // F228: the creative's answer, as the box returned it: a script checks the creative's "own words" against
         // these (ideate-doc.mjs), so a quote Claude hands back as theirs is checked, not trusted.

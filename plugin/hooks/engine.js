@@ -828,6 +828,34 @@ export function fakeTypeOptionProblem(questions) {
   return null
 }
 
+// A question box with fewer than 2 or more than 4 options: Claude Code refuses it for its shape (live run 2026-11-10
+// 14:37, Ideate's gaps: "fewer than 2 options"). The engine says so first, plainly. A question with no options list
+// is left to Claude Code's own check. Returns the refusal's words, or null.
+export function optionCountProblem(questions) {
+  for (const q of Array.isArray(questions) ? questions : []) {
+    const opts = q && q.options
+    if (!Array.isArray(opts)) continue
+    if (opts.length < 2 || opts.length > 4) {
+      const what = String((q && (q.header || q.question)) || 'a question').slice(0, 80)
+      return `BMUZ engine: "${what}" has ${opts.length} option${opts.length === 1 ? '' : 's'}; the question box takes 2 to 4 real options. ${opts.length < 2 ? 'With only one way forward there is nothing to choose: take it, say so in one line, and carry on (no filler second option).' : 'Keep the 4 that matter most.'} Ask the other questions again on their own.`
+    }
+  }
+  return null
+}
+
+// What a refused question box means (F231, live run 2026-11-10: a shape refusal was read as "nobody is here", so the
+// rest of Ideate and all of Define ran unattended). Only a refusal saying the tool can't be used in this session
+// (a background session lists it but refuses it: headless check 15) means nobody can answer. A shape refusal
+// (InputValidationError: too few options, too many) and any other refusal is a failed ask: Claude reads it and asks
+// again. res = the tool's result.
+export function isShapeRefusal(res) {
+  return /InputValidationError|too_small|too_big|invalid_type|Too (small|big): expected/i.test(JSON.stringify(res ?? ''))
+}
+export function isNobodyToAsk(res) {
+  if (isShapeRefusal(res)) return false
+  return /not available in this session|(isn'?t|is not|not) available|unavailable|non-?interactive|no (one|user|person) (is )?(here |available )?to (answer|ask)|nobody (is )?(here|available) to|can(not|'t) ask (the )?(user|person)/i.test(JSON.stringify(res ?? ''))
+}
+
 // ---- Asking for links (F228, live looks 2026-11-10) ----
 // The question box's only text field is its last row, "Type something.": easy to miss, and paste doesn't reach it
 // until it's selected. An engine panel above the prompt (round 4) worked, but the creative pasted into the chat

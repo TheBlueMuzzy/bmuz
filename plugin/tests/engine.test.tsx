@@ -141,6 +141,36 @@ test('live check 2026-11-08: a person pressing Esc on the question does not make
   expect(refused(exit)).toBe(false)
 })
 
+// The refusal Claude Code gave in the live run (2026-11-10 14:37, Ideate's gaps), word for word.
+const SHAPE_REFUSAL = '<tool_use_error>InputValidationError: This call included a question with fewer than 2 options, so it was rejected and the person never saw it. A question with a single option has no decision in it. Do not retry this call and do not invent a filler second option. Instead, state the one path you were going to offer as the approach you are taking, then continue with the task.\n\n[\n  {\n    "origin": "array",\n    "code": "too_small",\n    "minimum": 2,\n    "inclusive": true,\n    "path": [\n      "questions",\n      3,\n      "options"\n    ],\n    "message": "Too small: expected array to have >=2 items"\n  }\n]</tool_use_error>'
+
+test('F231: a question box Claude Code refuses for its shape is a failed ask, never "nobody is here" (live run: the rest ran unattended)', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: SHAPE_REFUSAL, isError: true }))
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  await start($, true)
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Who plays?', options: [{ label: 'Two people' }, { label: 'Four' }] }] } as any)
+  expect(JSON.stringify(r)).toMatch(/fewer than 2 options/) // handed back to Claude as it is
+  expect(w.files['/proj/.bmuz/journal.jsonl']).not.toMatch(/"ev":"auto.detected"/)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"ask.refused","step":"name"/)
+  // still a live window: the next question goes through, not "auto run, nobody is here"
+  const again: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [] } as any)
+  expect(why(again)).not.toMatch(/auto run/)
+})
+
+test('F231: the engine refuses a question with one option (or more than 4) itself, plainly, before Claude Code sees it', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  await start($, true)
+  const one: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Which frame?', header: 'Frame', options: [{ label: 'The arcade one' }] }] } as any)
+  expect(why(one)).toMatch(/"Frame" has 1 option; the question box takes 2 to 4 real options/)
+  const five: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Pick', options: ['a', 'b', 'c', 'd', 'e'].map(label => ({ label })) }] } as any)
+  expect(why(five)).toMatch(/has 5 options/)
+  expect(w.reached).not.toContain('AskUserQuestion')
+  const two: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Pick', options: [{ label: 'a' }, { label: 'b' }] }] } as any)
+  expect(refused(two)).toBe(false)
+})
+
 test('live look 2026-11-10: a question box closed without an answer (an empty "Type something.") is not nudged; the next open turn is', async ($, on) => {
   mock.clock(on, { now: 1000 })
   let reply: any = { result: 'User rejected tool use', isError: true }
