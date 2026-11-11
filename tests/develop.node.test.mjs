@@ -272,3 +272,95 @@ test('teaching: the tutorial into GDD chapter 14 (worked out) and a 🎮 Tutoria
   assert.match(read(dir, S.ROADMAP), /^- 🟢 F05 🎮 Tutorial — 3 short steps, each teaching one thing in the order players meet it — must:playable$/m)
   assert.match(read(dir, G.GDD), /### 14 · Teaching\n\*[^\n]*\*\n\nLevel: worked out/)
 })
+
+// ---- F216 tasks 3–5: the pipelines on the script's Stage 4 ----
+const plugin = join(here, '..', 'plugin')
+const DEV = JSON.parse(readFileSync(join(plugin, 'pipelines', 'develop.json'), 'utf8'))
+const FEAT = JSON.parse(readFileSync(join(plugin, 'pipelines', 'feature.json'), 'utf8'))
+const stepOf = (p, id) => p.steps.find(s => s.id === id)
+
+test('develop.json is the script\'s Stage 4: 4.0–4.8 in order; every Develop line said by a step or composed by sprint.mjs; Design\'s next starts it', () => {
+  assert.deepEqual(E.checkPipeline(DEV), [])
+  assert.deepEqual(E.checkLines(DEV, script), [])
+  assert.deepEqual(E.checkPipeline(FEAT), [])
+  assert.deepEqual(E.checkLines(FEAT, script), [])
+  const titled = [...new Map([...DEV.steps, ...FEAT.steps].filter(s => s.no).map(s => [s.no, s.title])).entries()].sort((a, b) => Number(a[0].split('.')[1]) - Number(b[0].split('.')[1]))
+  assert.deepEqual(titled, [['4.0', 'Welcome to Develop'], ['4.1', 'Setup'], ['4.2', 'The Roadmap'], ['4.3', 'Plan the Sprint'], ['4.4', 'Build & Prove'], ['4.5', 'Play & Approve'], ['4.6', 'Tune & Revise'], ['4.7', 'Sprint Look-Back'], ['4.8', 'Teaching']])
+  const said = new Set([...DEV.steps, ...FEAT.steps].flatMap(s => [...(s.lines || []), ...(s.line ? [s.line] : [])]))
+  // composed by sprint.mjs from script.md and shown, or said by the engine itself
+  const composed = ['develop.plan.feature', 'develop.progress', 'develop.stuck', 'develop.ready', 'develop.lookback.updated', 'develop.waiting', 'develop.idea']
+  for (const id of Object.keys(script.lines).filter(id => id.startsWith('develop.') && !composed.includes(id))) assert.ok(said.has(id), id)
+  const design = JSON.parse(readFileSync(join(plugin, 'pipelines', 'design.json'), 'utf8'))
+  assert.deepEqual(design.next, { pipeline: 'develop', ask: false })
+  assert.deepEqual(DEV.next, { pipeline: '{onward}', at: 'plan', ask: false })
+  assert.equal(E.nextOf(DEV, { onward: 'develop' }).at, 'plan')
+  assert.equal(stepOf(DEV, 'propose').always, true)
+})
+
+test('the two gates ask the script\'s boxes with the yes never first, and an auto run carries on past them (nothing approved)', () => {
+  for (const [id, q, yes] of [['roadmap-ok', 'Start with the vertical slice?', 'Yes, start building'], ['plan-ok', 'Build this sprint?', 'Yes, build it']]) {
+    const g = stepOf(DEV, id)
+    const w = E.gateWords(g, script, { first: 'the vertical slice' })
+    assert.equal(w.question, q)
+    assert.equal(w.options[1], yes)
+    assert.equal(g.approve, yes)
+    assert.equal(g.auto, 'carry')
+  }
+  assert.equal(stepOf(DEV, 'roadmap-ok').backTo, 'reorder')
+  assert.equal(stepOf(DEV, 'reorder').onBack, true)
+  assert.equal(stepOf(DEV, 'plan-ok').backTo, 'plan')
+})
+
+test('the loop and the feature run: fresh builder and fixer may run commands, the reviewer only reads; done is proven by a script; approval needs the creative', () => {
+  const loop = stepOf(DEV, 'features')
+  assert.equal(loop.loop, 'feature')
+  assert.deepEqual(loop.run.slice(-2), ['next', '{auto}'])
+  for (const id of ['build', 'fix']) {
+    assert.equal(stepOf(FEAT, id).workflow, 'bmuz:build-flow')
+    assert.ok(stepOf(FEAT, id).agentTools.includes('Bash'))
+    assert.deepEqual(stepOf(FEAT, id).done.run.slice(-1), ['prove'])
+  }
+  assert.deepEqual(stepOf(FEAT, 'review').agentTools, ['Read', 'Glob', 'Grep'])
+  assert.equal(stepOf(FEAT, 'build').stuck, '.bmuz/develop/say-stuck.md')
+  const auto = JSON.parse(readFileSync(join(plugin, 'settings', 'auto-run.json'), 'utf8'))
+  assert.ok(auto.permissions.allow.includes('Workflow(bmuz:build-flow)'))
+  const ap = stepOf(FEAT, 'approve')
+  assert.equal(ap.kind, 'talk')
+  assert.deepEqual(ap.done.run.slice(-3), ['approval', '{answer}', '{auto}'])
+  assert.deepEqual(E.renderLine(script, 'develop.approve.box', { moment: 'a storm in a full row', feeling: 'a sneaky comeback' }).box.options.map(o => o.label), ['Yes, approve it', 'Close, needs tuning', 'Not right'])
+  assert.equal(stepOf(FEAT, 'tune').when, '{tune}')
+  assert.ok(stepOf(FEAT, 'tune').writes.includes('content/tuning/*.json'))
+  assert.equal(E.isWanted(stepOf(FEAT, 'tune'), { tune: 'no' }), false)
+  assert.equal(E.isWanted(stepOf(DEV, 'teaching'), { playtested: 'no' }), false)
+})
+
+test('Bash while a pipeline runs: inside the project only (no "..", no .bmuz, no home folder, no push, no path outside)', () => {
+  const d = 'C:/Users/x/proj'
+  assert.equal(E.bashProblem(d, 'npm test'), null)
+  assert.equal(E.bashProblem(d, 'node --test tests/turn.test.mjs'), null)
+  assert.equal(E.bashProblem(d, 'ls /c/Users/x/proj/src'), null)
+  assert.equal(E.bashProblem(d, 'npx playwright screenshot http://localhost:5173 .planning/screens/F01-phone.png'), null)
+  assert.match(E.bashProblem(d, 'cd .. && ls'), /outside the project/)
+  assert.match(E.bashProblem(d, 'cat .bmuz/state.json'), /\.bmuz/)
+  assert.match(E.bashProblem(d, 'ls ~/Desktop'), /home folder/)
+  assert.match(E.bashProblem(d, 'git push'), /pushing/)
+  assert.match(E.bashProblem(d, 'type C:/Windows/win.ini'), /outside the project \(C:\/Windows/)
+  const st = { ...E.freshState('feature'), current: 'build', status: 'working', finished: ['start'] }
+  assert.match(E.judgeTool(FEAT, st, { tool: 'Bash', agentId: 'a1', input: { command: 'rm -rf ../x' } }, { dir: d }).why, /Bash stays inside this project/)
+  assert.equal(E.judgeTool(FEAT, st, { tool: 'Bash', agentId: 'a1', input: { command: 'npm test' } }, { dir: d }).allow, true)
+  const rv = { ...st, current: 'review', finished: ['start', 'build'] }
+  assert.equal(E.judgeTool(FEAT, rv, { tool: 'Bash', agentId: 'a2', input: { command: 'npm test' } }, { dir: d }).allow, false)
+  assert.equal(E.judgeTool(FEAT, rv, { tool: 'Write', agentId: 'a2', input: { file_path: 'src/x.js' } }, { dir: d }).allow, false)
+})
+
+test('the loop\'s answer and the stuck line before the last try', () => {
+  assert.deepEqual(E.loopAnswer('noise\n{"start":{"feature":"F07","at":"ready"}}'), { start: { feature: 'F07', at: 'ready' } })
+  assert.deepEqual(E.loopAnswer('{"done":true}'), { done: true })
+  assert.match(E.loopAnswer('{"start":{"feature":"../x"}}').error, /isn't start, wait or done/)
+  const p = E.flowPrompt(stepOf(FEAT, 'build'), {}, 3, 'F01 — Turn engine isn\'t working, and two tries haven\'t fixed it.')
+  assert.match(p, /This is try 3 of 3/)
+  assert.match(p, /First write this to the creative, word for word, as its own paragraph:\n\nF01 — Turn engine isn't working/)
+  assert.equal(E.sideRecord({ feature: 'F07', n: 3 }), 'feature-runs/3-F07')
+  assert.equal(E.sideProblem({ pipeline: 'feature', from: 'develop', feature: 'F07', phase: 'on', n: 3, at: 'ready' }), null)
+  assert.match(E.sideProblem({ pipeline: 'feature', from: 'develop', feature: 'X', phase: 'on', n: 3 }), /feature number/)
+})

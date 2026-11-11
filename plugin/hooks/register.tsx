@@ -265,7 +265,7 @@ async function leaveSide($: any, dir: string, root: string, side: any, outcome: 
   const runs = (await readJson($, list)) || []
   if (Array.isArray(runs) && !runs.some((r: any) => r.n === side.n)) {
     const old = await readJson($, `${bmuz}/${record}/state.json`)
-    const item = side.feature !== undefined ? { feature: side.feature, at: side.at ?? null } : { bug: side.bug }
+    const item = side.feature !== undefined ? { feature: side.feature, startAt: side.at ?? null } : { bug: side.bug }
     runs.push({ n: side.n, ...item, from: side.from, status: old?.status ?? null, outcome: side.outcome ?? outcome, record: `.bmuz/${record}`, at: await $.clock.now() })
     await $.fs.write(list, JSON.stringify(runs, null, 2))
   }
@@ -1037,6 +1037,8 @@ async function advance($: any, resume: boolean, opts: { timer?: boolean, go?: bo
     if (step.kind === 'script') {
       const verdict = await runScript($, step)
       const next = await settle($, step, verdict, null)
+      // (F216: an auto run's feature run that BLOCKED goes straight back to Develop's loop: the top of this loop)
+      if (next === 'stop' && pending === 'advance' && ctx.state.status === 'blocked') { pending = null; continue }
       if (next === 'stop') return
       if (next === 'retry') ctx.state = { ...ctx.state, current: step.id }
       // F228: a script step's "show" file goes to the creative in a turn of its own; the run goes on at its end.

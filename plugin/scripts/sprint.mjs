@@ -316,7 +316,8 @@ export function planWrite(dir, script = loadScript(), now = new Date()) {
 // ("approve"), one blocked by an auto run is built again. Returns { start: { feature, at } } · { wait: [ids] } · { done }.
 export function next(dir, mode = 'live') {
   const rec = recordOf(dir)
-  const auto = mode === 'auto'
+  // (a test run's answers to the approve box stand in for the creative: BMUZ's own tests, BMUZ_TEST=1 only)
+  const auto = mode === 'auto' && !testAnswered(dir, 'approve')
   for (const f of rec.features) {
     if (f.status === 'planned' || f.status === 'building') return { start: { feature: f.id, at: null } }
     if (!auto && f.status === 'blocked') return { start: { feature: f.id, at: null } }

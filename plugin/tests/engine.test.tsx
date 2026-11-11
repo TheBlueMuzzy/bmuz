@@ -1866,3 +1866,151 @@ test('F215 review fix 9: the answer to the step-in box is journaled as the bug r
   expect(events(w).some((j: any) => j.ev === 'answer' && j.step === 'name')).toBe(false)
   expect(events(w).some((j: any) => j.ev === 'stepin.answer' && j.during === 'name')).toBe(true)
 })
+
+// ---- F216: Develop's loop: a "loop" script step runs the feature pipeline once per feature, each run kept ----
+const LOOP_PIPE = { id: 'hello', version: 1, steps: [
+  { id: 'features', kind: 'script', needs: [], run: ['node', 'sprint.mjs', 'next', '{auto}'], loop: 'feature' },
+  { id: 'after', kind: 'script', needs: ['features'], run: ['node', 'after.mjs'] },
+] }
+const FEAT_PIPE = { id: 'feature', version: 1, steps: [
+  { id: 'build', kind: 'script', needs: [], run: ['node', 'build.mjs'] },
+  { id: 'approve', kind: 'talk', needs: ['build'], tools: ['Read'], craft: 'craft/review.md', results: ['answer'] },
+] }
+const WAITING_LINE = ['', '## develop.waiting · say · added', 'Every feature of this sprint I could build is built. Waiting for your OK on: {features}. Say "bmuz go" when you\'re back, and I\'ll show you each one.', ''].join(String.fromCharCode(10))
+// answers: what "sprint.mjs next" says, call after call; build: what build.mjs exits with
+function loopWorld(on: any, answers: any[], build: () => number = () => 0) {
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const nexts: string[][] = []
+  const w = world(on, base({}), (argv: string[]) => {
+    if (argv[1] === 'sprint.mjs' && argv[2] === 'next') { nexts.push(argv); return { exitCode: 0, stdout: JSON.stringify(answers.shift() ?? { done: true }) } }
+    if (argv[1] === 'build.mjs') { const code = build(); return { exitCode: code, stdout: code ? 'the tests fail' : 'ok' } }
+    return { exitCode: 0, stdout: '{}' }
+  })
+  w.files.PIPELINE = JSON.stringify(LOOP_PIPE)
+  w.files['PIPELINE:feature'] = JSON.stringify(FEAT_PIPE)
+  w.files.SCRIPT = SCRIPT + WAITING_LINE
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ pipeline: 'hello', current: null, status: 'idle', results: {}, retries: {}, finished: [], blocked: null, startedAt: null })
+  return { w, prompts, nexts }
+}
+
+test('F216: the loop runs one kept feature run per feature (one may start at a step), comes back to the same step each time, and passes when the script says done', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts, nexts } = loopWorld(on, [{ start: { feature: 'F01', at: null } }, { start: { feature: 'F02', at: 'approve' } }, { done: true }])
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't1')
+  // F01's run: the stage parked at the loop step, the feature run given its feature
+  expect(JSON.parse(w.files['/proj/.bmuz/side.json'])).toMatchObject({ pipeline: 'feature', feature: 'F01', from: 'hello', phase: 'on', n: 1 })
+  expect(JSON.parse(w.files['/proj/.bmuz/parked/state.json'])).toMatchObject({ pipeline: 'hello', current: 'features', status: 'working' })
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'feature', current: 'approve', given: { feature: 'F01' }, finished: ['build'] })
+  expect(nexts[0][3]).toBe('live')
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { answer: 'approved' } } as any)
+  await turn($, 't2')
+  // F02's run starts at "approve": the build above it counts as done
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'feature', current: 'approve', given: { feature: 'F02' } })
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).entered).toMatchObject({ at: 'approve', skipped: ['build'] })
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { answer: 'approved' } } as any)
+  await turn($, 't3')
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(st).toMatchObject({ pipeline: 'hello', status: 'done' })
+  expect(st.finished).toEqual(['features', 'after'])
+  expect(JSON.parse(w.files['/proj/.bmuz/feature-runs.json'])).toMatchObject([{ n: 1, feature: 'F01', outcome: 'done', record: '.bmuz/feature-runs/1-F01' }, { n: 2, feature: 'F02', startAt: 'approve', outcome: 'done' }])
+  expect(JSON.parse(w.files['/proj/.bmuz/feature-runs/2-F02/state.json'])).toMatchObject({ pipeline: 'feature', status: 'done' })
+  expect(w.files['/proj/.bmuz/side.json']).toBeUndefined()
+  expect(nexts.length).toBe(3)
+  expect(events(w).filter((j: any) => j.ev === 'side.back').map((j: any) => j.feature)).toEqual(['F01', 'F02'])
+  expect(prompts.some(p => /step "approve"/.test(p))).toBe(true)
+})
+
+test('F216: an auto run never stalls and never approves: when only approvals are left, the question is noted, the waiting line said, and the run ends between steps', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts, nexts } = loopWorld(on, [{ wait: ['F01', 'F02'], features: ['F01 — Turn engine', 'F02 — Seed cards'] }])
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't1')
+  expect(nexts[0][3]).toBe('auto')
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(st).toMatchObject({ pipeline: 'hello', current: null, status: 'idle', finished: [] })
+  expect(w.files['/proj/.bmuz/questions.md']).toMatch(/F01 — Turn engine, F02 — Seed cards: built and waiting for your OK/)
+  expect(prompts[prompts.length - 1]).toMatch(/Waiting for your OK on: F01 — Turn engine, F02 — Seed cards\. Say "bmuz go" when you're back/)
+  expect(events(w).find((j: any) => j.ev === 'loop.waiting')).toMatchObject({ features: ['F01', 'F02'] })
+  expect(events(w).some((j: any) => j.ev === 'line' && j.line === 'develop.waiting')).toBe(true)
+})
+
+test('F216: an auto run moves past a feature run that BLOCKS: back to the loop, the feature marked BLOCKED, the next feature built', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  let builds = 0
+  const { w } = loopWorld(on, [{ start: { feature: 'F01', at: null } }, { start: { feature: 'F02', at: null } }, { wait: ['F01', 'F02'], features: ['F01', 'F02'] }], () => (++builds <= 3 ? 1 : 0))
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't1')
+  // F01's build failed three times: BLOCKED, rolled back, and the run went back to the loop, which started F02
+  const runs = JSON.parse(w.files['/proj/.bmuz/feature-runs.json'])
+  expect(runs[0]).toMatchObject({ feature: 'F01', outcome: 'blocked', status: 'blocked' })
+  expect(w.runs.some(a => a[1].endsWith('sprint.mjs') && a[2] === 'status' && a[3] === 'F01' && a[4] === 'blocked')).toBe(true)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'feature', given: { feature: 'F02' }, current: 'approve' })
+})
+
+test('F216: "bmuz park" sets the feature being built aside and the loop goes on', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = loopWorld(on, [{ start: { feature: 'F01', at: null } }, { done: true }])
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't1')
+  await $.prompt.submit({ text: 'bmuz park' } as any)
+  expect(prompts[prompts.length - 1]).toMatch(/F01 is parked/)
+  await turn($, 't2')
+  expect(JSON.parse(w.files['/proj/.bmuz/feature-runs.json'])[0]).toMatchObject({ feature: 'F01', outcome: 'parked' })
+  expect(w.runs.some(a => a[1].endsWith('sprint.mjs') && a[2] === 'status' && a[3] === 'F01' && a[4] === 'parked')).toBe(true)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'hello', status: 'done' })
+})
+
+test('F216: a gate with "auto": "carry" is noted and passed in an auto run (nothing approved)', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, base({}))
+  const p = JSON.parse(w.files.PIPELINE)
+  p.steps[1] = { ...p.steps[1], auto: 'carry' }
+  w.files.PIPELINE = JSON.stringify(p)
+  w.files['/proj/.bmuz/state.json'] = state({ finished: ['name'] })
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't1')
+  const js = events(w)
+  expect(js.find((j: any) => j.ev === 'gate.carried')).toMatchObject({ step: 'approve', question: 'Approve Moon Goat?' })
+  expect(js.some((j: any) => j.ev === 'gate.answer')).toBe(false)
+  expect(w.files['/proj/.bmuz/questions.md']).toMatch(/Approve Moon Goat\? \(an auto run carried on with the plan as it stands; nothing was approved for you\. To change it, say "bmuz undo name"\)/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).finished).toContain('approve')
+})
+
+test('F216: a new idea goes through the engine\'s idea tool (sprint.mjs idea) and its line comes back word for word; the step is untouched', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  w.files.SCRIPT = SCRIPT + ['', '## develop.idea · say · added', 'Noted on Ideas for Later: {idea}. It comes back at the milestone where it fits.', ''].join(String.fromCharCode(10))
+  await start($, true)
+  const before = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  const r: any = await $.tool.call({ tool: 'mcp__bmuz__idea', idea: 'seasons' } as any)
+  expect(JSON.parse(String(r.result)).say).toBe('Noted on Ideas for Later: seasons. It comes back at the milestone where it fits.')
+  expect(w.runs.some(a => a[1].endsWith('sprint.mjs') && a[2] === 'idea' && a[3] === 'seasons')).toBe(true)
+  const after = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect({ current: after.current, status: after.status, retries: after.retries }).toEqual({ current: before.current, status: before.status, retries: before.retries })
+})
+
+test('F216: while a pipeline runs, Bash stays inside the project (a helper\'s and Claude\'s)', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = world(on, base({ current: 'name', status: 'working' }))
+  const p = JSON.parse(w.files.PIPELINE)
+  p.steps[0] = { ...p.steps[0], tools: ['Bash'] }
+  w.files.PIPELINE = JSON.stringify(p)
+  await start($, true)
+  expect(refused(await $.tool.call({ tool: 'Bash', command: 'npm test' } as any))).toBe(false)
+  const out: any = await $.tool.call({ tool: 'Bash', command: 'cat ../secrets.txt' } as any)
+  expect(refused(out)).toBe(true)
+  expect(why(out)).toMatch(/Bash stays inside this project/)
+  expect(refused(await $.tool.call({ tool: 'Bash', command: 'rm .bmuz/state.json' } as any))).toBe(true)
+  expect(refused(await $.tool.call({ tool: 'Bash', command: 'git push origin main' } as any))).toBe(true)
+})
