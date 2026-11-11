@@ -142,3 +142,30 @@ test('pick: nothing open, or a bug already closed, is said plainly; "next" goes 
   assert.match(JSON.parse(bugs(dir, 'next', 'B009').stdout).say, /there is no B009/)
   assert.ok(existsSync(join(dir, B.BUGS)))
 })
+
+// Review fix 4: "reproduced" only when the runner ran the named test and reported it failing; anything else refused.
+test('a top-level throw, a file with no tests, a hung test or a runner that is not there is never "reproduced"', () => {
+  const dir = garden()
+  bugs(dir, 'add', JSON.stringify({ report: { title: 'Final score misses the first row', level: 'P1' } }))
+  setResults(dir, {}, { bug: 'B001' })
+  assert.equal(bugs(dir, 'pick').status, 0)
+  const t = 'tests/b001-x.test.mjs'
+  const tryIt = (body, env = {}) => { writeFileSync(join(dir, t), body); return spawnSync(process.execPath, [join(plugin, 'scripts', 'bugs.mjs'), 'repro', t], { cwd: dir, encoding: 'utf8', timeout: 120000, env: { ...process.env, ...env } }) }
+  let r = tryIt("throw new Error('boom at the top')\n")
+  assert.equal(r.status, 1)
+  assert.match(r.stdout, /no test in .* ran and failed/)
+  r = tryIt("console.log('nothing to test')\n")
+  assert.equal(r.status, 1)
+  assert.match(r.stdout, /passes|no test in .* ran/)
+  r = tryIt("import { test } from 'node:test'\ntest('hangs', async () => { await new Promise(r => setTimeout(r, 60000)) })\n", { BMUZ_BUG_TEST_MS: '3000' })
+  assert.equal(r.status, 1)
+  assert.match(r.stdout, /didn't finish in 3 s/)
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ type: 'module', scripts: { test: 'vitest' } }))
+  r = tryIt("import { test } from 'node:test'\ntest('x', () => { throw new Error('x') })\n")
+  assert.equal(r.status, 1)
+  assert.match(r.stdout, /no test in .* ran and failed|couldn't run/)
+  assert.equal(B.failedTests([process.execPath, '--test'], { exitCode: 1, all: 'not ok 1 - every row counts\n# fail 1' }).length, 1)
+  assert.equal(B.failedTests([process.execPath, '--test'], { exitCode: 1, all: 'not ok 1 - tests\\b001-x.test.mjs\n# fail 1' }).length, 0)
+  assert.equal(B.failedTests(['npx', 'vitest'], { exitCode: 1, all: ' Tests  2 failed | 1 passed (3)' }).length, 2)
+  assert.equal(B.failedTests(['npx', 'vitest'], { exitCode: 1, all: 'No test files found, exiting with code 1' }).length, 0)
+})

@@ -355,9 +355,44 @@ export function testCommand(dir, file) {
   if (!existsSync(join(dir, file))) throw new Error(`there is no test file ${file} in the project`)
   const pkg = readJsonIn(dir, 'package.json') || {}
   const t = String((pkg.scripts && pkg.scripts.test) || '')
-  if (/\bvitest\b/.test(t)) return ['npx', 'vitest', 'run', file]
-  if (/\bjest\b/.test(t)) return ['npx', 'jest', file]
-  return [process.execPath, '--test', file]
+  // (--no-install: a runner that isn't there says so at once, never downloads; node's TAP names each test it ran)
+  if (/\bvitest\b/.test(t)) return ['npx', '--no-install', 'vitest', 'run', file]
+  if (/\bjest\b/.test(t)) return ['npx', '--no-install', 'jest', file]
+  return [process.execPath, '--test', '--test-reporter=tap', file]
+}
+
+// How long one test file may run (BMUZ_BUG_TEST_MS: the tests' own short limit).
+export const testLimitMs = () => Number(process.env.BMUZ_BUG_TEST_MS) > 0 ? Number(process.env.BMUZ_BUG_TEST_MS) : 300000
+
+// The tests the runner itself reported as failing (review fix 4): node's TAP "not ok N - <name>" (a whole file failing to
+// load or throwing at the top is reported under the file's own name, which isn't a test), vitest's and jest's summary
+// counts ("No test files found" is none). A run that timed out or never started reports none.
+export function failedTests(argv, ran) {
+  const all = String(ran.all ?? ran.out ?? '')
+  if (ran.exitCode === -1 || ran.timedOut) return []
+  if (argv[0] === process.execPath || argv.includes('--test')) {
+    return [...all.matchAll(/^\s*not ok \d+ - (.+?)\s*(#.*)?$/gm)].map(m => m[1]).filter(n => !/\.(m|c)?[jt]sx?$/.test(n) && !/[\\/]/.test(n))
+  }
+  if (/No test files found/i.test(all)) return []
+  const m = all.match(/Tests:?\s+(\d+) failed/)
+  return m ? Array.from({ length: Number(m[1]) }, (_, i) => `test ${i + 1}`) : []
+}
+// The tests the runner reported as passing (node: "ok N - <name>", the file itself left out; others: their summary).
+export function passedTests(argv, ran) {
+  const all = String(ran.all ?? ran.out ?? '')
+  if (ran.exitCode !== 0) return []
+  if (argv[0] === process.execPath || argv.includes('--test')) return [...all.matchAll(/^\s*ok \d+ - (.+?)\s*(#.*)?$/gm)].map(m => m[1]).filter(n => !/\.(m|c)?[jt]sx?$/.test(n) && !/[\\/]/.test(n))
+  const m = all.match(/Tests:?\s+(\d+) passed/)
+  return m ? Array.from({ length: Number(m[1]) }, (_, i) => `test ${i + 1}`) : []
+}
+// Why a test run doesn't prove the bug (null = it does: the runner ran a named test and reported it failing).
+export function reproProblem(test, argv, ran) {
+  if (ran.timedOut) return `${test} didn't finish in ${Math.round(testLimitMs() / 1000)} s, so it proves nothing: a test must end with a failure, not hang`
+  if (ran.exitCode === -1) return `${test} couldn't run (${ran.cmd}): ${String(ran.out).slice(-300)}`
+  if (ran.exitCode === 0) return null
+  if (crashedBeforeTesting(ran.all)) return `${test} crashed before testing anything, which proves nothing: ${String(ran.out).slice(-300)}`
+  if (!failedTests(argv, ran).length) return `no test in ${test} ran and failed (${ran.cmd}): the runner ended with an error before or around the tests, which proves nothing. ${String(ran.out).slice(-300)}`
+  return null
 }
 
 // Runs a command in the project: { exitCode, out } (out = the last 1500 characters, for the proof and the reason).
@@ -368,8 +403,14 @@ export function runIn(dir, argv, timeout = 300000) {
   const env = { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' }
   delete env.NODE_TEST_CONTEXT
   const r = spawnSync(argv[0], argv.slice(1), { cwd: dir, encoding: 'utf8', timeout, shell: win, env })
-  const out = `${r.stdout || ''}${r.stderr || ''}`.trim()
-  return { exitCode: r.status === null ? -1 : r.status, out: out.slice(-1500), all: out, cmd: argv.map(a => (a === process.execPath ? 'node' : a)).join(' ') }
+  const out = `${r.stdout || ''}${r.stderr || ''}${r.error && r.error.code !== 'ETIMEDOUT' ? `\n${r.error.message}` : ''}`.trim()
+  const timedOut = !!(r.error && r.error.code === 'ETIMEDOUT') || (r.status === null && !!r.signal)
+  return { exitCode: r.status === null ? -1 : r.status, timedOut, out: out.slice(-1500), all: out, cmd: argv.map(a => (a === process.execPath ? 'node' : a)).join(' ') }
+}
+// One test file, run with its limit.
+const runTest = (dir, test) => {
+  const argv = testCommand(dir, test)
+  return { argv, ran: runIn(dir, argv, testLimitMs()) }
 }
 
 // A test run that failed before testing anything (a typo, a missing file) proves nothing about the bug.
@@ -407,10 +448,10 @@ export function pick(dir, now = new Date()) {
 // The reproduce step's done-check: the new test must FAIL now, because of the bug. Recorded with the test's fingerprint.
 export function repro(dir, test) {
   const c = current(dir)
-  const cmd = testCommand(dir, test)
-  const ran = runIn(dir, cmd)
+  const { argv, ran } = runTest(dir, test)
   if (ran.exitCode === 0) throw new Error(`${test} passes, so it doesn't show ${c.id} yet. Change the test so it fails because of the bug (it checks what should happen), then finish again. (${ran.cmd})`)
-  if (crashedBeforeTesting(ran.all)) throw new Error(`${test} crashed before testing anything, which proves nothing about ${c.id}: ${ran.out.slice(-300)}`)
+  const why = reproProblem(test, argv, ran)
+  if (why) throw new Error(`${why} Make a test that runs and fails because of ${c.id}, then finish again.`)
   const proof = readJsonIn(dir, proofPath(c.id)) || { id: c.id }
   proof.repro = { test, cmd: ran.cmd, exitCode: ran.exitCode, sha: sha(readIn(dir, test)), at: new Date().toISOString(), out: ran.out.slice(-600) }
   writeIn(dir, proofPath(c.id), JSON.stringify(proof, null, 2) + '\n')
@@ -428,8 +469,10 @@ export function sayRepro(dir) {
 // was shown failing (in .bmuz/bug/, out of Claude's reach); then passing now.
 function passesNow(dir, t) {
   if (!t || !t.sha || sha(readIn(dir, t.test) ?? '') !== t.sha) return `${t && t.test}: the test changed after it was shown failing. Fix the code, not the test: put the test back as it was when it failed`
-  const ran = runIn(dir, testCommand(dir, t.test))
-  return ran.exitCode === 0 ? null : `${t.test} still fails (${ran.cmd}): ${ran.out.slice(-400)}`
+  const { argv, ran } = runTest(dir, t.test)
+  if (ran.timedOut) return `${t.test} didn't finish in ${Math.round(testLimitMs() / 1000)} s`
+  if (ran.exitCode !== 0) return `${t.test} still fails (${ran.cmd}): ${ran.out.slice(-400)}`
+  return passedTests(argv, ran).length ? null : `${t.test} ran no test at all (${ran.cmd}), so it shows nothing passing`
 }
 function suiteProblem(dir) {
   for (const s of suite(dir)) if (s.exitCode !== 0) return `"${s.cmd}" fails: ${s.out.slice(-400)}`
@@ -474,9 +517,10 @@ export function hitsFail(dir, hits) {
   const out = []
   for (const h of hits.filter(x => x.action === 'fix')) {
     if (proof.repro && h.test === proof.repro.test) throw new Error(`${h.where}: give it a test of its own, not ${h.test} (that one guards ${c.id})`)
-    const ran = runIn(dir, testCommand(dir, h.test))
+    const { argv, ran } = runTest(dir, h.test)
     if (ran.exitCode === 0) throw new Error(`${h.test} passes, so it doesn't show the mistake at ${h.where}. Make it fail because of it (fix that place only after), then finish again`)
-    if (crashedBeforeTesting(ran.all)) throw new Error(`${h.test} crashed before testing anything: ${ran.out.slice(-300)}`)
+    const why = reproProblem(h.test, argv, ran)
+    if (why) throw new Error(`${why} (the matching place ${h.where})`)
     out.push({ where: clean(h.where), what: clean(h.what), test: h.test, sha: sha(readIn(dir, h.test)), exitCode: ran.exitCode })
   }
   proof.hits = hits.map(h => ({ ...h, ...(out.find(o => o.test === h.test && h.action === 'fix') || {}) }))
