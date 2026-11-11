@@ -241,6 +241,26 @@ test('ready: 4.5\'s card word for word, 🎛️, the 🤖 tasks ticked, "Checked
   assert.equal(S.readRecord(dir).features[0].status, 'built')
 })
 
+test('test answers for the approve box are by feature, in order, and held to: the n-th approve of F01 takes F01\'s n-th answer (BMUZ_TEST only)', () => {
+  const dir = project()
+  building(dir)
+  writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'feature', testAnswers: { approve: { F01: ['Close, needs tuning', 'Yes, approve it'], F02: ['Yes, approve it'] } } }))
+  const was = process.env.BMUZ_TEST
+  process.env.BMUZ_TEST = '1'
+  try {
+    assert.match(S.approvalProblem(dir, 'approved', 'auto'), /the test answer for F01 here is "Close, needs tuning"/)
+    assert.equal(S.approvalProblem(dir, 'tune', 'auto'), null)
+    // an earlier run of F01 answered "tune": the next answer is the second
+    mkdirSync(join(dir, '.bmuz/feature-runs/1-F01'), { recursive: true })
+    writeFileSync(join(dir, '.bmuz/feature-runs/1-F01/state.json'), JSON.stringify({ resultsBy: { approve: { answer: 'tune' } } }))
+    writeFileSync(join(dir, '.bmuz/feature-runs.json'), JSON.stringify([{ n: 1, feature: 'F01', record: '.bmuz/feature-runs/1-F01' }]))
+    assert.equal(S.approvalProblem(dir, 'approved', 'auto'), null)
+    assert.match(S.approvalProblem(dir, 'tune', 'auto'), /"Yes, approve it"/)
+  } finally {
+    if (was === undefined) delete process.env.BMUZ_TEST; else process.env.BMUZ_TEST = was
+  }
+})
+
 test('review fix 2c (headless): a proven test another feature changed since is proven again at the end (it must still pass); a feature that blocks twice is never rebuilt in a loop', () => {
   const dir = project(true)
   building(dir)

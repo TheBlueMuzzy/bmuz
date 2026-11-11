@@ -598,11 +598,27 @@ export function boxAnswer(dir, step = 'approve') {
   return null
 }
 const testAnswered = (dir, step) => process.env.BMUZ_TEST === '1' && !!(readJson(dir, 'bmuz.json') || {}).testAnswers?.[step]
+// The test answer for this approve: the feature's list, at the count of its earlier runs that answered (null when the
+// test answers aren't by feature).
+function testApproveAnswer(dir) {
+  const by = (readJson(dir, 'bmuz.json') || {}).testAnswers?.approve
+  const f = featureOf(dir)
+  if (!by || typeof by !== 'object' || !Array.isArray(by[f.id])) return null
+  const runs = (readJson(dir, '.bmuz/feature-runs.json') || []).filter(r => r && r.feature === f.id)
+  const answered = runs.filter(r => { const st = readJson(dir, `${r.record}/state.json`); const x = answerOf(resultOf(st, 'approve').answer); return x && x !== 'waiting' }).length
+  const list = by[f.id]
+  return list[Math.min(answered, list.length - 1)] ?? null
+}
 // Why the answer can't stand (null = it can).
 export function approvalProblem(dir, answer, mode) {
   const a = answerOf(answer)
   if (!a) return `"${clean(answer)}" isn't an answer: give "approved", "tune", "not right" or (an auto run) "waiting"`
-  if (testAnswered(dir, 'approve')) return a === 'waiting' ? 'a test answer stands in for the creative here: take it' : null
+  if (testAnswered(dir, 'approve')) {
+    // (BMUZ's own tests: { "F01": [first answer, second answer, …] } — the n-th approve of a feature takes its n-th)
+    const want = testApproveAnswer(dir)
+    if (want === null) return a === 'waiting' ? 'a test answer stands in for the creative here: take it' : null
+    return answerOf(want) === a ? null : `a test run's answer stands in for the creative: the test answer for ${featureOf(dir).id} here is "${want}"`
+  }
   if (mode === 'auto') return a === 'waiting' ? null : 'an auto run never answers for the creative: the answer is "waiting" (their OK stays a question)'
   if (a === 'waiting') return 'the creative is here: ask them with the script\'s box (develop.approve.box)'
   const theirs = boxAnswer(dir)

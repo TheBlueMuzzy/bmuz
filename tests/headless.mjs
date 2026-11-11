@@ -215,11 +215,8 @@ const GARDEN_DESIGN = {
 }
 // F216: the creative's Develop answers for the garden race (run 2 of develop-garden): F01 tuned once, then approved.
 const GARDEN_DEVELOP = {
-  approve: {
-    'Read .planning/SPRINT.md first. The feature being asked is F01 — Turn engine and its section has NO line starting "Notes: Tuning:"': 'Close, needs tuning',
-    'The feature being asked is F01 — Turn engine and its section HAS a line starting "Notes: Tuning:"': 'Yes, approve it',
-    'The feature being asked is any other feature (F02 — Seed cards, F03 …)': 'Yes, approve it',
-  },
+  // (by feature, in order: F01's first approve is "Close, needs tuning", its next "Yes, approve it"; the done-check holds to them)
+  approve: { F01: ['Close, needs tuning', 'Yes, approve it'], F02: ['Yes, approve it'], F03: ['Yes, approve it'] },
   tune: { "In your words, what's wrong with it?": 'A turn drags: drawing two cards every turn makes my hand too big. Try drawing one.' },
   lookback: { 'Your three lines (your words win)': 'Fine, keep your draft.' },
 }
