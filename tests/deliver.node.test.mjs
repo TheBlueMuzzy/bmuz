@@ -47,7 +47,18 @@ test('prep: the milestone Develop marked ready, as a Playable build; the first t
   D.welcome(dir, script, NOW)
   assert.match(read(dir, D.SAY.welcome), /^\*\*Welcome to Deliver\*\*\nVertical slice is built and approved, so it's time to turn it into something you can play and share\./)
   assert.equal(D.prep(dir, NOW).first, false, 'welcomed once: not the first time any more')
-  assert.deepEqual([D.stageOf('alpha').kind, D.stageOf('beta').rank, D.stageOf('1.0').kind, D.stageOf('').key], ['stage', 2, 'major', 'playable'])
+  assert.deepEqual([D.stageOf('alpha').kind, D.stageOf('beta').rank, D.stageOf('1.0').kind], ['stage', 2, 'major'])
+})
+
+test('review fix 9: a milestone with no release stage, or one BMUZ doesn\'t know, is refused with the heading to fix; never guessed', () => {
+  assert.equal(D.stageOf(''), null)
+  assert.equal(D.stageOf('gamma'), null)
+  for (const [from, to] of [['  (→ playable)  ✅', '  ✅'], ['(→ playable)', '(→ gamma)']]) {
+    const dir = garden()
+    writeFileSync(join(dir, S.ROADMAP), read(dir, S.ROADMAP).replace(`## v0.1 — Vertical slice  ${from.trim()}`, `## v0.1 — Vertical slice  ${to.trim()}`))
+    assert.throws(() => D.prep(dir, NOW), /The milestone heading "## v0\.1 — Vertical slice .*" has no release stage I know: add "\(→ playable\)", "\(→ alpha\)", "\(→ beta\)" or "\(→ 1\.0\)" to it in \.planning\/ROADMAP\.md, then say "bmuz retry"/)
+    assert.equal(D.readRecord(dir), null, 'nothing recorded')
+  }
 })
 
 test('5.1 the Release Check: musts · blocking bugs · every check, each ✓; ready', async () => {

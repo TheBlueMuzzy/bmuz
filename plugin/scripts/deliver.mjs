@@ -47,10 +47,11 @@ export const STAGES = [
   { key: 'beta', name: 'Beta', kind: 'stage' },
   { key: '1.0', name: '1.0', kind: 'major' },
 ]
+// (review fix 9: a stage BMUZ doesn't know, or none, is null — never guessed; prep refuses it with the heading to fix)
 export const stageOf = word => {
   const w = String(word || '').toLowerCase().trim()
-  const i = Math.max(0, STAGES.findIndex(s => s.key === w || (s.key === '1.0' && /^1(\.0)*$|release/.test(w))))
-  return { ...STAGES[i], rank: i }
+  const i = STAGES.findIndex(s => s.key === w)
+  return i < 0 ? null : { ...STAGES[i], rank: i }
 }
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -183,6 +184,7 @@ export function prep(dir, now = new Date()) {
   const m = deliveredMilestone(rm)
   if (!m) throw new Error(`${ROADMAP} has no milestones`)
   const stage = stageOf(m.stage)
+  if (!stage) throw new Error(`The milestone heading "${S.readRoadmap(rm).lines[m.line].trim()}" has no release stage I know: add "(→ playable)", "(→ alpha)", "(→ beta)" or "(→ 1.0)" to it in ${ROADMAP}, then say "bmuz retry"`)
   const hist = readJson(dir, HISTORY) || {}
   const first = !hist.welcomed && !tags(dir).length
   const branch = branchNow(dir)
