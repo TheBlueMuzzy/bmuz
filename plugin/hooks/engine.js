@@ -499,6 +499,8 @@ export function isWanted(step, vars) {
   const m = step.when.match(/^\{(\w+)\}$/)
   if (!m) return false
   const v = vars ? vars[m[1]] : undefined
+  // (F215 review fix 2a: a list of things, not of answers — the bug pipeline's matching places — is a yes when it has any)
+  if (Array.isArray(v) && v.length && v.every(x => x && typeof x === 'object' && x.text === undefined)) return true
   const one = Array.isArray(v) ? v[0] : v
   const said = one && typeof one === 'object' ? one.text : one
   return said === true || (typeof said === 'string' && /^\s*(yes|y|true)\b/i.test(said))

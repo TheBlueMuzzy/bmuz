@@ -130,8 +130,7 @@
       ],
       "craft": "craft/bug-matching.md",
       "results": [
-        "hits",
-        "fixhits"
+        "hits"
       ],
       "recap": [
         "test",
@@ -154,8 +153,8 @@
       "needs": [
         "matching"
       ],
-      "when": "{fixhits}",
-      "description": "Each matching place fixed: its test passes, the suite green",
+      "when": "{hits}",
+      "description": "Each matching place marked \"fix\" fixed: its test passes, the suite green",
       "tools": [
         "Read",
         "Glob",

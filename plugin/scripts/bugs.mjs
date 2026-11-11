@@ -573,7 +573,18 @@ export function record(dir, now = new Date()) {
   if (!cause) throw new Error(`${c.id} has no root cause written down (the cause step)`)
   const repeat = clean((r.cause || {}).repeat)
   const rule = clean((r.cause || {}).rule)
-  const hits = Array.isArray(proof.hits) ? proof.hits : []
+  // (review fix 2b: nothing after the matching step is trusted. Right before the commit, every proof runs again: the
+  // bug's own test, each matching place to fix — the step's own hits, each with a test shown failing first, unchanged —
+  // and the suite. Any red refuses the step, and nothing is written or committed.)
+  const claimed = r.matching && Array.isArray(r.matching.hits) ? r.matching.hits : (proof.hits || [])
+  const hits = claimed.map(h => (h && h.action === 'fix' ? { ...h, ...((proof.hits || []).find(p => p.action === 'fix' && p.test === h.test && p.where === clean(h.where) && p.sha) || {}) } : h))
+  for (const h of hits.filter(x => x && x.action === 'fix')) {
+    if (!h.sha || !(h.exitCode > 0)) throw new Error(`${clean(h.where)} has no test shown failing first (${h.test}): the matching step's check runs it before the fix`)
+    const why = passesNow(dir, h)
+    if (why) throw new Error(why)
+  }
+  const again = passesNow(dir, proof.repro) || suiteProblem(dir)
+  if (again) throw new Error(again)
   let text = readIn(dir, BUGS) || ''
   // the matching places to log become bugs of their own (once)
   const logged = []

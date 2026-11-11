@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -41,7 +41,13 @@ test('the pipeline: pick → reproduce → reproduced → cause → fix → matc
   assert.deepEqual(P.steps.find(s => s.id === 'reproduce').done.run.slice(2), ['repro', '{test}'])
   assert.deepEqual(P.steps.find(s => s.id === 'fix').done.run.slice(2), ['verify'])
   assert.deepEqual(P.steps.find(s => s.id === 'matching').done.run.slice(2), ['hits-fail', '{hits}'])
-  assert.equal(P.steps.find(s => s.id === 'matching-fix').when, '{fixhits}')
+  // (review fix 2a: whether there is anything to fix comes from the hits themselves, never a separate flag)
+  const mf = P.steps.find(s => s.id === 'matching-fix')
+  assert.equal(mf.when, '{hits}')
+  assert.deepEqual(P.steps.find(s => s.id === 'matching').results, ['hits'])
+  assert.equal(E.isWanted(mf, { hits: [{ where: 'src/bonus.js:4', action: 'fix', test: 't' }], fixhits: 'no' }), true)
+  assert.equal(E.isWanted(mf, { hits: [] }), false)
+  assert.equal(E.isWanted({ when: '{x}' }, { x: [{ text: 'no' }] }), false) // (a list of answers still reads its first one)
   for (const id of ['pick', 'repro-show', 'record']) assert.ok(P.steps.find(s => s.id === id).show, id)
   // (a whole-hole argument holding a list reaches the script as JSON)
   assert.deepEqual(E.fillDeep(['hits-fail', '{hits}'], { hits: [{ where: 'a' }] }), ['hits-fail', '[{"where":"a"}]'])
@@ -99,7 +105,21 @@ test('the fix run on the bug-garden: refused while the test passes, proven faili
   writeFileSync(join(dir, 'src/bonus.js'), read(dir, 'src/bonus.js').replace('let i = 1', 'let i = 0'))
   assert.equal(bugs(dir, 'hits-pass').status, 0)
   // record
-  setResults(dir, { cause: { cause: 'finalScore and its loop start at row 1, so the first row is never counted (src/score.js).', repeat: 'none', rule: 'every row counts, starting from the first (index 0)' }, fix: { files: ['src/score.js'] }, matching: { hits, fixhits: 'yes' }, 'matching-fix': { alsoFiles: ['src/bonus.js'] } }, { bug: 'B001' })
+  const results = { cause: { cause: 'finalScore and its loop start at row 1, so the first row is never counted (src/score.js).', repeat: 'none', rule: 'every row counts, starting from the first (index 0)' }, fix: { files: ['src/score.js'] }, matching: { hits }, 'matching-fix': { alsoFiles: ['src/bonus.js'] } }
+  // (review fix 2b: record runs every proof again right before it commits; any red is refused, nothing committed)
+  const head = git(dir, 'rev-parse', 'HEAD').stdout
+  const before = read(dir, 'tests/b001-also-bonus.test.mjs')
+  writeFileSync(join(dir, 'tests/b001-also-bonus.test.mjs'), before.replace('), 2)', '), 2, "x")'))
+  setResults(dir, results, { bug: 'B001' })
+  assert.match(bugs(dir, 'record').stdout, /b001-also-bonus\.test\.mjs: the test changed after it was shown failing/)
+  writeFileSync(join(dir, 'tests/b001-also-bonus.test.mjs'), before)
+  setResults(dir, { ...results, matching: { hits: [...hits, { where: 'src/score.js:9', action: 'fix', test: 'tests/garden.test.mjs' }] } }, { bug: 'B001' })
+  assert.match(bugs(dir, 'record').stdout, /src\/score\.js:9 has no test shown failing first/)
+  writeFileSync(join(dir, 'tests/zz-red.test.mjs'), "import { test } from 'node:test'\ntest('red', () => { throw new Error('red') })\n")
+  setResults(dir, results, { bug: 'B001' })
+  assert.match(bugs(dir, 'record').stdout, /"npm test" fails/)
+  rmSync(join(dir, 'tests/zz-red.test.mjs'))
+  assert.equal(git(dir, 'rev-parse', 'HEAD').stdout, head)
   r = bugs(dir, 'record')
   assert.equal(r.status, 0, r.stdout)
   const text = read(dir, B.BUGS)
