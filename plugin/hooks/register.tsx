@@ -602,6 +602,8 @@ async function settle($: any, step: any, verdict: any, result: any) {
 // finished stage's record is archived and the engine carries on in the new pipeline. Returns null when done,
 // else the plain-words reason it didn't move.
 async function switchStage($: any, to: string, at: string | null, given: any) {
+  // (F215 review fix 7: a fix run holds the stage's record in .bmuz/parked/; moving on now would leave it there)
+  if (ctx.side) return 'finish or stop the bug fix first (bmuz bug stop)'
   if (!E.NAME_RE.test(String(to))) return E.notOnEngineLine(String(to))
   if (!ctx.mismatch && ctx.state.status === 'working') return `step "${ctx.state.current}" is still running; move on once it has finished or is BLOCKED`
   if (!(await $.fs.exists(`${ctx.root}/pipelines/${to}.json`))) return E.notOnEngineLine(to)
