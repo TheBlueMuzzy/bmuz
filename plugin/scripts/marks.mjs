@@ -10,9 +10,19 @@ const nl = t => String(t ?? '').replace(/\r\n/g, '\n')
 export const fingerprint = text => createHash('sha1').update(nl(text).trim()).digest('hex').slice(0, 8)
 const KEY_RE = /^[a-z][a-z0-9:-]*$/
 
+// A part's text as BMUZ keeps it: a step that hands back a part as the file shows it brings BMUZ's marks (and the
+// heading the part sits under) along; those belong to the file, not the text — kept, they nested a second pair of
+// marks inside the first (F227 review; gdd.chapterText does the same for chapters).
+export function bodyText(text, heading = null) {
+  const lines = nl(text).split('\n').filter(l => !/^<!-- \/?bmuz [a-z][a-z0-9:-]*( · [0-9a-f]{8})? -->$/.test(l.trim()))
+  while (lines.length && lines[0].trim() === '') lines.shift()
+  if (heading !== null && lines.length && lines[0].trim() === String(heading).trim()) lines.shift()
+  return lines.join('\n').trim()
+}
+
 export function block(key, text) {
   if (!KEY_RE.test(key)) throw new Error(`"${key}" isn't a block name`)
-  const body = nl(text).trim()
+  const body = bodyText(text)
   return `<!-- bmuz ${key} · ${fingerprint(body)} -->\n${body}\n<!-- /bmuz ${key} -->`
 }
 
@@ -34,7 +44,7 @@ export function readBlocks(text) {
 // Writes one block. If it isn't there yet it goes right after the line `after` (an exact line, like "## Setup"),
 // or at the end. Returns { text, changed, kept } (kept = their own edit inside the marks was kept, above).
 export function writeBlock(text, key, body, { after = null, by = {} } = {}) {
-  const want = nl(body).trim()
+  const want = bodyText(body, after)
   const lines = nl(text).split('\n')
   const have = readBlocks(text)[key]
   if (!want) return { text: nl(text), changed: false, kept: false }

@@ -37,3 +37,21 @@ test('B1: a GDD missing one chapter heading keeps everything when any chapter is
   assert.ok(o1.indexOf('## Part 1') < o1.indexOf('### 1 · The Feelings') && o1.indexOf('### 1 ·') < o1.indexOf('### 2 ·'))
   assert.equal(G.readGdd(o1)[1].text, 'Joy.')
 })
+
+test('A4: a part handed back as the file shows it (its heading and BMUZ\'s marks) is written as its text only, never nested marks', async () => {
+  const M = await import('../plugin/scripts/marks.mjs')
+  const R = await import('../plugin/scripts/rulebook.mjs')
+  let doc = R.applyRulebook('', { setup: 'Deal 5.' }, by).text
+  const shown = '## Setup\n' + doc.split('## Setup\n')[1].split('\n## ')[0].trim().replace('Deal 5.', 'Deal 6.')
+  doc = R.applyRulebook(doc, { setup: shown, actions: [{ name: 'Plant', text: '<!-- bmuz rb:action-plant · 0123abcd -->\nPlant one.\n<!-- /bmuz rb:action-plant -->' }] }, by).text
+  assert.equal(doc.match(/<!-- bmuz rb:setup /g).length, 1, 'one pair of marks')
+  assert.equal(M.readBlocks(doc)['rb:setup'].text, 'Deal 6.')
+  assert.equal(M.readBlocks(doc)['rb:setup'].edited, false)
+  assert.equal(doc.match(/<!-- bmuz rb:action-plant /g).length, 1)
+  assert.equal(M.readBlocks(doc)['rb:action-plant'].text, 'Plant one.')
+  // the TDD and roadmap write through writeBlock the same way
+  const t = M.writeBlock('# TDD\n\n## Risks\n', 'td:risks', '## Risks\n<!-- bmuz td:risks · 0123abcd -->\nNone yet.\n<!-- /bmuz td:risks -->', { after: '## Risks' }).text
+  assert.equal(t.match(/<!-- bmuz td:risks /g).length, 1)
+  assert.equal(t.match(/^## Risks$/gm).length, 1)
+  assert.equal(M.readBlocks(t)['td:risks'].text, 'None yet.')
+})
