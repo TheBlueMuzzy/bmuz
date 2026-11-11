@@ -260,11 +260,20 @@ test('a failed live check puts the last good version back (rollback.mjs), pushed
   publishTest(dir)
   secondSlice(dir)
   shareSaid(dir)
-  withFake({ FAKE_LIVE_CHECK: 'fail' }, () => assert.throws(() => publishTest(dir), /the live check failed for v0\.2\.0: .*Put back v0\.1\.0, the last good version, and sent it live again\./s))
+  const BACK = /The new build \(v0\.2\.0\) failed its live check, so I put v0\.1\.0 back; that's what's live now\./
+  withFake({ FAKE_LIVE_CHECK: 'fail' }, () => assert.throws(() => publishTest(dir), BACK))
   assert.match(git(dir, ['log', '-1', '--format=%s']), /^Rollback to v0\.1\.0: undo v0\.2\.0/)
   assert.equal(git(dir, ['diff', 'v0.1.0', 'HEAD', '--', 'src']), '', 'the code is v0.1.0\'s again')
   assert.equal(git(`${dir}-origin.git`, ['rev-parse', 'main']), git(dir, ['rev-parse', 'main']), 'the rollback is pushed (to the local origin)')
   assert.equal(D.readRecord(dir).publish.rolledBack, 'v0.1.0')
+  // review fix 1: a try after the rollback — its live check would pass, on the rolled-back site — never says the new
+  // build is live: the same plain line, nothing run again, no "It's live"
+  const before = calls(dir).length
+  writeFileSync(join(dir, D.SAY.live), '')
+  assert.throws(() => publishTest(dir), BACK)
+  assert.equal(calls(dir).length, before, 'no live check, release or deploy on the retry')
+  assert.equal(read(dir, D.SAY.live), '')
+  assert.equal(JSON.parse(readFileSync(join(here, '..', 'plugin', 'pipelines', 'deliver.json'), 'utf8')).steps.find(s => s.id === 'publish').retries, 0, 'publish blocks at once: no automatic retry')
 })
 
 test('5.5 Playtest Notes: each feeling of GDD chapter 1 checked; tuning, bugs, rulebook questions and ideas land in the roadmap; the script\'s lines', () => {

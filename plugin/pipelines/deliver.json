@@ -86,7 +86,7 @@
     {
       "id": "publish", "kind": "script", "needs": ["share"], "when": "{go}", "no": "5.4", "title": "Build & Share",
       "description": "Merged, versioned and tagged, pushed, deployed, checked live (only after your \"Share it\")",
-      "run": ["node", "{plugin}/scripts/deliver.mjs", "publish"], "retries": 1, "timeoutMs": 600000,
+      "run": ["node", "{plugin}/scripts/deliver.mjs", "publish"], "retries": 0, "timeoutMs": 600000,
       "show": ".bmuz/deliver/say-live.md"
     },
     {

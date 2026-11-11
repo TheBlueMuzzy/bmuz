@@ -570,6 +570,10 @@ function publishNow(dir, script, now) {
   const stage = stageOf(rec.stage)
   const main = mainOf(dir)
   const p = rec.publish || (rec.publish = {})
+  // (review fix 1: once the new build failed its live check and the last good version was put back, this run never
+  // says the new build is live — a later live check would only find the old version, live again)
+  const rolledBackLine = () => `The new build (${p.tag}) failed its live check, so I put ${p.rolledBack} back; that's what's live now.`
+  if (p.rolledBack) throw new Error(`${rolledBackLine()} Fix what the check found in Develop, then deliver again.`)
   const step = (name, r) => { if (!r.ok) { saveRecord(dir, rec); throw new Error(`${name}: ${r.out.slice(-900)}`) } return r }
   const scripts = (readJson(dir, 'package.json') || {}).scripts || {}
   // 1. the work branch into main
@@ -628,7 +632,8 @@ function publishNow(dir, script, now) {
         if (rb.ok) { pushIt(); deployIt() }
         p.rolledBack = rb.ok ? good : null
         saveRecord(dir, rec)
-        throw new Error(`the live check failed for ${p.tag}: ${lc.out.slice(-500)}. ${rb.ok ? `Put back ${good}, the last good version, and sent it live again.` : `Rolling back to ${good} failed too: ${rb.out.slice(-300)}`}`)
+        if (rb.ok) throw new Error(`${rolledBackLine()} What the check found: ${lc.out.slice(-500)}`)
+        throw new Error(`the live check failed for ${p.tag}: ${lc.out.slice(-500)}. Rolling back to ${good} failed too: ${rb.out.slice(-300)}`)
       }
       saveRecord(dir, rec)
       throw new Error(`the live check failed for ${p.tag}: ${lc.out.slice(-600)}. This is the first release, so there is no earlier version to put back`)
