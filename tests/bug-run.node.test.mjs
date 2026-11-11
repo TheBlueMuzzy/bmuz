@@ -189,3 +189,30 @@ test('a top-level throw, a file with no tests, a hung test or a runner that is n
   assert.equal(B.failedTests(['npx', 'vitest'], { exitCode: 1, all: ' Tests  2 failed | 1 passed (3)' }).length, 2)
   assert.equal(B.failedTests(['npx', 'vitest'], { exitCode: 1, all: 'No test files found, exiting with code 1' }).length, 0)
 })
+
+// Review fix 5: a commit takes only files (never a folder) that this run changed; a file the creative had changed
+// before the run is left out, and the closing line says so.
+test('the fix commit leaves out a folder and a file with the creative\'s own unsaved changes, and says so', () => {
+  const dir = garden()
+  bugs(dir, 'add', JSON.stringify({ report: { title: 'Final score misses the first row', level: 'P2' } }))
+  writeFileSync(join(dir, 'src/bonus.js'), read(dir, 'src/bonus.js') + '// my own note: bonus might go up to 3\n')
+  setResults(dir, {}, { bug: 'B001' })
+  assert.equal(bugs(dir, 'pick').status, 0)
+  writeFileSync(join(dir, 'tests/b001-first-row.test.mjs'), REPRO)
+  assert.equal(bugs(dir, 'repro', 'tests/b001-first-row.test.mjs').status, 0)
+  writeFileSync(join(dir, 'src/score.js'), read(dir, 'src/score.js').replace('let i = 1', 'let i = 0'))
+  assert.equal(bugs(dir, 'verify').status, 0)
+  const hits = [{ where: 'src/bonus.js:4', what: 'the same loop', action: 'fix', test: 'tests/b001-also-bonus.test.mjs' }]
+  writeFileSync(join(dir, 'tests/b001-also-bonus.test.mjs'), HIT)
+  assert.equal(bugs(dir, 'hits-fail', JSON.stringify(hits)).status, 0)
+  writeFileSync(join(dir, 'src/bonus.js'), read(dir, 'src/bonus.js').replace('let i = 1', 'let i = 0'))
+  assert.equal(bugs(dir, 'hits-pass').status, 0)
+  setResults(dir, { cause: { cause: 'the loop starts at row 1', repeat: 'none', rule: 'count from row 0' }, fix: { files: ['src', 'src/score.js'] }, matching: { hits }, 'matching-fix': { alsoFiles: ['src/bonus.js', '.'] } }, { bug: 'B001' })
+  const r = bugs(dir, 'record')
+  assert.equal(r.status, 0, r.stdout)
+  const inFix = git(dir, 'show', '--name-only', '--format=', 'HEAD~1').stdout.split('\n').filter(Boolean).sort()
+  assert.deepEqual(inFix, ['.planning/BUGS.md', '.planning/STATE.md', 'src/score.js', 'tests/b001-also-bonus.test.mjs', 'tests/b001-first-row.test.mjs'])
+  assert.equal(git(dir, 'status', '--porcelain', '--untracked-files=all', '--', '.', ':!.bmuz').stdout.trim(), 'M src/bonus.js')
+  assert.match(read(dir, B.SAY.done), /· You had unsaved changes in src\/bonus\.js, so I left it out of the commit: the fix is in it too\./)
+  assert.deepEqual(B.commitFiles(dir, ['src'], 'x'), { nothing: true })
+})

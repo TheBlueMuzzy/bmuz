@@ -736,5 +736,6 @@ Reproduced: {test} fails, as it should while the bug is there.
 [[· Logged as new bugs: {logged}]]
 [[· Committed: "{commit}"]]
 [[· Not committed: {nogit}]]
+[[· You had unsaved changes in {dirty}, so I left it out of the commit: the fix is in it too.]]
 [[Check it yourself, then say "bmuz bug verified {check}".]]
 Back to {back}.

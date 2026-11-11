@@ -24,7 +24,7 @@
 //   (run in the project folder)
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as E from '../hooks/engine.js'
@@ -286,22 +286,38 @@ const gameName = dir => G.gameName(readIn(dir, G.GDD) || '') || ''
 const today = () => new Date().toISOString().slice(0, 10)
 
 export function addIn(dir, r, by = {}) {
+  // (review fix 5: BUGS.md with the creative's own unsaved edits isn't committed for them)
+  const theirs = dirtyFiles(dir).includes(BUGS) ? [BUGS] : []
   const out = addBug(readIn(dir, BUGS) || newBugs(gameName(dir)), r, { day: today(), name: gameName(dir), ...by }, readIn(dir, ARCHIVE) || '')
   writeIn(dir, BUGS, out.text)
   refreshPage(dir)
   // (the /bug skill commits a report on its own: "Bug B014: <title>", only BUGS.md, whatever else is staged)
-  const c = commitFiles(dir, [BUGS], `Bug ${out.id}: ${clean(r.title)}`)
+  const c = commitFiles(dir, [BUGS], `Bug ${out.id}: ${clean(r.title)}`, theirs)
   return { ok: true, id: out.id, header: out.header, bug: bugWords(out.text, out.id), commit: c.hash || null, nogit: c.nogit || null }
 }
 
 // ---- git ----
 const git = (dir, args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8', timeout: 60000 })
 export const isGitRepo = dir => git(dir, ['rev-parse', '--is-inside-work-tree']).stdout?.trim() === 'true'
+// The project files that differ from the last commit right now (changed, new or deleted), .bmuz/ left out.
+export function dirtyFiles(dir) {
+  if (!isGitRepo(dir)) return []
+  const out = git(dir, ['status', '--porcelain', '--untracked-files=all', '-z']).stdout || ''
+  const files = []
+  const parts = out.split('\0').filter(Boolean)
+  for (let i = 0; i < parts.length; i++) {
+    const code = parts[i].slice(0, 2)
+    files.push(parts[i].slice(3))
+    if (/[RC]/.test(code)) i++ // (a rename's old name follows it)
+  }
+  return files.filter(f => !/^\.bmuz\//.test(f))
+}
 // Commits exactly these project files (nothing else that happens to be staged). Returns { hash } or { nogit } or
 // { nothing: true } when they didn't change. Every path is checked to stay inside the project.
-export function commitFiles(dir, files, message) {
+// (review fix 5: files only, never a folder — "src" would sweep in everything under it — and none listed in `skip`)
+export function commitFiles(dir, files, message, skip = []) {
   if (!isGitRepo(dir)) return { nogit: "this folder isn't a git repository" }
-  const safe = [...new Set(files.filter(f => E.isSafePath(f) && existsSync(join(dir, f))))]
+  const safe = [...new Set(files.map(f => String(f).replace(/\\/g, '/')).filter(f => E.isSafePath(f) && !skip.includes(f) && existsSync(join(dir, f)) && statSync(join(dir, f)).isFile()))]
   if (!safe.length) return { nothing: true }
   const add = git(dir, ['add', '--', ...safe])
   if (add.status !== 0) throw new Error(`git add failed: ${(add.stderr || add.stdout || '').trim().slice(0, 200)}`)
@@ -436,10 +452,14 @@ export function pick(dir, now = new Date()) {
   if (p.error) throw new Error(p.error)
   if (p.none) throw new Error('there are no open bugs to fix')
   const id = p.bug.id
+  // (review fix 5: the files the creative already had changed, before this run touched anything; kept from the first
+  // try, so a retry doesn't count the run's own changes as theirs)
+  const had = readJsonIn(dir, CURRENT)
+  const dirtyAtPick = had && had.id === id && Array.isArray(had.dirtyAtPick) ? had.dirtyAtPick : dirtyFiles(dir)
   const t = p.bug.status === 'fixing' ? text : setStatus(text, id, 'fixing', { day: now.toISOString().slice(0, 10), dir })
   writeIn(dir, BUGS, t)
   const words = bugWords(t, id)
-  writeIn(dir, CURRENT, JSON.stringify({ id, level: p.bug.level, title: clean(titleOf(t, id)), bug: words }, null, 2) + '\n')
+  writeIn(dir, CURRENT, JSON.stringify({ id, level: p.bug.level, title: clean(titleOf(t, id)), bug: words, dirtyAtPick }, null, 2) + '\n')
   writeIn(dir, SAY.start, line('bug.fix.start', { bug: words }) + '\n')
   refreshPage(dir)
   return { id, bug: words }
@@ -612,18 +632,22 @@ export function record(dir, now = new Date()) {
   const changed = [...new Set([...(r.fix && Array.isArray(r.fix.files) ? r.fix.files : []), ...(r['matching-fix'] && Array.isArray(r['matching-fix'].alsoFiles) ? r['matching-fix'].alsoFiles : [])].map(f => String(f).replace(/\\/g, '/')))]
   const message = `Fix ${c.id}: ${c.title}`
   const files = [proof.repro.test, ...fixedHits.map(h => h.test), ...changed, BUGS, STATE_MD]
-  const done = commitFiles(dir, files, message)
+  // (review fix 5: only files this run changed; one the creative had already changed before it is left out, and said)
+  const before = Array.isArray(c.dirtyAtPick) ? c.dirtyAtPick : []
+  const changedNow = new Set(dirtyFiles(dir))
+  const left = [...new Set(files.map(f => String(f).replace(/\\/g, '/')))].filter(f => before.includes(f))
+  const done = commitFiles(dir, files.filter(f => changedNow.has(String(f).replace(/\\/g, '/'))), message, before)
   let commit = null
   if (done.hash) {
     commit = message
     text = setStatus(readIn(dir, BUGS), c.id, 'fixed', { day, dir, commit: done.hash })
     writeIn(dir, BUGS, text)
-    commitFiles(dir, [BUGS], `Bug ${c.id}: fixed in ${done.hash}`)
+    commitFiles(dir, [BUGS], `Bug ${c.id}: fixed in ${done.hash}`, before)
   } else if (done.nothing && isGitRepo(dir)) commit = message
   const side = readJsonIn(dir, '.bmuz/side.json') || {}
   const say = line('bug.fix.done', {
     bug: bugWords(text, c.id), cause, test: proof.repro.test, also: also.join('; '), logged: logged.join('; '),
-    commit, nogit: done.nogit || null, check: ['P0', 'P1'].includes(c.level) ? c.id : null,
+    commit, nogit: done.nogit || null, dirty: left.join(', '), check: ['P0', 'P1'].includes(c.level) ? c.id : null,
     back: side.place || 'what we were doing',
   })
   // (a [[ … ]] part left out leaves its empty line behind: the closing line has no blank lines of its own)
