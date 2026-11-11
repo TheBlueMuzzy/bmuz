@@ -200,7 +200,6 @@ export function fromSheet(table, values) {
   const rows = values.slice(1).map(r => Object.fromEntries(table.columns.map((c, i) => [c, idx[i] < 0 ? '' : cell(r[idx[i]])]))).filter(r => clean(r[table.columns[0]]) !== '')
   return { ok: true, table: { name: table.name, columns: table.columns, rows }, idx, missing }
 }
-const sheetPrint = (table, values) => { const s = fromSheet(table, values); return s.ok ? fp(s.table.rows) : null }
 const jsonPrint = table => fp({ columns: table.columns, rows: table.rows })
 // What the link remembers of a sync: both sides' fingerprints and rows (the rows tell each side's changes later).
 const synced = (json, sheet) => ({ json: jsonPrint(json), sheet: fp(sheet.rows), jsonRows: json.rows, sheetRows: sheet.rows })
@@ -288,6 +287,7 @@ export function push(dir, id, { force = false, sheets = sheetsRunner() } = {}) {
   const keyCol = idx[0]
   const rowOf = new Map(values.slice(1).map((r, i) => [clean(r[keyCol]).toLowerCase(), i + 1]))
   const data = []
+  const formulaKept = []
   let next = values.length
   for (const row of x.table.rows) {
     const k = keyOf(x.table, row)
@@ -296,7 +296,7 @@ export function push(dir, id, { force = false, sheets = sheetsRunner() } = {}) {
     x.table.columns.forEach((c, i) => {
       if (idx[i] < 0) return // a column the Sheet doesn't have: left alone
       const f = (formulas[at] || [])[idx[i]]
-      if (typeof f === 'string' && f.startsWith('=')) return // a formula cell: never written
+      if (typeof f === 'string' && f.startsWith('=')) { if (!same(cell((values[at] || [])[idx[i]]), row[c])) formulaKept.push(`${row[x.table.columns[0]]} · ${c}`); return } // a formula cell: never written
       const now = (values[at] || [])[idx[i]]
       if (same(cell(now), row[c]) && at < values.length) return
       data.push({ range: `${quoteTab(x.entry.sheet.tab)}!${colName(idx[i])}${at + 1}`, values: [[row[c]]] })
@@ -309,7 +309,7 @@ export function push(dir, id, { force = false, sheets = sheetsRunner() } = {}) {
   const sync = readSync(dir)
   sync.tables[id].sheet = { ...x.entry.sheet, ...synced(x.table, x.table) }
   writeJson(dir, SYNC, sync)
-  return { ok: true, say: `✔ ${x.table.name} pushed to the Sheet: ${data.length} cells written (values only; formulas and other columns left alone)`, cells: data }
+  return { ok: true, say: `✔ ${x.table.name} pushed to the Sheet: ${data.length} cells written (values only; formulas and other columns left alone)${formulaKept.length ? `. Not written, the Sheet works these out with a formula: ${formulaKept.join(', ')} (pull to take the Sheet's values)` : ''}`, cells: data, formulaKept }
 }
 
 export function status(dir, sheets = sheetsRunner()) {
