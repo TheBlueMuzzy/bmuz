@@ -68,7 +68,9 @@ const keyOf = (t, row) => clean(row[t.columns[0]]).toLowerCase()
 // Returns { table, kept: n cells kept, added: n rows added }.
 export function merge(cur, last, next) {
   if (!cur) return { table: next, kept: 0, added: next.rows.length }
-  if (!last || same(cur, last)) return { table: next, kept: 0, added: Math.max(0, next.rows.length - cur.rows.length) }
+  if (last && same(cur, last)) return { table: next, kept: 0, added: Math.max(0, next.rows.length - cur.rows.length) }
+  // (F227 review: no record of what BMUZ last wrote → everything in the file is theirs; it was replaced whole)
+  if (!last) last = { columns: [], rows: [] }
   const removedCols = last.columns.filter(c => !cur.columns.includes(c))
   const columns = [...cur.columns, ...next.columns.filter(c => !cur.columns.includes(c) && !removedCols.includes(c))]
   const lastBy = new Map(last.rows.map(r => [keyOf(last, r), r]))
@@ -83,6 +85,8 @@ export function merge(cur, last, next) {
       const mine = c in r ? r[c] : undefined
       const bmuz = was ? was[c] : undefined
       if (mine !== undefined && was && !same(mine, bmuz)) { kept += 1; out[c] = mine } // the creative's
+      // a row BMUZ never wrote is theirs (F227 review: their values were overwritten): only a cell they left empty is filled
+      else if (!was && mine !== undefined && mine !== '') { if (want && c in want && !same(mine, want[c])) kept += 1; out[c] = mine }
       else if (want && c in want) out[c] = want[c]
       else out[c] = mine === undefined ? '' : mine
     }

@@ -121,3 +121,21 @@ test('plain refusals: a table not linked, a Sheet nobody can read, a tab without
   assert.match(T.link(other.dir, 'seed-cards', SHEET, '', other.sheets).say, /the Sheet's first row has no "Name" column \(it has: Card, Cost, Quantity, Value, Notes\)/)
   void editWorld
 })
+
+// ---- F227 review fixes (2026-11-11) ----
+test('F227 review A2: with no record of what BMUZ last wrote, a hand-made table file is theirs: their rows and cells kept, only new rows and empty cells added', () => {
+  const cur = { name: 'Seeds', columns: ['Name', 'Cost'], rows: [{ Name: 'Rose', Cost: 9 }, { Name: 'Mine', Cost: 1 }, { Name: 'Tulip', Cost: '' }] }
+  const next = { name: 'Seeds', columns: ['Name', 'Cost', 'Value'], rows: [{ Name: 'Rose', Cost: 2, Value: 4 }, { Name: 'Tulip', Cost: 3, Value: 1 }, { Name: 'Daisy', Cost: 1, Value: 2 }] }
+  const m = T.merge(cur, null, next)
+  assert.deepEqual(m.table.columns, ['Name', 'Cost', 'Value'])
+  assert.deepEqual(m.table.rows, [{ Name: 'Rose', Cost: 9, Value: 4 }, { Name: 'Mine', Cost: 1, Value: '' }, { Name: 'Tulip', Cost: 3, Value: 1 }, { Name: 'Daisy', Cost: 1, Value: 2 }])
+  assert.equal(m.added, 1)
+})
+
+test('F227 review A3: a row they added by hand keeps their values when BMUZ later outputs the same key', () => {
+  const last = { name: 'Seeds', columns: ['Name', 'Cost'], rows: [{ Name: 'Rose', Cost: 2 }] }
+  const cur = { name: 'Seeds', columns: ['Name', 'Cost'], rows: [{ Name: 'Rose', Cost: 2 }, { Name: 'Daisy', Cost: 7 }] }
+  const next = { name: 'Seeds', columns: ['Name', 'Cost'], rows: [{ Name: 'Rose', Cost: 3 }, { Name: 'Daisy', Cost: 1 }] }
+  const m = T.merge(cur, last, next)
+  assert.deepEqual(m.table.rows, [{ Name: 'Rose', Cost: 3 }, { Name: 'Daisy', Cost: 7 }])
+})
