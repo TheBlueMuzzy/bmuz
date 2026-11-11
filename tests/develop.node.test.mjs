@@ -241,6 +241,35 @@ test('ready: 4.5\'s card word for word, 🎛️, the 🤖 tasks ticked, "Checked
   assert.equal(S.readRecord(dir).features[0].status, 'built')
 })
 
+test('review fix 2c: the proof can\'t be weakened — a changed test command is refused; a changed existing test goes to the reviewer, and one it calls weakened refuses the proof; a proven test changed later refuses the end', () => {
+  const dir = project(true)
+  building(dir)
+  const proven = { tests: [{ rule: 'a new game has two players', file: 'tests/garden.test.mjs', name: 'a new game has two players' }], changed: ['x'] }
+  // the test command changed after the feature started
+  const pkg = read(dir, 'package.json')
+  writeFileSync(join(dir, 'package.json'), pkg.replace('"test": "node --test"', '"test": "node --test --test-name-pattern=nothing"'))
+  journal(dir, [{ ev: 'flow.result', step: 'build', result: proven }])
+  assert.throws(() => S.prove(dir, script, NOW), /the test command changed since F01 started/)
+  writeFileSync(join(dir, 'package.json'), pkg)
+  // an existing test changed: listed for the reviewer, with what it was
+  const old = read(dir, 'tests/garden.test.mjs')
+  writeFileSync(join(dir, 'tests/garden.test.mjs'), old.replace('assert.equal(g.players.length, 2)', 'assert.ok(true)'))
+  const proof = S.prove(dir, script, NOW)
+  assert.deepEqual(proof.changedTests, ['tests/garden.test.mjs'])
+  assert.match(read(dir, S.CHANGED_TESTS), /tests\/garden\.test\.mjs[\s\S]*assert\.equal\(g\.players\.length, 2\)[\s\S]*assert\.ok\(true\)/)
+  // the reviewer calls it weakened: a finding, and the proof is refused until it is put back
+  journal(dir, [{ ev: 'flow.result', step: 'build', result: proven }, { ev: 'flow.result', step: 'review', result: { findings: [], weakened: ['tests/garden.test.mjs'] } }])
+  assert.equal(S.reviewSave(dir).length, 1)
+  assert.throws(() => S.prove(dir, script, NOW), /the reviewer found tests\/garden\.test\.mjs weakened/)
+  writeFileSync(join(dir, 'tests/garden.test.mjs'), old)
+  const ok = S.prove(dir, script, NOW)
+  assert.deepEqual(ok.changedTests, [])
+  // a proven test changed after the proof: the feature's end is refused
+  writeFileSync(join(dir, 'tests/garden.test.mjs'), old + '\n// later\n')
+  state(dir, { pipeline: 'feature', given: { feature: 'F01' }, resultsBy: { approve: { answer: 'waiting' } } })
+  assert.throws(() => S.featureEnd(dir, NOW), /tests\/garden\.test\.mjs changed after it was proven/)
+})
+
 test('review fix 6: a feature\'s commit takes only the files this run\'s own calls changed; the creative\'s are left out and said; SPRINT.md and ROADMAP.md are committed as sprint.mjs writes them', () => {
   const dir = project(true)
   building(dir)

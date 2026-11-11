@@ -41,7 +41,9 @@ test('review: a reviewer who did not build it; each finding confirmed by another
   assert.match(r.prompts[0].prompt, /You did not build it/)
   assert.match(r.prompts[0].prompt, /Use only Read, Glob and Grep/)
   assert.equal(r.prompts.filter(p => /^confirm/.test(p.opts.label)).length, 2)
-  assert.deepEqual(r.result, { findings: [{ file: 'src/garden.js', what: 'hand size written as 3', why: 'not tunable' }], found: 2 })
+  assert.deepEqual(r.result, { findings: [{ file: 'src/garden.js', what: 'hand size written as 3', why: 'not tunable' }], found: 2, weakened: [] })
+  // (review fix 2c: the changed existing tests are a must-check)
+  assert.match(r.prompts[0].prompt, /A must-check .*read \.bmuz\/develop\/changed-tests\.md/)
   assert.deepEqual(r.logs, ['1 finding(s) not confirmed, dropped'])
 })
 

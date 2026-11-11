@@ -47,6 +47,9 @@ export const PROPOSE = `${DEV}/propose.json`
 export const BRIEF = `${DEV}/brief.md`
 export const TRIES = `${DEV}/tries.md`
 export const REVIEW = `${DEV}/review.md`
+// (review fix 2c) the existing tests a build changed, for the reviewer; the ones it called weakened
+export const CHANGED_TESTS = `${DEV}/changed-tests.md`
+export const WEAKENED = `${DEV}/weakened.json`
 export const LOOKBACK = `${DEV}/lookback.json`
 // the lines a step shows (composed from the script here, so they are word for word)
 export const SAY = { plan: `${DEV}/say-plan.md`, progress: `${DEV}/say-progress.md`, stuck: `${DEV}/say-stuck.md`, ready: `${DEV}/say-ready.md`, lookback: `${DEV}/say-lookback.md` }
@@ -340,6 +343,10 @@ export function featureStart(dir, script = loadScript(), now = new Date()) {
   f.tries = []
   // (review fix 6: a commit takes only what this run's own calls changed: .bmuz/own.json, per run)
   f.toldTheirs = []
+  // (review fix 2c: the test command and every existing test, as they are before the build)
+  f.baseline = { command: testCommandSha(dir), tests: Object.fromEntries(testFiles(dir).map(t => [t, E.textSha(readIn(dir, t))])) }
+  write(dir, CHANGED_TESTS, '')
+  write(dir, WEAKENED, '{}\n')
   saveRecord(dir, rec)
   writePlan(dir, ROADMAP, setStates(readIn(dir, ROADMAP) || '', { [f.id]: '🔨' }), `${f.id}: building — ${f.name}`)
   write(dir, BRIEF, briefMd(dir, rec, f))
@@ -381,6 +388,10 @@ export function reviewSave(dir) {
   let r = null
   for (const l of lines) { try { const j = JSON.parse(l); if (j.ev === 'flow.result' && j.step === 'review') r = j.result } catch (e) { /* a torn line */ } }
   const found = listOf(r && r.findings).filter(f => f && clean(f.what))
+  // (review fix 2c: a changed test the reviewer called weakened is a finding, and the proof is refused until it's back)
+  const weakened = listOf(r && r.weakened).map(clean).filter(t => E.isSafePath(t) && E.isTestFile(t))
+  write(dir, WEAKENED, JSON.stringify(Object.fromEntries(weakened.map(t => [t, E.textSha(readIn(dir, t))])), null, 2) + '\n')
+  for (const t of weakened) found.push({ file: t, what: 'this existing test was changed so that it checks less than before', why: 'a test is never weakened to make a build pass: put back what it checked' })
   write(dir, REVIEW, found.length
     ? ['# Confirmed findings (a reviewer who did not build it, each one checked by another)', ...found.map((f, i) => `${i + 1}. ${clean(f.file)}: ${clean(f.what)} — ${clean(f.why)}`)].join('\n') + '\n'
     : 'There are no confirmed findings: nothing to fix.\n')
@@ -419,11 +430,44 @@ export function proofProblem(dir, built) {
   return { tests: tests.map(t => ({ rule: clean(t.rule), file: clean(t.file), name: clean(t.name), sha: ran[clean(t.file)].sha })), passed: Object.values(ran).reduce((n, r) => n + r.passed.length, 0) }
 }
 
+// ---- The proof can't be weakened (review fix 2c) ----
+// The project's test files (E.isTestFile), outside node_modules, .git, .bmuz and .planning.
+export function testFiles(dir, rel = '') {
+  const out = []
+  let entries = []
+  try { entries = readdirSync(join(dir, rel), { withFileTypes: true }) } catch (e) { return out }
+  for (const e of entries) {
+    const f = rel ? `${rel}/${e.name}` : e.name
+    if (e.isDirectory()) { if (!['node_modules', '.git', '.bmuz', '.planning'].includes(e.name)) out.push(...testFiles(dir, f)) }
+    else if (E.isTestFile(f)) out.push(f)
+  }
+  return out.sort()
+}
+export const testCommandSha = dir => { const s = (readJson(dir, 'package.json') || {}).scripts || {}; return E.textSha(JSON.stringify([s.test ?? null, s['check:fast'] ?? null])) }
+const gitText = (dir, f) => { const r = spawnSync('git', ['show', `HEAD:${f}`], { cwd: dir, encoding: 'utf8', timeout: 30000 }); return r.status === 0 ? r.stdout : null }
+// Why the build can't be proven because of what it did to the tests (null = it can); changed: the existing tests it changed.
+export function weakProblem(dir, f) {
+  const b = f.baseline
+  if (!b) return { changed: [] }
+  if (b.command !== testCommandSha(dir)) return { why: `the test command changed since ${f.id} started (package.json's "test" or "check:fast" script): a build never changes what proves it; put it back` }
+  const changed = Object.entries(b.tests || {}).filter(([t, sha]) => E.textSha(readIn(dir, t)) !== sha).map(([t]) => t)
+  const weak = readJson(dir, WEAKENED) || {}
+  const still = Object.entries(weak).filter(([t, sha]) => E.textSha(readIn(dir, t)) === sha).map(([t]) => t)
+  if (still.length) return { why: `the reviewer found ${still.join(', ')} weakened (it checks less than before): put it back as it was, or make it check at least as much, then it is proven again`, changed }
+  return { changed }
+}
+function changedTestsMd(dir, changed) {
+  if (!changed.length) return ''
+  return ['# Existing tests this build changed — check each one: does it still check at least what it did?', ...changed.flatMap(t => ['', `## ${t}`, '', 'Before:', '```', (gitText(dir, t) ?? '(not in git)').trimEnd(), '```', '', 'Now:', '```', (readIn(dir, t) ?? '(deleted)').trimEnd(), '```'])].join('\n') + '\n'
+}
+
 export function prove(dir, script = loadScript(), now = new Date()) {
   const rec = recordOf(dir)
   const f = featureOf(dir, rec)
   const built = buildResult(dir)
-  const p = proofProblem(dir, built || {})
+  const weak = weakProblem(dir, f)
+  write(dir, CHANGED_TESTS, changedTestsMd(dir, weak.changed || []))
+  const p = weak.why || proofProblem(dir, built || {})
   if (typeof p === 'string') {
     f.tries = [...listOf(f.tries), { at: now.toISOString(), why: p }]
     saveRecord(dir, rec)
@@ -432,7 +476,7 @@ export function prove(dir, script = loadScript(), now = new Date()) {
     if (f.tries.length >= 2) write(dir, SAY.stuck, line('develop.stuck', { piece: named(f), know: p.length > 220 ? p.slice(0, 220) + '…' : p, plan: 'try a simpler way' }, script) + '\n')
     throw new Error(p)
   }
-  const proof = { feature: f.id, at: now.toISOString(), tests: p.tests, passed: p.passed, screens: hasUi(dir) ? listOf(built.screens) : [], ui: hasUi(dir) }
+  const proof = { feature: f.id, at: now.toISOString(), tests: p.tests, passed: p.passed, screens: hasUi(dir) ? listOf(built.screens) : [], ui: hasUi(dir), changedTests: weak.changed || [] }
   write(dir, `${DEV}/${f.id}.json`, JSON.stringify(proof, null, 2) + '\n')
   return proof
 }
@@ -595,6 +639,9 @@ export function tunedProblem(dir, rule, rulebook = null) {
 export function featureEnd(dir, now = new Date()) {
   const rec = recordOf(dir)
   const f = featureOf(dir, rec)
+  // (review fix 2c: every test the proof ran is still the test it ran, as F215's record checks)
+  const proof = readJson(dir, `${DEV}/${f.id}.json`)
+  for (const t of listOf(proof && proof.tests)) if (t && t.sha && E.textSha(readIn(dir, t.file)) !== t.sha) throw new Error(`${t.file} changed after it was proven: run the build's proof again (bmuz undo build), never keep a test changed after its proof`)
   const st = readState(dir)
   const a = answerOf(resultOf(st, 'approve').answer) || 'waiting'
   const tune = resultOf(st, 'tune')

@@ -24,6 +24,7 @@ const list = v => (Array.isArray(v) ? v : v ? [v] : [])
 const brief = text(a.brief) || '.bmuz/develop/brief.md'
 const tries = text(a.tries) || '.bmuz/develop/tries.md'
 const review = text(a.review) || '.bmuz/develop/review.md'
+const changed = text(a.changed) || '.bmuz/develop/changed-tests.md'
 
 const REPORT = {
   type: 'object',
@@ -53,10 +54,11 @@ const RULES = [
 
 if (a.mode === 'review') {
   phase('Review')
-  const FOUND = { type: 'object', properties: { findings: { type: 'array', items: { type: 'object', properties: { file: { type: 'string' }, what: { type: 'string' }, why: { type: 'string' } }, required: ['file', 'what', 'why'] } } }, required: ['findings'] }
+  const FOUND = { type: 'object', properties: { findings: { type: 'array', items: { type: 'object', properties: { file: { type: 'string' }, what: { type: 'string' }, why: { type: 'string' } }, required: ['file', 'what', 'why'] } }, weakened: { type: 'array', items: { type: 'string' } } }, required: ['findings', 'weakened'] }
   const found = await agent([
     `You review a feature another helper just built in this game project. You did not build it. Read ${brief} (what it should do) and the rulebook, then the code and tests it changed (git is not available to you: use Read, Glob and Grep).`,
     'Look for: a rule of the brief or the rulebook the code gets wrong or leaves out; a rule with no test, or a test that would pass even if the rule were broken; a tunable number written in the code instead of content/; anything outside the feature.',
+    `A must-check (F216 review fix 2c): read ${changed}. If it has anything, it lists the existing tests this build changed, each before and now. Put in "weakened" the path of every one that now checks less than before (an assertion dropped, loosened or skipped, a case removed); [] when none does.`,
     'Only real problems, the most important first, at most 5. None is a fine answer. Use only Read, Glob and Grep. Each finding: the file, what is wrong, why it matters, in plain words.',
   ].join('\n'), { label: 'review', phase: 'Review', schema: FOUND })
   const VERDICT = { type: 'object', properties: { real: { type: 'boolean' }, why: { type: 'string' } }, required: ['real', 'why'] }
@@ -67,7 +69,8 @@ if (a.mode === 'review') {
   ].join('\n'), { label: `confirm ${i + 1}`, phase: 'Review', schema: VERDICT })))
   const confirmed = findings.filter((f, i) => judged[i] && judged[i].real).map(f => ({ file: text(f.file), what: text(f.what), why: text(f.why) }))
   if (findings.length > confirmed.length) log(`${findings.length - confirmed.length} finding(s) not confirmed, dropped`)
-  return { findings: confirmed, found: findings.length }
+  const weakened = list(found && found.weakened).map(text).filter(Boolean)
+  return { findings: confirmed, found: findings.length, weakened }
 }
 
 if (a.mode === 'fix') {
