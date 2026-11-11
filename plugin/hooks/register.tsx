@@ -671,11 +671,12 @@ async function look($: any, step: any, result: any) {
   if (argv) {
     // (F216 review fix 10: three test runs' worth of time, from bmuz.json "testTimeoutMs" or 10 minutes each; a check
     // stopped at its limit says so plainly and is neither a pass nor a fail)
-    const limit = 3 * E.testTimeoutOf(ctx.cfg)
+    // (Claude Code runs a mod's command for 10 minutes at most: "init.timeoutMs is a whole number of ms, 1 to 600000")
+    const limit = Math.min(E.HOST_RUN_MAX_MS, 3 * E.testTimeoutOf(ctx.cfg))
     try {
       ran = await $.process.run(argv, { cwd: ctx.dir, timeoutMs: limit })
     } catch (err) {
-      ran = /time/i.test(String(err)) ? { exitCode: null, timedOut: true, stdout: '' } : { exitCode: -1, stdout: `the check could not run: ${String(err).slice(0, 200)}` }
+      ran = { exitCode: -1, stdout: `the check could not run: ${String(err).slice(0, 200)}` }
     }
     const late = E.checkTimedOutWhy(ran, limit)
     if (late) ran = { ...ran, exitCode: -1, stdout: late }

@@ -121,7 +121,7 @@ At any moment of any pipeline (a step, between steps, a gate, BLOCKED), the crea
 
 ## Done-checks (`done`)
 How the engine knows a step really finished. A failed check retries the step twice, then marks it BLOCKED and rolls back its `writes`.
-Time (F216 review fix 10): each test run a check makes gets 10 minutes, or the project's `bmuz.json` `"testTimeoutMs"`; a `script-ok` check gets three of them. A run stopped at its limit says so plainly, and is neither a pass nor a fail (a test that hangs never counts as "fails first").
+Time (F216 review fix 10): each test run a check makes gets 10 minutes, or the project's `bmuz.json` `"testTimeoutMs"`; a `script-ok` check gets three of them, but never more than 10 minutes in all (Claude Code runs a mod's command for 10 minutes at most). A run stopped at its limit says so plainly, and is neither a pass nor a fail (a test that hangs never counts as "fails first").
 
 | `type` | Settings | Passes when |
 |---|---|---|

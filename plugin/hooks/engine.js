@@ -750,6 +750,8 @@ export function answersNote(answers) {
 // F216 review fix 10: how long one test run may take (a real game's suite can take minutes): 10 minutes, or the
 // project's bmuz.json "testTimeoutMs". A done-check that runs tests gets three of them (a test file, the suite, check:fast).
 export const TEST_TIMEOUT_MS = 600000
+// Claude Code runs a mod's command for at most this long (its host check: "1 to 600000"), so a whole done-check does too.
+export const HOST_RUN_MAX_MS = 600000
 export function testTimeoutOf(cfg) {
   const n = cfg && cfg.testTimeoutMs
   return Number.isInteger(n) && n > 0 ? n : TEST_TIMEOUT_MS
