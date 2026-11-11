@@ -2166,3 +2166,91 @@ test('F216 review fix 2d: something that changes the engine\'s own files during 
   expect(js.filter((j: any) => j.ev === 'step.done' && j.step === 'plan' && !j.t).length).toBe(0)
   expect(js.find((j: any) => j.ev === 'retry' && j.step === 'plan')?.why).toMatch(/changed BMUZ's own files/)
 })
+
+// F219: Deliver's Build & Share as the engine runs it: the build card, then the "Share it?" gate, then the publish
+// script. Only the creative's own "Share it" lets publish run; an auto run stops at the gate.
+const SHARE_PIPE = {
+  id: 'hello', version: 1, steps: [
+    { id: 'build', kind: 'script', needs: [], run: ['node', 'deliver.mjs', 'build'], results: ['go'] },
+    { id: 'notyet', kind: 'talk', needs: ['build'], onBack: true, tools: ['Read'], craft: 'craft/name.md', results: ['lacks'] },
+    { id: 'notyet-do', kind: 'script', needs: ['notyet'], run: ['node', 'deliver.mjs', 'not-yet', '{lacks}'], results: ['go'] },
+    { id: 'share', kind: 'gate', needs: ['notyet-do'], when: '{go}', question: 'Share it?', options: ['Not yet', 'Share it'], approve: 'Share it', backTo: 'notyet' },
+    { id: 'publish', kind: 'script', needs: ['share'], when: '{go}', run: ['node', 'deliver.mjs', 'publish'], timeoutMs: 600000 },
+  ],
+}
+function shareWorld(on: any) {
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, { ...base({}), PIPELINE: JSON.stringify(SHARE_PIPE) }, (argv: string[]) => {
+    if (argv[2] === 'not-yet') return { exitCode: 0, stdout: `✔\n${JSON.stringify({ results: { go: argv[3] ? 'no' : 'yes' } })}` }
+    return { exitCode: 0, stdout: `✔\n${JSON.stringify({ results: { go: 'yes' } })}` }
+  })
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ pipeline: 'hello', current: null, status: 'idle', results: {}, retries: {}, finished: [], blocked: null, startedAt: null })
+  return w
+}
+const publishes = (w: any) => w.runs.filter((r: string[]) => r[2] === 'publish').length
+
+test('F219: an auto run stops at Deliver\'s "Share it?" gate (the question noted, nothing published); the creative\'s own "bmuz approve Share it" runs publish', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = shareWorld(on)
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't1')
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect([st.current, st.finished]).toEqual(['share', ['build', 'notyet', 'notyet-do']])
+  expect(events(w).find((j: any) => j.ev === 'gate.pending')).toMatchObject({ step: 'share' })
+  expect(w.files['/proj/.bmuz/questions.md']).toMatch(/Share it\? \(the run stopped here; answer with "bmuz approve Share it" or another option\)/)
+  expect(publishes(w)).toBe(0)
+  // the creative's own words, typed
+  await $.prompt.submit({ text: 'bmuz approve Share it' } as any)
+  await turn($, 't2')
+  expect(events(w).find((j: any) => j.ev === 'gate.answer')).toMatchObject({ step: 'share', answer: 'Share it' })
+  expect(publishes(w)).toBe(1)
+})
+
+test('F219: "Not yet" goes back to what\'s missing; once it is on the roadmap the gate and publish are skipped (back to Develop), nothing published', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = shareWorld(on)
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ pipeline: 'hello', current: 'share', status: 'waiting', results: { go: 'yes' }, retries: {}, finished: ['build', 'notyet', 'notyet-do'], skipped: ['notyet'], blocked: null, startedAt: 1 })
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz approve Not yet' } as any)
+  await turn($, 't1')
+  let st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect([st.current, st.back && st.back.step]).toEqual(['notyet', 'notyet'])
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { lacks: 'a title screen' } } as any)
+  await turn($, 't2')
+  st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(st.status).toBe('done')
+  expect(events(w).filter((j: any) => j.ev === 'step.skip').map((j: any) => j.step)).toEqual(['share', 'publish'])
+  expect(w.runs.find((r: string[]) => r[2] === 'not-yet')).toEqual(['node', 'deliver.mjs', 'not-yet', 'a title screen'])
+  expect(publishes(w)).toBe(0)
+})
+
+test('F219: Develop\'s look-back says "onward": deliver and its write hands back "at": "first": the project moves on to Deliver from its first step', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const said: Record<string, string> = { 'lookback-write': '{"results":{"at":"first"}}', prep: '{"results":{"first":"yes"}}' }
+  const w = world(on, base({}), (argv: string[]) => ({ exitCode: 0, stdout: said[argv[2]] || '{}' }))
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ pipeline: 'develop', current: 'lookback', status: 'working', results: {}, retries: {}, finished: ['plan'], blocked: null, startedAt: 1 })
+  w.files['PIPELINE:develop'] = JSON.stringify({
+    id: 'develop', version: 1, next: { pipeline: '{onward}', at: '{at}', ask: false }, steps: [
+      { id: 'plan', kind: 'talk', tools: ['Read'], craft: 'craft/name.md', results: ['features'] },
+      { id: 'lookback', kind: 'talk', needs: ['plan'], tools: ['Read'], craft: 'craft/name.md', results: ['onward'] },
+      { id: 'lookback-write', kind: 'script', needs: ['lookback'], run: ['node', 'sprint.mjs', 'lookback-write'], results: ['at'] },
+    ],
+  })
+  w.files['PIPELINE:deliver'] = JSON.stringify({
+    id: 'deliver', version: 1, next: { pipeline: 'develop', at: 'plan', ask: false }, steps: [
+      { id: 'prep', kind: 'script', run: ['node', 'deliver.mjs', 'prep'], results: ['first'] },
+      { id: 'notes', kind: 'talk', needs: ['prep'], tools: ['Read'], craft: 'craft/name.md', results: ['notes'] },
+    ],
+  })
+  w.files['/proj/bmuz.json'] = JSON.stringify({ pipeline: 'develop' })
+  await start($, true)
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { onward: 'deliver' } } as any)
+  await turn($, 't1')
+  expect(JSON.parse(w.files['/proj/bmuz.json']).pipeline).toBe('deliver')
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect([st.pipeline, st.finished, st.skipped || []]).toEqual(['deliver', ['prep'], []])
+})

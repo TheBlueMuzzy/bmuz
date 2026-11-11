@@ -996,7 +996,9 @@ async function startFlow($: any, step: any) {
 
 async function runScript($: any, step: any) {
   const argv = E.fillDeep(step.run, vars())
-  const ran = await $.process.run(argv, { cwd: ctx.dir, timeoutMs: 60000 })
+  // (F219: a script step with its own "timeoutMs" — Deliver's release check runs the tests and the build, its publish
+  // the release scripts — gets that long, up to the 10 minutes Claude Code allows a mod's command; others 1 minute)
+  const ran = await $.process.run(argv, { cwd: ctx.dir, timeoutMs: Math.min(Number(step.timeoutMs) || 60000, E.HOST_RUN_MAX_MS) })
   await journal($, { ev: 'script.ran', step: step.id, exitCode: ran.exitCode, stdout: ran.stdout.trim().slice(0, 300) })
   // A script that refuses says why in its output (Define's stage: "Not ready for Design: the pillars are still
   // open…"): those words are the reason, in place of a done-check that could only say a file lacks a line.

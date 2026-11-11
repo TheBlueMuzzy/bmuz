@@ -262,3 +262,23 @@ test('5.5 Playtest Notes: each feeling of GDD chapter 1 checked; tuning, bugs, r
   // every fixed part of 5.5's two lines is in what BMUZ shows
   for (const f of ['Against the feelings you chose:', "From your notes I've added", 'to the roadmap. Back to Develop.']) assert.ok(plain(read(dir, D.SAY.notes)).includes(plain(f)), f)
 })
+
+test('deliver.json is the script\'s Stage 5 in order; nothing after the gate runs without "Share it"; the gate\'s yes is never first; Develop\'s onward starts it, and it goes back to Develop at Plan the Sprint', () => {
+  const p = JSON.parse(readFileSync(join(here, '..', 'plugin', 'pipelines', 'deliver.json'), 'utf8'))
+  assert.deepEqual(E.checkPipeline(p), [])
+  assert.deepEqual(E.checkLines(p, script), [])
+  // (prep is the Release Check's own first look, so 5.1 comes before the 5.0 welcome it decides on)
+  assert.deepEqual([...new Set(p.steps.map(s => s.no))], ['5.1', '5.0', '5.2', '5.3', '5.4', '5.5'])
+  assert.deepEqual(p.steps.map(s => s.id), ['prep', 'welcome', 'check', 'notready', 'notready-do', 'decide', 'polish', 'polish-do', 'safety', 'build', 'notyet', 'notyet-do', 'share', 'publish', 'notes', 'notes-write'])
+  const share = p.steps.find(s => s.id === 'share')
+  assert.equal(share.kind, 'gate')
+  assert.ok(!share.auto, 'an auto run stops at Share it (never "carry")')
+  assert.deepEqual(E.gateWords(share, script), { question: 'Share it?', options: ['Not yet', 'Share it'] })
+  const publish = p.steps.find(s => s.id === 'publish')
+  assert.deepEqual([publish.needs, publish.when, publish.writes], [['share'], '{go}', undefined], 'publish runs only after the gate, and the engine never puts files back over a release')
+  assert.deepEqual(p.next, { pipeline: 'develop', at: 'plan', ask: false })
+  const develop = JSON.parse(readFileSync(join(here, '..', 'plugin', 'pipelines', 'develop.json'), 'utf8'))
+  assert.deepEqual(develop.next, { pipeline: '{onward}', at: '{at}', ask: false })
+  assert.deepEqual(develop.steps.find(s => s.id === 'lookback-write').results, ['at'])
+  for (const s of p.steps.filter(x => x.show)) assert.ok(E.isShowPath(s.show), s.show)
+})

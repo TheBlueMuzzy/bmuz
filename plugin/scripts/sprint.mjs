@@ -888,7 +888,9 @@ if (isMain) {
       say(!p, p ? `✘ ${p}` : '✔ the look-back is whole')
     } else if (mode === 'lookback-write') {
       const r = lookbackWrite(dir)
-      say(true, `✔ Sprint archived · ${r.wrote.join(', ') || 'nothing else'} updated · next: ${r.next}`)
+      // (F219: the step Develop's "next" starts at — Develop again at Plan the Sprint, or Deliver from its first step)
+      const at = (readJson(dir, LOOKBACK) || {}).onward === 'deliver' ? 'first' : 'plan'
+      say(true, `✔ Sprint archived · ${r.wrote.join(', ') || 'nothing else'} updated · next: ${r.next}\n${JSON.stringify({ results: { at } })}`)
     } else if (mode === 'teaching-write') {
       const r = teachingWrite(dir)
       say(true, `✔ the tutorial (${r.steps.length} steps) in GDD chapter 14 and the roadmap`)

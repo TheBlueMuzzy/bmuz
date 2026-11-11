@@ -1,0 +1,106 @@
+{
+  "id": "deliver",
+  "version": 1,
+  "description": "Deliver (F219, the approved script's Stage 5): each time a milestone is ready it becomes a build you can play and share — the welcome (first time only) → the Release Check for its stage (Playable, Alpha, Beta, 1.0; not ready: finish it first or move it to the next stage) → Polish & Stand-ins → Safety & Legal → Build & Share (nothing merges, versions, pushes or goes live without your own \"Share it\"; an auto run stops there) → Playtest Notes into the roadmap → back to Develop at Plan the Sprint",
+  "watchdogMs": 1200000,
+  "next": { "pipeline": "develop", "at": "plan", "ask": false },
+  "steps": [
+    {
+      "id": "prep", "kind": "script", "needs": [], "always": true, "no": "5.1", "title": "Release Check",
+      "description": "Which milestone, at which release stage",
+      "run": ["node", "{plugin}/scripts/deliver.mjs", "prep"], "results": ["first"]
+    },
+    {
+      "id": "welcome", "kind": "script", "needs": ["prep"], "when": "{first}", "no": "5.0", "title": "Welcome to Deliver",
+      "description": "The release stages, and what happens at each (first time only)",
+      "run": ["node", "{plugin}/scripts/deliver.mjs", "welcome"],
+      "show": ".bmuz/deliver/say-welcome.md"
+    },
+    {
+      "id": "check", "kind": "script", "needs": ["welcome"], "no": "5.1", "title": "Release Check",
+      "description": "Every must for this stage, no blocking bugs, every check",
+      "run": ["node", "{plugin}/scripts/deliver.mjs", "check"], "results": ["missing"], "timeoutMs": 600000,
+      "show": ".bmuz/deliver/say-check.md"
+    },
+    {
+      "id": "notready", "kind": "talk", "needs": ["check"], "when": "{missing}", "no": "5.1", "title": "Release Check",
+      "description": "Not ready yet: finish it first, or move it to the next stage?",
+      "tools": ["Read"], "lines": ["deliver.notready"], "craft": "craft/deliver-notready.md", "results": ["choice"],
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/deliver.mjs", "choice", "{choice}", "{auto}"] }
+    },
+    {
+      "id": "notready-do", "kind": "script", "needs": ["notready"], "when": "{missing}", "no": "5.1", "title": "Release Check",
+      "description": "Finished first (back to Develop), or moved to the next stage",
+      "run": ["node", "{plugin}/scripts/deliver.mjs", "not-ready", "{choice}"],
+      "writes": [".planning/ROADMAP.md", ".planning/project-page.html"],
+      "show": ".bmuz/deliver/say-back.md"
+    },
+    {
+      "id": "decide", "kind": "script", "needs": ["notready-do"], "no": "5.2", "title": "Polish & Stand-ins",
+      "description": "Ready to go on? The placeholders still in the game",
+      "run": ["node", "{plugin}/scripts/deliver.mjs", "decide"], "results": ["go", "polish"]
+    },
+    {
+      "id": "polish", "kind": "talk", "needs": ["decide"], "when": "{polish}", "no": "5.2", "title": "Polish & Stand-ins",
+      "description": "Which placeholders to polish before this build",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read"], "lines": ["deliver.standins", "deliver.standins.box"], "opening": ["deliver.standins", "deliver.standins.box"],
+      "craft": "craft/deliver-polish.md", "results": ["picked"]
+    },
+    {
+      "id": "polish-do", "kind": "script", "needs": ["polish"], "when": "{polish}", "no": "5.2", "title": "Polish & Stand-ins",
+      "description": "Shipped as it is, or the picks on the roadmap and back to Develop",
+      "run": ["node", "{plugin}/scripts/deliver.mjs", "polish", "{picked}"], "results": ["go"],
+      "writes": [".planning/ROADMAP.md", ".planning/project-page.html"],
+      "show": ".bmuz/deliver/say-back.md"
+    },
+    {
+      "id": "safety", "kind": "script", "needs": ["polish-do"], "when": "{go}", "no": "5.3", "title": "Safety & Legal",
+      "description": "No passwords or keys in the build; everything licensed (more from Beta)",
+      "run": ["node", "{plugin}/scripts/deliver.mjs", "safety"], "retries": 0, "timeoutMs": 300000,
+      "show": ".bmuz/deliver/say-safety.md"
+    },
+    {
+      "id": "build", "kind": "script", "needs": ["safety"], "when": "{go}", "no": "5.4", "title": "Build & Share",
+      "description": "The build, a link for you and one to share",
+      "run": ["node", "{plugin}/scripts/deliver.mjs", "build"], "timeoutMs": 600000,
+      "show": ".bmuz/deliver/say-build.md"
+    },
+    {
+      "id": "notyet", "kind": "talk", "needs": ["build"], "onBack": true, "no": "5.4", "title": "Build & Share",
+      "description": "Not yet: what's missing",
+      "tools": ["Read"], "lines": ["deliver.share.box"], "craft": "craft/deliver-notyet.md", "results": ["lacks"]
+    },
+    {
+      "id": "notyet-do", "kind": "script", "needs": ["notyet"], "no": "5.4", "title": "Build & Share",
+      "description": "What's missing on the roadmap, back to Develop",
+      "run": ["node", "{plugin}/scripts/deliver.mjs", "not-yet", "{lacks}"], "results": ["go"],
+      "writes": [".planning/ROADMAP.md", ".planning/project-page.html"],
+      "show": ".bmuz/deliver/say-notyet.md"
+    },
+    {
+      "id": "share", "kind": "gate", "needs": ["notyet-do"], "when": "{go}", "no": "5.4", "title": "Build & Share",
+      "description": "Share it? Nothing goes public without your own yes",
+      "line": "deliver.share.box", "approve": "Share it", "backTo": "notyet"
+    },
+    {
+      "id": "publish", "kind": "script", "needs": ["share"], "when": "{go}", "no": "5.4", "title": "Build & Share",
+      "description": "Merged, versioned and tagged, pushed, deployed, checked live (only after your \"Share it\")",
+      "run": ["node", "{plugin}/scripts/deliver.mjs", "publish"], "retries": 1, "timeoutMs": 600000,
+      "show": ".bmuz/deliver/say-live.md"
+    },
+    {
+      "id": "notes", "kind": "talk", "needs": ["publish"], "when": "{go}", "no": "5.5", "title": "Playtest Notes",
+      "description": "What happened when people played it",
+      "tools": ["Read", "Glob", "Grep", "WebFetch", "ToolSearch"], "lines": ["deliver.notes"], "opening": ["deliver.notes"],
+      "craft": "craft/deliver-notes.md", "results": ["notes"],
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/deliver.mjs", "notes-check", "{notes}"] }
+    },
+    {
+      "id": "notes-write", "kind": "script", "needs": ["notes"], "when": "{go}", "no": "5.5", "title": "Playtest Notes",
+      "description": "The notes on the roadmap: tuning tasks, bugs, rulebook questions, ideas",
+      "run": ["node", "{plugin}/scripts/deliver.mjs", "notes-write"],
+      "writes": [".planning/ROADMAP.md", ".planning/BUGS.md", ".planning/project-page.html"],
+      "show": ".bmuz/deliver/say-notes.md"
+    }
+  ]
+}

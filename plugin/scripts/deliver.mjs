@@ -36,7 +36,7 @@ import { runTool, loadTool } from './release-tools.mjs'
 export const DIR = '.bmuz/deliver'
 export const RECORD = `${DIR}/run.json`
 export const HISTORY = `${DIR}/history.json`
-export const SAY = { welcome: `${DIR}/say-welcome.md`, check: `${DIR}/say-check.md`, back: `${DIR}/say-back.md`, safety: `${DIR}/say-safety.md`, build: `${DIR}/say-build.md`, live: `${DIR}/say-live.md`, notes: `${DIR}/say-notes.md` }
+export const SAY = { welcome: `${DIR}/say-welcome.md`, check: `${DIR}/say-check.md`, back: `${DIR}/say-back.md`, notyet: `${DIR}/say-notyet.md`, safety: `${DIR}/say-safety.md`, build: `${DIR}/say-build.md`, live: `${DIR}/say-live.md`, notes: `${DIR}/say-notes.md` }
 export const STATE_MD = '.planning/STATE.md'
 const ROADMAP = S.ROADMAP
 
@@ -704,7 +704,11 @@ if (isMain) {
       const r = build(dir)
       say(true, `✔ ${SAY.build}: for you ${r.local} · to share ${r.share}`)
     } else if (mode === 'not-yet') {
+      // (nothing said yet — the step runs only after "Not yet" — leaves the run as it is)
+      write(dir, SAY.notyet, '')
+      if (!clean(a)) say(true, `✔ nothing missing said\n${results({ go: yes(recordOf(dir).go) })}`)
       const id = notYet(dir, a)
+      write(dir, SAY.notyet, readIn(dir, SAY.back) || '')
       say(true, `✔ ${id} on the roadmap; back to Develop\n${results({ go: 'no' })}`)
     } else if (mode === 'publish') {
       const r = publish(dir)

@@ -477,6 +477,10 @@ test('a milestone whose musts are all done: onward is deliver, and the next mile
   assert.match(rm, /^## v0\.1 — Vertical slice  \(→ playable\)  ✅ ready to deliver \d{4}-\d\d-\d\d$/m)
   assert.match(rm, /^## v0\.2 — Alpha  ← current  \(→ alpha\)$/m)
   assert.equal(S.currentMilestone(rm).name, 'Alpha')
+  // (F219: the look-back's write hands back where the next stage starts: Deliver from its first step)
+  state(dir, { resultsBy: { lookback: { retro: { well: 'a', wrong: 'b', change: 'c' } } } })
+  const out = spawnSync(process.execPath, [join(here, '..', 'plugin', 'scripts', 'sprint.mjs'), 'lookback-write'], { cwd: dir, encoding: 'utf8' }).stdout.trim().split('\n').pop()
+  assert.deepEqual(JSON.parse(out), { results: { at: 'first' } })
 })
 
 test('teaching: the tutorial into GDD chapter 14 (worked out) and a 🎮 Tutorial feature on the current milestone', () => {
@@ -507,8 +511,10 @@ test('develop.json is the script\'s Stage 4: 4.0–4.8 in order; every Develop l
   for (const id of Object.keys(script.lines).filter(id => id.startsWith('develop.') && !composed.includes(id))) assert.ok(said.has(id), id)
   const design = JSON.parse(readFileSync(join(plugin, 'pipelines', 'design.json'), 'utf8'))
   assert.deepEqual(design.next, { pipeline: 'develop', ask: false })
-  assert.deepEqual(DEV.next, { pipeline: '{onward}', at: 'plan', ask: false })
-  assert.equal(E.nextOf(DEV, { onward: 'develop' }).at, 'plan')
+  // (F219: lookback-write hands back "at": "plan" for Develop again, "first" for Deliver)
+  assert.deepEqual(DEV.next, { pipeline: '{onward}', at: '{at}', ask: false })
+  assert.equal(E.nextOf(DEV, { onward: 'develop', at: 'plan' }).at, 'plan')
+  assert.deepEqual(E.nextOf(DEV, { onward: 'deliver', at: 'first' }), { pipeline: 'deliver', at: null, carry: null, ask: false })
   assert.equal(stepOf(DEV, 'propose').always, true)
 })
 

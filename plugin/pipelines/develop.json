@@ -3,7 +3,7 @@
   "version": 1,
   "description": "Develop (F216, the approved script's Stage 4): the welcome → Setup → The Roadmap (Start with …?) → Plan the Sprint (the plan card; Build this sprint?) → each feature built, proven, played and approved, tuned until it feels right (a feature run each: plugin/pipelines/feature.json, kept like a fix run) → the Sprint Look-Back → Teaching (only after playtests) → the next sprint (this pipeline again, from Plan the Sprint), until a milestone is ready for Deliver",
   "watchdogMs": 1200000,
-  "next": { "pipeline": "{onward}", "at": "plan", "ask": false },
+  "next": { "pipeline": "{onward}", "at": "{at}", "ask": false },
   "steps": [
     {
       "id": "welcome", "kind": "talk", "needs": [], "no": "4.0", "title": "Welcome to Develop",
@@ -76,7 +76,7 @@
     {
       "id": "lookback-write", "kind": "script", "needs": ["lookback"], "no": "4.7", "title": "Sprint Look-Back",
       "description": "The retro kept, the sprint archived; the GDD, the rulebook and the TDD updated to match what we built",
-      "run": ["node", "{plugin}/scripts/sprint.mjs", "lookback-write"],
+      "run": ["node", "{plugin}/scripts/sprint.mjs", "lookback-write"], "results": ["at"],
       "writes": [".planning/SPRINT.md", ".planning/ROADMAP.md", ".planning/GDD.md", ".planning/design/RULEBOOK.md", ".planning/TDD.md", ".planning/archive/sprints/*.md", ".planning/project-page.html"],
       "show": ".bmuz/develop/say-lookback.md"
     },

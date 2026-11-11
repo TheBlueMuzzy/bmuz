@@ -127,9 +127,9 @@ export function isSafePath(path) {
 
 // A script step's "show" file: inside the project, or (F215 review fix 8) one of the bug pipeline's own lines in
 // .bmuz/bug/, which the engine's scripts write so nothing of a fix run is left in the creative's project; (F216) and
-// Develop's lines in .bmuz/develop/, written by sprint.mjs.
+// Develop's lines in .bmuz/develop/, written by sprint.mjs; (F219) Deliver's in .bmuz/deliver/, written by deliver.mjs.
 export function isShowPath(path) {
-  return isSafePath(path) || /^\.bmuz\/(bug|develop)\/[a-z0-9-]+\.md$/.test(String(path))
+  return isSafePath(path) || /^\.bmuz\/(bug|develop|deliver)\/[a-z0-9-]+\.md$/.test(String(path))
 }
 
 const isList = v => Array.isArray(v) && v.every(x => typeof x === 'string' && x.trim())
