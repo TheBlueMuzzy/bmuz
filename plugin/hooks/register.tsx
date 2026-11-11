@@ -73,20 +73,33 @@ async function readText($: any, path: string) {
 // $.fs has no append, so a journal line is a read + a rewrite. Hooks and timers run side by side,
 // so the writes go one at a time through this queue, or one would overwrite another's line.
 let journalQueue: Promise<void> = Promise.resolve()
+// F216 review fix 2d: while a flow's helpers run, the engine's own files (the journal, the state, own.json) are kept as
+// it last wrote them, and .bmuz/develop/ as it was at the launch; anything else changing them (a test script the run
+// tool ran, say) is found at the next write or when the helpers finish, put back, and that try counts as failed.
+let flowWatch: null | { step: string, files: Record<string, string>, develop: Record<string, string>, tampered: Set<string> } = null
+async function watchedBase($: any, name: string) {
+  const disk = (await readText($, `${ctx.dir}/.bmuz/${name}`)) ?? ''
+  if (!flowWatch || flowWatch.files[name] === undefined) return disk
+  if (disk !== flowWatch.files[name]) flowWatch.tampered.add(name)
+  return flowWatch.files[name]
+}
 function journal($: any, entry: any) {
   const path = `${ctx.dir}/.bmuz/journal.jsonl`
   const sessionId = ctx.sessionId
   const run = journalQueue.then(async () => {
-    const old = (await readText($, path)) ?? ''
+    const old = await watchedBase($, 'journal.jsonl')
     const line = JSON.stringify({ t: await $.clock.now(), session: sessionId, ...entry })
     await $.fs.write(path, old + line + '\n')
+    if (flowWatch) flowWatch.files['journal.jsonl'] = old + line + '\n'
   })
   journalQueue = run.catch(() => {})
   return run
 }
 
 async function save($: any) {
+  if (flowWatch) await watchedBase($, 'state.json')
   await $.fs.write(`${ctx.dir}/.bmuz/state.json`, JSON.stringify(ctx.state, null, 2))
+  if (flowWatch) flowWatch.files['state.json'] = JSON.stringify(ctx.state, null, 2)
   const lock = ctx.state.current
     ? { step: ctx.state.current, status: ctx.state.status, startedAt: ctx.state.startedAt, session: ctx.sessionId }
     : { step: null, status: ctx.state.status, session: ctx.sessionId }
@@ -661,7 +674,8 @@ async function matching($: any, pattern: string) {
 
 // ---- Own edits (F216 review fixes 5–6): .bmuz/own.json, { steps: { <step>: { <file>: entry } } } (engine.js ownEntry) ----
 async function readOwn($: any) {
-  const j = await readJson($, `${ctx.dir}/.bmuz/own.json`)
+  let j: any = null
+  try { j = JSON.parse(await watchedBase($, 'own.json')) } catch (err) { j = null }
   return j && typeof j === 'object' && j.steps && typeof j.steps === 'object' ? j : { steps: {} }
 }
 async function recordOwn($: any, stepId: string, file: string, before: string | null, after: string | null) {
@@ -670,7 +684,40 @@ async function recordOwn($: any, stepId: string, file: string, before: string | 
   const mine = own.steps[stepId] || {}
   mine[file] = E.ownEntry(mine[file] || null, before, after)
   own.steps[stepId] = mine
+  await writeOwn($, own)
+}
+async function writeOwn($: any, own: any) {
   await $.fs.write(`${ctx.dir}/.bmuz/own.json`, JSON.stringify(own, null, 2))
+  if (flowWatch) flowWatch.files['own.json'] = JSON.stringify(own, null, 2)
+}
+// The flow's watch starts at its launch: the engine's own files as they are, and every file in .bmuz/develop/.
+async function startWatch($: any, step: any) {
+  await journalQueue
+  const files: Record<string, string> = {}
+  for (const name of ['journal.jsonl', 'state.json', 'own.json']) files[name] = (await readText($, `${ctx.dir}/.bmuz/${name}`)) ?? ''
+  flowWatch = { step: step.id, files, develop: await developFiles($), tampered: new Set() }
+}
+async function developFiles($: any) {
+  const out: Record<string, string> = {}
+  let names: string[] = []
+  try { names = JSON.parse(String((await $.process.run(['node', `${ctx.root}/scripts/ls.mjs`, ctx.dir, '.bmuz/develop/*'], { timeoutMs: 10000 }))?.stdout ?? '[]')) } catch (err) { names = [] }
+  for (const n of Array.isArray(names) ? names : []) if (/^\.bmuz\/develop\/[\w.-]+$/.test(String(n))) out[n] = (await readText($, `${ctx.dir}/${n}`)) ?? ''
+  return out
+}
+// When the helpers finish: anything else that changed the engine's own files is put back. Returns the files, or [].
+async function endWatch($: any) {
+  const w = flowWatch
+  if (!w) return []
+  await journalQueue
+  for (const [name, text] of Object.entries(w.files)) {
+    const disk = (await readText($, `${ctx.dir}/.bmuz/${name}`)) ?? ''
+    if (disk !== text) { w.tampered.add(name); await $.fs.write(`${ctx.dir}/.bmuz/${name}`, text) }
+  }
+  const now = await developFiles($)
+  for (const [f, text] of Object.entries(w.develop)) if (now[f] !== text) { w.tampered.add(f); await $.fs.write(`${ctx.dir}/${f}`, text) }
+  for (const f of Object.keys(now)) if (!(f in w.develop)) { w.tampered.add(f); await $.process.run(['node', `${ctx.root}/scripts/rm.mjs`, `${ctx.dir}/${f}`]) }
+  flowWatch = null
+  return [...w.tampered]
 }
 
 async function rollback($: any, step: any) {
@@ -937,6 +984,7 @@ async function startFlow($: any, step: any) {
   ctx.state = { ...ctx.state, flow: { args, toolUseId: null, taskId: null } }
   await save($)
   const tryNo = (ctx.state.retries[step.id] || 0) + 1
+  await startWatch($, step)
   // F216: stuck twice (the script's 4.4 line, written by the done-check): said word for word before the last try
   const stuck = step.stuck && tryNo === E.retriesOf(step) + 1 && E.isShowPath(step.stuck) ? ((await readText($, `${ctx.dir}/${step.stuck}`)) ?? '').trim() : ''
   if (stuck) {
@@ -1257,9 +1305,14 @@ async function doctorNow($: any) {
 async function flowFinished($: any, n: any) {
   const step = E.stepById(ctx.pipeline, ctx.state.current)
   await journal($, { ev: 'flow.result', step: step.id, status: n.status, taskId: n.taskId, result: n.result ?? null })
-  const verdict = n.status === 'completed'
-    ? E.doneCheck(step, vars(), await look($, step, n.result))
-    : { ok: false, why: `the workflow ended ${n.status}` }
+  // (review fix 2d: the engine's own files, as it left them, before anything reads them)
+  const tampered = await endWatch($)
+  if (tampered.length) await journal($, { ev: 'tamper', step: step.id, files: tampered })
+  const verdict = tampered.length
+    ? { ok: false, why: `something changed BMUZ's own files (${tampered.join(', ')}) while the helpers ran; they were put back, and this try counts as failed` }
+    : n.status === 'completed'
+      ? E.doneCheck(step, vars(), await look($, step, n.result))
+      : { ok: false, why: `the workflow ended ${n.status}` }
   const next = await settle($, step, verdict, null)
   if (next === 'retry') {
     ctx.state = { ...ctx.state, current: step.id, status: 'idle' }
@@ -1435,7 +1488,7 @@ async function runTool($: any, e: any) {
     const mine = own.steps[stepId] || {}
     for (const f of last.changed.map(String).filter((x: string) => E.isSafePath(x))) mine[f] = { after: E.textSha(await readText($, `${ctx.dir}/${f}`)), keys: null, created: !!(mine[f] && mine[f].created), run: true }
     own.steps[stepId] = mine
-    await $.fs.write(`${ctx.dir}/.bmuz/own.json`, JSON.stringify(own, null, 2))
+    await writeOwn($, own)
   }
   await journal($, { ev: 'run', step: stepId ?? null, what, args, exitCode: last.exitCode ?? ran?.exitCode ?? null, changed: last.changed ?? [] })
   return { result: out.split('\n').slice(0, -1).join('\n').slice(-4000) || '(no output)' }

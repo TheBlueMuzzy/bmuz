@@ -2136,3 +2136,33 @@ test('F216 review fix 2b: in a protected step the builder helper can\'t write th
   expect(refused(await $.tool.call({ tool: 'Write', ...h, file_path: '/proj/src/turn.js', content: 'export const x = 1' } as any))).toBe(false)
   expect(w.files['/proj/package.json']).toBe(JSON.stringify({ scripts: { test: 'node --test' } }))
 })
+
+test('F216 review fix 2d: something that changes the engine\'s own files during a helper run (the journal, the state, .bmuz/develop/) is put back, and the try counts as failed', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  // (ls.mjs lists the fake disk's .bmuz/develop/ files)
+  const disk: any = {}
+  const w = world(on, base({}), (argv: string[]) => (String(argv[1]).endsWith('ls.mjs') ? { exitCode: 0, stdout: JSON.stringify(Object.keys(disk.files).filter(k => k.startsWith('/proj/.bmuz/develop/')).map(k => k.slice('/proj/'.length))) } : { exitCode: 0, stdout: '{}' }))
+  disk.files = w.files
+  const p = JSON.parse(w.files.PIPELINE)
+  p.steps[2] = { id: 'plan', kind: 'flow', needs: ['approve'], workflow: 'bmuz:hello-flow', agentTools: ['Read'] }
+  w.files.PIPELINE = JSON.stringify(p)
+  w.files['/proj/.bmuz/state.json'] = state({ finished: ['name', 'approve'] })
+  w.files['/proj/.bmuz/develop/F01.json'] = '{"tests":[]}'
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't1')
+  // the launch: Claude calls the Workflow tool
+  await $.tool.call({ tool: 'Workflow', name: 'bmuz:hello-flow', args: {}, tool_use_id: 'tu9' } as any)
+  // during the helpers' run, something (a test script, say) rewrites the proof and adds a line to the journal
+  w.files['/proj/.bmuz/develop/F01.json'] = '{"tests":["faked"]}'
+  w.files['/proj/.bmuz/journal.jsonl'] += JSON.stringify({ ev: 'step.done', step: 'plan', kind: 'flow' }) + String.fromCharCode(10)
+  await $.prompt.submit({ text: `<task-notification>\n<task-id>wf</task-id>\n<tool-use-id>tu9</tool-use-id>\n<status>completed</status>\n<result>{}</result>\n</task-notification>`, origin: { kind: 'task-notification' } } as any)
+  expect(w.files['/proj/.bmuz/develop/F01.json']).toBe('{"tests":[]}')
+  const js = events(w)
+  expect(js.find((j: any) => j.ev === 'tamper')).toMatchObject({ step: 'plan' })
+  expect(js.filter((j: any) => j.ev === 'step.done' && j.step === 'plan' && !j.t).length).toBe(0)
+  expect(js.find((j: any) => j.ev === 'retry' && j.step === 'plan')?.why).toMatch(/changed BMUZ's own files/)
+})
