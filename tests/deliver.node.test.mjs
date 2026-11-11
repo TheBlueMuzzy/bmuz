@@ -34,6 +34,7 @@ function fakeHost(folder) {
   hosts.push(child)
   return new Promise(res => child.stdout.on('data', d => { if (/listening/.test(String(d))) res(port) }))
 }
+const stopHosts = () => { for (const h of hosts) h.kill() }
 function garden({ port = 1 } = {}) {
   const dir = join(mkdtempSync(join(tmpdir(), 'bmuz-deliver-')), 'garden')
   setupDevelopedGarden(dir, { port })
@@ -214,6 +215,24 @@ test('5.4 "Share it": merged, versioned v0.1.0 and tagged, smoke pass, pushed to
   // a try after this one carries on where it stopped: nothing is done twice
   assert.deepEqual(D.publish(dir, script), r)
   assert.ok(!/\.bmuz/.test(read(dir, '.git/info/exclude') || ''), 'the engine\'s record is hidden from git only while the release scripts run')
+
+  // The next build's live check fails (the host is down): the last good version (v0.1.0) is put back by rollback.mjs as
+  // a new commit, pushed and deployed again, and the step says so.
+  writeFileSync(join(dir, S.ROADMAP), read(dir, S.ROADMAP).replace(/^## v0\.2 — Alpha {2}← current {2}\(→ alpha\)$/m, '## v0.2 — Second slice  (→ playable)  ✅ ready to deliver 2026-11-11').replace('- 🟢 F04 🎮 Computer opponent — play alone against the computer — must:alpha', '- ✅ F04 🎮 Computer opponent — play alone against the computer — must:playable'))
+  spawnSync('git', ['commit', '-qam', 'Plan: the second slice is approved'], { cwd: dir })
+  spawnSync('git', ['checkout', '-q', '-b', 'dev/second-slice'], { cwd: dir })
+  appendFileSync(join(dir, 'src', 'garden.js'), '// F04: the computer opponent\n')
+  spawnSync('git', ['commit', '-qam', 'F04: done — Computer opponent'], { cwd: dir })
+  stopHosts()
+  D.prep(dir, NOW)
+  D.build(dir, script)
+  journal(dir, [{ ev: 'step.done', step: 'build' }, { ev: 'gate.answer', step: 'share', answer: 'Share it' }])
+  process.env.BMUZ_TEST = '1'
+  try { assert.throws(() => D.publish(dir, script), /the live check failed for v0\.2\.0: .*Put back v0\.1\.0, the last good version, and sent it live again\./s) } finally { process.env.BMUZ_TEST = was }
+  assert.match(git(dir, ['log', '-1', '--format=%s']), /^Rollback to v0\.1\.0: undo v0\.2\.0/)
+  assert.equal(git(dir, ['diff', 'v0.1.0', 'HEAD', '--', 'src']), '', 'the code is v0.1.0\'s again')
+  assert.equal(git(origin, ['rev-parse', 'main']), git(dir, ['rev-parse', 'main']), 'the rollback is pushed (to the local origin)')
+  assert.equal(D.readRecord(dir).publish.rolledBack, 'v0.1.0')
 })
 
 test('5.5 Playtest Notes: each feeling of GDD chapter 1 checked; tuning, bugs, rulebook questions and ideas land in the roadmap; the script\'s lines', () => {
