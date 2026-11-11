@@ -19,8 +19,11 @@
 //   node bugs.mjs next [B004]           the bug a fix run would take (that one, or the first open P0 → P1 → P2 → P3)
 //   node bugs.mjs status B004 <status> [guarded-by-file]
 //   node bugs.mjs list                  the open bugs, counted
+//   the fix run's steps (plugin/pipelines/bug.json; see "The fix run" below): pick · repro <test> · say-repro · verify ·
+//   hits-fail '<hits json>' · hits-pass · record
 //   (run in the project folder)
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -187,6 +190,9 @@ export function setStatus(text, id, status, extra = {}) {
     if (!existsSync(join(extra.dir || process.cwd(), g))) throw new Error(`"Guarded by: ${g}" is refused: there is no such file in the project`)
     setField(/^Guarded by: /, `Guarded by: ${g}`)
   }
+  // (PROJECT-FILES' order: … · fixed in a1b2c3d · Guarded by: tests/…, last)
+  const rank = f => (/^fixed in /.test(f) ? 1 : /^Guarded by: /.test(f) ? 2 : 0)
+  h.fields = h.fields.map((f, i) => [f, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(x => x[0])
   // (a P0 / P1 can't be closed as fixed without the test that guards it: PROJECT-FILES' rule)
   if ((status === 'fixed' || status === 'verified') && ['P0', 'P1'].includes(h.level) && !h.fields.some(f => /^Guarded by: /.test(f))) throw new Error(`${id} is a ${h.level}: it needs "Guarded by: <test file>" to be ${status}`)
   const lines = doc.split('\n')
@@ -304,6 +310,266 @@ export function commitFiles(dir, files, message) {
   return { hash: git(dir, ['rev-parse', '--short', 'HEAD']).stdout.trim() }
 }
 
+// ---- The fix run (F215 task 4: plugin/pipelines/bug.json) ----
+// The same way every time: the bug picked → a test that fails because of it (run here, the failing exit recorded;
+// refused if it passes) → the root cause written down → the fix → the same test passing, unchanged, with the suite and
+// check:fast green → the same mistake looked for in matching places (each one fixed with its own test, proven failing
+// first, or logged as a new bug) → BUGS.md fixed + "Guarded by:", a "Don't re-break" line, committed "Fix B###: …".
+// The proof lives in .planning/bugs/<B###>.json; the lines BMUZ says come from the script, composed here and shown.
+export const FIX_RUN = ['pick', 'repro', 'say-repro', 'verify', 'hits-fail', 'hits-pass', 'record']
+export const CURRENT = '.planning/bugs/current.json'
+export const STATE_MD = '.planning/STATE.md'
+export const SAY = { start: '.planning/bugs/say-start.md', repro: '.planning/bugs/say-repro.md', done: '.planning/bugs/say-done.md' }
+const here = dirname(fileURLToPath(import.meta.url))
+export const loadScript = () => E.parseScript(readFileSync(join(here, '..', 'script.md'), 'utf8'))
+const proofPath = id => `.planning/bugs/${id}.json`
+const sha = text => createHash('sha1').update(String(text)).digest('hex').slice(0, 12)
+const readJsonIn = (dir, rel) => { try { return JSON.parse(readIn(dir, rel) || 'null') } catch (e) { return null } }
+
+function line(id, slots, script = loadScript()) {
+  const r = E.renderLine(script, id, slots)
+  if (r.error) throw new Error(r.error)
+  return r.text
+}
+
+// The engine's state (results by step, and what the fix run was given), read like the other scripts read it.
+function runState(dir) {
+  const st = readJsonIn(dir, '.bmuz/state.json')
+  if (!st) throw new Error('no .bmuz/state.json: this runs inside the bug pipeline')
+  return st
+}
+function current(dir) {
+  const c = readJsonIn(dir, CURRENT)
+  if (!c || !/^B\d{3,}$/.test(String(c.id))) throw new Error(`no bug is being fixed (${CURRENT} is missing): the "pick" step comes first`)
+  return c
+}
+
+// How one test file runs here: the project's test runner if package.json names one, else node's own.
+export function testCommand(dir, file) {
+  if (!E.isSafePath(file) || !/^[\w@./-]+$/.test(file)) throw new Error(`"${file}" isn't a test file path inside the project (letters, digits, - _ . / only)`)
+  if (!existsSync(join(dir, file))) throw new Error(`there is no test file ${file} in the project`)
+  const pkg = readJsonIn(dir, 'package.json') || {}
+  const t = String((pkg.scripts && pkg.scripts.test) || '')
+  if (/\bvitest\b/.test(t)) return ['npx', 'vitest', 'run', file]
+  if (/\bjest\b/.test(t)) return ['npx', 'jest', file]
+  return [process.execPath, '--test', file]
+}
+
+// Runs a command in the project: { exitCode, out } (out = the last 1500 characters, for the proof and the reason).
+export function runIn(dir, argv, timeout = 300000) {
+  const win = process.platform === 'win32' && argv[0] !== process.execPath
+  // (NODE_TEST_CONTEXT out: inherited from a node test run around this one, it makes the project's own node --test
+  // report to that run and exit 0 even when its test fails)
+  const env = { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' }
+  delete env.NODE_TEST_CONTEXT
+  const r = spawnSync(argv[0], argv.slice(1), { cwd: dir, encoding: 'utf8', timeout, shell: win, env })
+  const out = `${r.stdout || ''}${r.stderr || ''}`.trim()
+  return { exitCode: r.status === null ? -1 : r.status, out: out.slice(-1500), all: out, cmd: argv.map(a => (a === process.execPath ? 'node' : a)).join(' ') }
+}
+
+// A test run that failed before testing anything (a typo, a missing file) proves nothing about the bug.
+// (a load error names itself; a real failure shows an assertion)
+export function crashedBeforeTesting(out) {
+  return /SyntaxError|ERR_MODULE_NOT_FOUND|Cannot find module|does not provide an export named/.test(out) && !/AssertionError|ERR_ASSERTION/.test(out)
+}
+
+// The suite: npm test and npm run check:fast, the ones package.json has. Returns [{ cmd, exitCode, out }].
+export function suite(dir) {
+  const pkg = readJsonIn(dir, 'package.json') || {}
+  const s = pkg.scripts || {}
+  const out = []
+  if (s.test) out.push(runIn(dir, ['npm', 'test']))
+  if (s['check:fast']) out.push(runIn(dir, ['npm', 'run', 'check:fast'], 900000))
+  return out
+}
+
+export function pick(dir, now = new Date()) {
+  const st = runState(dir)
+  const text = readIn(dir, BUGS) || ''
+  const p = pickBug(text, (st.given && st.given.bug) || null)
+  if (p.error) throw new Error(p.error)
+  if (p.none) throw new Error('there are no open bugs to fix')
+  const id = p.bug.id
+  const t = p.bug.status === 'fixing' ? text : setStatus(text, id, 'fixing', { day: now.toISOString().slice(0, 10), dir })
+  writeIn(dir, BUGS, t)
+  const words = bugWords(t, id)
+  writeIn(dir, CURRENT, JSON.stringify({ id, level: p.bug.level, title: clean(titleOf(t, id)), bug: words }, null, 2) + '\n')
+  writeIn(dir, SAY.start, line('bug.fix.start', { bug: words }) + '\n')
+  refreshPage(dir)
+  return { id, bug: words }
+}
+
+// The reproduce step's done-check: the new test must FAIL now, because of the bug. Recorded with the test's fingerprint.
+export function repro(dir, test) {
+  const c = current(dir)
+  const cmd = testCommand(dir, test)
+  const ran = runIn(dir, cmd)
+  if (ran.exitCode === 0) throw new Error(`${test} passes, so it doesn't show ${c.id} yet. Change the test so it fails because of the bug (it checks what should happen), then finish again. (${ran.cmd})`)
+  if (crashedBeforeTesting(ran.all)) throw new Error(`${test} crashed before testing anything, which proves nothing about ${c.id}: ${ran.out.slice(-300)}`)
+  const proof = readJsonIn(dir, proofPath(c.id)) || { id: c.id }
+  proof.repro = { test, cmd: ran.cmd, exitCode: ran.exitCode, sha: sha(readIn(dir, test)), at: new Date().toISOString(), out: ran.out.slice(-600) }
+  writeIn(dir, proofPath(c.id), JSON.stringify(proof, null, 2) + '\n')
+  return proof.repro
+}
+
+export function sayRepro(dir) {
+  const c = current(dir)
+  const proof = readJsonIn(dir, proofPath(c.id))
+  if (!proof || !proof.repro) throw new Error(`${c.id} has no failing test on record yet`)
+  writeIn(dir, SAY.repro, line('bug.fix.reproduced', { test: proof.repro.test }) + '\n')
+}
+
+// One proven test, checked again: unchanged since it failed, passing now.
+function passesNow(dir, t) {
+  if (sha(readIn(dir, t.test) ?? '') !== t.sha) return `${t.test} changed after it failed. Fix the code, not the test: put the test back as it was when it failed`
+  const ran = runIn(dir, testCommand(dir, t.test))
+  return ran.exitCode === 0 ? null : `${t.test} still fails (${ran.cmd}): ${ran.out.slice(-400)}`
+}
+function suiteProblem(dir) {
+  for (const s of suite(dir)) if (s.exitCode !== 0) return `"${s.cmd}" fails: ${s.out.slice(-400)}`
+  return null
+}
+
+// The fix step's done-check: the new test passes (unchanged), and the suite and check:fast are green.
+export function verify(dir) {
+  const c = current(dir)
+  const proof = readJsonIn(dir, proofPath(c.id))
+  if (!proof || !proof.repro) throw new Error(`${c.id} has no failing test on record: the reproduce step comes first`)
+  const why = passesNow(dir, proof.repro)
+  if (why) throw new Error(why)
+  const runs = suite(dir)
+  const bad = runs.find(s => s.exitCode !== 0)
+  if (bad) throw new Error(`"${bad.cmd}" fails: ${bad.out.slice(-400)}`)
+  proof.verify = { at: new Date().toISOString(), test: proof.repro.test, suite: runs.map(s => ({ cmd: s.cmd, exitCode: s.exitCode })) }
+  writeIn(dir, proofPath(c.id), JSON.stringify(proof, null, 2) + '\n')
+  return proof.verify
+}
+
+// The matching places, as the step hands them back: [{ where, what, action: "fix" | "log", test, title, level }].
+export function hitsProblem(hits) {
+  if (!Array.isArray(hits)) return '"hits" must be a list (empty when the same mistake is nowhere else)'
+  for (const [i, h] of hits.entries()) {
+    const at = `hit ${i + 1}`
+    if (!h || typeof h !== 'object' || !clean(h.where)) return `${at} needs "where": the file and line, like src/score.js:12`
+    if (!['fix', 'log'].includes(h.action)) return `${at} needs "action": "fix" (fixed now, with its own test) or "log" (logged as a new bug)`
+    if (h.action === 'fix' && !clean(h.test)) return `${at} is fixed, so it needs its own "test" file`
+    if (h.action === 'log' && !clean(h.title || h.what)) return `${at} is logged, so it needs a "title"`
+    if (h.level !== undefined && !LEVELS.includes(h.level)) return `${at}: "level" must be one of ${LEVELS.join(', ')}`
+  }
+  return null
+}
+
+// The matching step's done-check: every hit to fix has its own new test, and it FAILS now (before the fix).
+export function hitsFail(dir, hits) {
+  const why = hitsProblem(hits)
+  if (why) throw new Error(why)
+  const c = current(dir)
+  const proof = readJsonIn(dir, proofPath(c.id)) || { id: c.id }
+  const out = []
+  for (const h of hits.filter(x => x.action === 'fix')) {
+    if (proof.repro && h.test === proof.repro.test) throw new Error(`${h.where}: give it a test of its own, not ${h.test} (that one guards ${c.id})`)
+    const ran = runIn(dir, testCommand(dir, h.test))
+    if (ran.exitCode === 0) throw new Error(`${h.test} passes, so it doesn't show the mistake at ${h.where}. Make it fail because of it (fix that place only after), then finish again`)
+    if (crashedBeforeTesting(ran.all)) throw new Error(`${h.test} crashed before testing anything: ${ran.out.slice(-300)}`)
+    out.push({ where: clean(h.where), what: clean(h.what), test: h.test, sha: sha(readIn(dir, h.test)), exitCode: ran.exitCode })
+  }
+  proof.hits = hits.map(h => ({ ...h, ...(out.find(o => o.test === h.test && h.action === 'fix') || {}) }))
+  writeIn(dir, proofPath(c.id), JSON.stringify(proof, null, 2) + '\n')
+  return proof.hits
+}
+
+// The matching fix step's done-check: each hit's test passes now (unchanged), the bug's own test too, the suite green.
+export function hitsPass(dir) {
+  const c = current(dir)
+  const proof = readJsonIn(dir, proofPath(c.id))
+  if (!proof || !proof.repro) throw new Error(`${c.id} has no failing test on record`)
+  for (const h of (proof.hits || []).filter(x => x.action === 'fix')) {
+    const why = passesNow(dir, h)
+    if (why) throw new Error(why)
+  }
+  const why = passesNow(dir, proof.repro) || suiteProblem(dir)
+  if (why) throw new Error(why)
+}
+
+// Appends a "Don't re-break" line to .planning/STATE.md (its own section, made when missing; their text kept).
+export function dontRebreak(text, entry) {
+  const head = "## Don't re-break"
+  const lines = nl(text).split('\n')
+  const e = `- ${clean(entry)}`
+  if (lines.some(l => l.trim() === e)) return nl(text)
+  let at = lines.findIndex(l => l.trim() === head)
+  if (at < 0) {
+    while (lines.length && lines[lines.length - 1].trim() === '') lines.pop()
+    lines.push('', head)
+    at = lines.length - 1
+  }
+  let end = at + 1
+  while (end < lines.length && !/^#{1,2} /.test(lines[end])) end++
+  while (end > at + 1 && lines[end - 1].trim() === '') end--
+  lines.splice(end, 0, e)
+  return lines.join('\n').replace(/^\n+/, '') + (lines[lines.length - 1] === '' ? '' : '\n')
+}
+
+// The record step: BUGS.md (cause, the matching places, the new bugs, fixed + Guarded by), the Don't re-break line, the
+// commit, and the closing line. Safe to run again after a failed try (nothing is added twice).
+export function record(dir, now = new Date()) {
+  const day = now.toISOString().slice(0, 10)
+  const c = current(dir)
+  const st = runState(dir)
+  const r = st.resultsBy || {}
+  const proof = readJsonIn(dir, proofPath(c.id))
+  if (!proof || !proof.repro || !proof.verify) throw new Error(`${c.id} isn't proven fixed yet (no failing test on record, or it never passed)`)
+  const cause = clean((r.cause || {}).cause)
+  if (!cause) throw new Error(`${c.id} has no root cause written down (the cause step)`)
+  const repeat = clean((r.cause || {}).repeat)
+  const rule = clean((r.cause || {}).rule)
+  const hits = Array.isArray(proof.hits) ? proof.hits : []
+  let text = readIn(dir, BUGS) || ''
+  // the matching places to log become bugs of their own (once)
+  const logged = []
+  for (const h of hits.filter(x => x.action === 'log')) {
+    const title = clean(h.title || h.what).slice(0, 90)
+    const have = readEntries(text).find(e => clean(titleOf(text, e.id)) === title)
+    if (have) { logged.push(`${have.id} · ${title}`); continue }
+    const out = addBug(text, { title, level: h.level || c.level, steps: [`See ${clean(h.where)}`], expected: 'as fixed in ' + c.id, actual: clean(h.what) || `the same mistake as ${c.id}` }, { day, where: `${c.id}'s matching places` }, readIn(dir, ARCHIVE) || '')
+    text = out.text
+    logged.push(`${out.id} · ${title}`)
+  }
+  const fixedHits = hits.filter(x => x.action === 'fix')
+  const also = fixedHits.map(h => `${clean(h.where)} (Guarded by: ${h.test})`)
+  text = noteBug(text, c.id, {
+    Cause: cause,
+    ...(repeat && !/^(none|no)\b/i.test(repeat) ? { 'Came back from': repeat } : {}),
+    ...(also.length ? { 'Also fixed': also.join('; ') } : {}),
+    ...(logged.length ? { 'Logged from its matching places': logged.join('; ') } : {}),
+    ...(rule ? { "Don't re-break": rule } : {}),
+  }, { day, step: 'record', stage: 'Bug' })
+  text = setStatus(text, c.id, 'fixed', { day, dir, guardedBy: proof.repro.test })
+  writeIn(dir, BUGS, text)
+  if (rule) writeIn(dir, STATE_MD, dontRebreak(readIn(dir, STATE_MD) || '# State\n', `${c.id}: ${rule}`))
+  // the commit: the tests, the fixed files, BUGS.md, STATE.md and the proof, nothing else
+  const changed = [...new Set([...(r.fix && Array.isArray(r.fix.files) ? r.fix.files : []), ...(r['matching-fix'] && Array.isArray(r['matching-fix'].alsoFiles) ? r['matching-fix'].alsoFiles : [])].map(f => String(f).replace(/\\/g, '/')))]
+  const message = `Fix ${c.id}: ${c.title}`
+  const files = [proof.repro.test, ...fixedHits.map(h => h.test), ...changed, BUGS, STATE_MD, proofPath(c.id)]
+  const done = commitFiles(dir, files, message)
+  let commit = null
+  if (done.hash) {
+    commit = message
+    text = setStatus(readIn(dir, BUGS), c.id, 'fixed', { day, dir, commit: done.hash })
+    writeIn(dir, BUGS, text)
+    commitFiles(dir, [BUGS], `Bug ${c.id}: fixed in ${done.hash}`)
+  } else if (done.nothing && isGitRepo(dir)) commit = message
+  const side = readJsonIn(dir, '.bmuz/side.json') || {}
+  const say = line('bug.fix.done', {
+    bug: bugWords(text, c.id), cause, test: proof.repro.test, also: also.join('; '), logged: logged.join('; '),
+    commit, nogit: done.nogit || null, check: ['P0', 'P1'].includes(c.level) ? c.id : null,
+    back: side.place || 'what we were doing',
+  })
+  writeIn(dir, SAY.done, say + '\n')
+  refreshPage(dir)
+  return { commit: done.hash || null, logged, also }
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const [cmd, a, b, c] = process.argv.slice(2)
   const dir = process.cwd()
@@ -325,8 +591,21 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
       say({ ok: true, id: a, status: b, bug: bugWords(text, a) })
     } else if (cmd === 'list') {
       say(listText(readIn(dir, BUGS) || newBugs()))
+    } else if (FIX_RUN.includes(cmd)) {
+      // (the fix run's steps: plain words for the engine, which takes a refusal's words as the failed try's reason)
+      try {
+        if (cmd === 'pick') say(`✔ fixing ${pick(dir).bug}`)
+        if (cmd === 'repro') say(`✔ ${repro(dir, a).test} fails, as it should while the bug is there`)
+        if (cmd === 'say-repro') { sayRepro(dir); say(`✔ ${SAY.repro}`) }
+        if (cmd === 'verify') say(`✔ the test passes now${verify(dir).suite.length ? ', and the suite too' : ''}`)
+        if (cmd === 'hits-fail') say(`✔ ${hitsFail(dir, JSON.parse(a || '[]')).filter(h => h.action === 'fix').length} matching place(s) to fix, each test failing first`)
+        if (cmd === 'hits-pass') { hitsPass(dir); say('✔ every matching place\'s test passes now, and the suite too') }
+        if (cmd === 'record') { const r = record(dir); say(`✔ ${BUGS} updated${r.commit ? `, committed ${r.commit}` : ''}`) }
+      } catch (err) {
+        say(`✘ ${String(err && err.message ? err.message : err).slice(0, 700)}`, false)
+      }
     } else {
-      say('✘ use: node bugs.mjs add <json> | next [B###] | status B### <status> [guarded-by] | list', false)
+      say('✘ use: node bugs.mjs add <json> | next [B###] | status B### <status> [guarded-by] | list | pick | repro <test> | say-repro | verify | hits-fail <json> | hits-pass | record', false)
     }
   } catch (err) {
     say({ ok: false, say: String(err && err.message ? err.message : err).slice(0, 300) }, false)

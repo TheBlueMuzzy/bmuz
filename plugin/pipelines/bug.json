@@ -1,0 +1,208 @@
+{
+  "id": "bug",
+  "version": 1,
+  "description": "Fixing a bug (F215), the same way every time, as a side trip beside the stage (\"bmuz bug\"): pick one (the one named, or the next open P0 → P1 → P2 → P3) → reproduce it as a failing test (the engine runs it; refused if it passes) → the root cause written down, the archive checked for a repeat → the fix → verify (the same test passes, unchanged; the suite and check:fast green) → the same mistake looked for in matching places (each fixed with its own test, proven failing first, or logged as a new bug) → record (.planning/BUGS.md fixed + Guarded by, a Don't re-break line, committed \"Fix B###: …\"). Then the stage carries on where it was.",
+  "watchdogMs": 1200000,
+  "steps": [
+    {
+      "id": "pick",
+      "kind": "script",
+      "needs": [],
+      "description": "The bug to fix, marked fixing",
+      "run": [
+        "node",
+        "{plugin}/scripts/bugs.mjs",
+        "pick"
+      ],
+      "writes": [
+        ".planning/BUGS.md",
+        ".planning/bugs/current.json",
+        ".planning/bugs/say-start.md"
+      ],
+      "show": ".planning/bugs/say-start.md"
+    },
+    {
+      "id": "reproduce",
+      "kind": "talk",
+      "needs": [
+        "pick"
+      ],
+      "description": "A test that fails because of the bug (the engine runs it)",
+      "tools": [
+        "Read",
+        "Glob",
+        "Grep",
+        "Write",
+        "Edit"
+      ],
+      "craft": "craft/bug-reproduce.md",
+      "results": [
+        "test"
+      ],
+      "done": {
+        "type": "script-ok",
+        "run": [
+          "node",
+          "{plugin}/scripts/bugs.mjs",
+          "repro",
+          "{test}"
+        ]
+      }
+    },
+    {
+      "id": "repro-show",
+      "kind": "script",
+      "needs": [
+        "reproduce"
+      ],
+      "description": "Reproduced: the test fails, as it should",
+      "run": [
+        "node",
+        "{plugin}/scripts/bugs.mjs",
+        "say-repro"
+      ],
+      "writes": [
+        ".planning/bugs/say-repro.md"
+      ],
+      "show": ".planning/bugs/say-repro.md"
+    },
+    {
+      "id": "cause",
+      "kind": "talk",
+      "needs": [
+        "repro-show"
+      ],
+      "description": "The root cause, written down; has it come back?",
+      "tools": [
+        "Read",
+        "Glob",
+        "Grep"
+      ],
+      "craft": "craft/bug-cause.md",
+      "results": [
+        "cause",
+        "repeat",
+        "rule"
+      ],
+      "recap": [
+        "test"
+      ]
+    },
+    {
+      "id": "fix",
+      "kind": "talk",
+      "needs": [
+        "cause"
+      ],
+      "description": "The fix: the test passes, the suite and check:fast green",
+      "tools": [
+        "Read",
+        "Glob",
+        "Grep",
+        "Write",
+        "Edit"
+      ],
+      "craft": "craft/bug-fix.md",
+      "results": [
+        "files"
+      ],
+      "recap": [
+        "test",
+        "cause"
+      ],
+      "done": {
+        "type": "script-ok",
+        "run": [
+          "node",
+          "{plugin}/scripts/bugs.mjs",
+          "verify"
+        ]
+      }
+    },
+    {
+      "id": "matching",
+      "kind": "talk",
+      "needs": [
+        "fix"
+      ],
+      "description": "The same mistake in matching places: a failing test for each to fix, or a new bug",
+      "tools": [
+        "Read",
+        "Glob",
+        "Grep",
+        "Write",
+        "Edit"
+      ],
+      "craft": "craft/bug-matching.md",
+      "results": [
+        "hits",
+        "fixhits"
+      ],
+      "recap": [
+        "test",
+        "cause",
+        "files"
+      ],
+      "done": {
+        "type": "script-ok",
+        "run": [
+          "node",
+          "{plugin}/scripts/bugs.mjs",
+          "hits-fail",
+          "{hits}"
+        ]
+      }
+    },
+    {
+      "id": "matching-fix",
+      "kind": "talk",
+      "needs": [
+        "matching"
+      ],
+      "when": "{fixhits}",
+      "description": "Each matching place fixed: its test passes, the suite green",
+      "tools": [
+        "Read",
+        "Glob",
+        "Grep",
+        "Write",
+        "Edit"
+      ],
+      "craft": "craft/bug-matching-fix.md",
+      "results": [
+        "alsoFiles"
+      ],
+      "recap": [
+        "hits",
+        "cause"
+      ],
+      "done": {
+        "type": "script-ok",
+        "run": [
+          "node",
+          "{plugin}/scripts/bugs.mjs",
+          "hits-pass"
+        ]
+      }
+    },
+    {
+      "id": "record",
+      "kind": "script",
+      "needs": [
+        "matching-fix"
+      ],
+      "description": "BUGS.md fixed + Guarded by, Don't re-break, committed \"Fix B###: …\"",
+      "run": [
+        "node",
+        "{plugin}/scripts/bugs.mjs",
+        "record"
+      ],
+      "writes": [
+        ".planning/BUGS.md",
+        ".planning/STATE.md",
+        ".planning/bugs/say-done.md"
+      ],
+      "show": ".planning/bugs/say-done.md"
+    }
+  ]
+}

@@ -526,12 +526,17 @@ async function rollback($: any, step: any) {
   return undone
 }
 
+// The holes a step's done-check fills from: the results so far, and (F215) a talk step's own result.
+function checkVars(step: any, result: any) {
+  return step.kind === 'talk' && result && typeof result === 'object' ? { ...vars(), ...result } : vars()
+}
+
 async function look($: any, step: any, result: any) {
   const files: Record<string, string | null> = {}
-  for (const f of E.checkFiles(step, vars())) files[f] = await readText($, `${ctx.dir}/${f}`)
+  for (const f of E.checkFiles(step, checkVars(step, result))) files[f] = await readText($, `${ctx.dir}/${f}`)
   // A "script-ok" check runs its command in the project folder (the research flow's source check
   // fetches every link: a few seconds, up to a couple of minutes for a long list).
-  const argv = E.checkRun(step, vars())
+  const argv = E.checkRun(step, checkVars(step, result))
   let ran = null
   if (argv) {
     try {
@@ -943,7 +948,7 @@ async function stepDone($: any, e: any) {
   // The lines the step always says ("must") were all handed out, live or auto (a wrap-up is the creative's choice).
   const unsaid = wrap === true ? null : E.mustProblem(step, ctx.state)
   const firstVerdict = unsaid ? { ok: false, why: unsaid } : !cardVerdict.ok ? cardVerdict : missing ? { ok: false, why: missing } : null
-  const verdict = firstVerdict ?? E.doneCheck(step, vars(), await look($, step, result))
+  const verdict = firstVerdict ?? E.doneCheck(step, checkVars(step, result), await look($, step, result))
   const next = await settle($, step, verdict, result)
   if (next === 'next' && step.wrapTo && wrap === true) await wrapUp($, step)
   if (next === 'next' && step.handoff) {

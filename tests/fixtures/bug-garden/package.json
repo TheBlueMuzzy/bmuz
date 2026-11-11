@@ -1,0 +1,9 @@
+{
+  "name": "bug-garden",
+  "private": true,
+  "type": "module",
+  "description": "A tiny garden-race scorer with a planted bug (F215's headless fixture): the final score skips the first row, and the full-row bonus copies the same mistake.",
+  "scripts": {
+    "test": "node --test"
+  }
+}

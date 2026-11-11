@@ -240,6 +240,8 @@ export function checkPipeline(p) {
       for (const m of Array.isArray(n.needs) ? n.needs : []) walk(m)
     }
     for (const n of Array.isArray(s.needs) ? s.needs : []) walk(n)
+    // (F215: a talk step's own done-check may use its own results: the bug pipeline's "reproduce" runs the test it wrote)
+    if (s.kind === 'talk' && isList(s.results)) for (const k of s.results) known.add(k)
     const filled = { question: s.question, run: s.run, args: s.args, path: s.done && s.done.path, text: s.done && s.done.text, check: s.done && s.done.run, when: s.when }
     for (const h of new Set(holesIn(filled))) if (!known.has(h)) problems.push(`${at}: {${h}} isn't known here (known: ${[...known].map(k => `{${k}}`).join(', ')}); a result comes from a talk step this step needs`)
     // A recap shows earlier results in the step's prompt: each key must be one a needed talk step hands back.
@@ -799,6 +801,10 @@ export function fill(text, vars) {
 }
 
 export function fillDeep(v, vars) {
+  // (F215: a command's argument that is one whole hole holding a list or an object goes as JSON, never "[object Object]":
+  // the bug pipeline's matching places reach bugs.mjs as the list itself)
+  const whole = typeof v === 'string' ? v.match(/^\{(\w+)\}$/) : null
+  if (whole && vars[whole[1]] && typeof vars[whole[1]] === 'object') return JSON.stringify(vars[whole[1]])
   if (typeof v === 'string') return fill(v, vars)
   if (Array.isArray(v)) return v.map(x => fillDeep(x, vars))
   if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fillDeep(x, vars)]))
