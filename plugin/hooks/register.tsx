@@ -55,6 +55,8 @@ let unwrittenAsked = ''
 let stepInTurn = false
 let askedThisTurn = false
 let askClosedThisTurn = false
+// (review fix 9) the step-in's own question box ("how often"), handed out this turn: never one of the step's boxes
+let stepInBox: null | { step: string, box: any } = null
 let pendingFix: null | { id: string | null, sweep: string[] } = null
 // (review fix 6) the step-in turns an auto run's step try has had: at most MAX_STEP_INS go free, then a failed try
 let stepIns = { key: '', n: 0 }
@@ -1136,10 +1138,10 @@ async function bugTool($: any, e: any) {
     // (the one question at most: how often. Only inside a talk step, where a question box may be asked)
     const r = E.renderLine(ctx.script, 'bug.often', {})
     if (ctx.auto || r.error || !talkOpen) return { result: JSON.stringify({ then: `No question here${ctx.auto ? ' (auto run: nobody to ask)' : ''}: report it now with what you have ("often": "not sure").` }) }
-    const n = (ctx.state.boxes || []).reduce((m: number, b: any) => Math.max(m, b.n || 0), 0) + 1
-    ctx.state = { ...ctx.state, boxes: [...(ctx.state.boxes || []), { id: 'bug.often', n, box: r.box }] }
-    await journal($, { ev: 'line', step: step.id, line: 'bug.often', kind: 'box', box: r.box })
-    await save($)
+    // (review fix 9: kept apart from the step's own pending boxes and journal lines, and dropped at the turn's end if
+    // it was never asked)
+    stepInBox = { step: step.id, box: r.box }
+    await journal($, { ev: 'stepin.box', during: step.id, box: r.box })
     return { result: JSON.stringify({ box: r.box, then: `Call AskUserQuestion now with exactly this box, then report the bug with ${E.BUG_TOOL}.` }) }
   }
   const report = { title: e.title, level: typeof e.level === 'string' ? e.level.trim().toUpperCase() : e.level, steps: e.steps, expected: e.expected, actual: e.actual, often: e.often, evidence: e.evidence, now: e.now }
@@ -1287,6 +1289,8 @@ export const register: Register = on => {
     pendingFix = null
     stepInTurn = false
     talkStartedHere = ''
+    stepInBox = null
+    stepIns = { key: '', n: 0 }
     const ok = await startEngine($)
     if (!ctx) return r
     // Commands and timers exist even when the start failed, so /bmuz-doctor is there to get it going.
@@ -1365,6 +1369,7 @@ export const register: Register = on => {
       // transcript is read to find it; when it can't be read the box goes ahead (a soft check: the step's own tool
       // limits still hold) and the journal says it went unchecked.
       const cur = E.stepById(ctx.pipeline, ctx.state.current)
+      let stepInAsk = false
       if (cur && cur.kind === 'talk' && ctx.state.status === 'working') {
         // An option standing in for typing ("I'll paste the link") never gets through (live look 2026-11-10).
         const fake = E.optionCountProblem((e as any).questions) || E.fakeTypeOptionProblem((e as any).questions)
@@ -1373,7 +1378,10 @@ export const register: Register = on => {
           return { deny: fake }
         }
         // F232: in a step with script lines, every box is one the script handed out, asked exactly.
-        if (cur.lines) {
+        // (F215 review fix 9: the step-in's own box, asked exactly, passes without touching the step's pending boxes)
+        const own = stepInBox && stepInBox.step === cur.id && !E.boxProblem([{ id: 'bug.often', n: 0, box: stepInBox.box }], (e as any).questions).why
+        if (own) { stepInBox = null; stepInAsk = true }
+        if (cur.lines && !own) {
           const m = E.boxProblem(ctx.state.boxes || [], (e as any).questions)
           if (m.why) {
             await journal($, { ev: 'deviation', step: cur.id, tool: 'AskUserQuestion', agentId: null, why: m.why })
@@ -1416,7 +1424,9 @@ export const register: Register = on => {
       } else if (!res?.deny && !res?.isError) {
         // F228: the creative's answer, as the box returned it: a script checks the creative's "own words" against
         // these (ideate-doc.mjs), so a quote Claude hands back as theirs is checked, not trusted.
-        await journal($, { ev: 'answer', step: ctx.state.current, text: E.answerText(res).slice(0, 6000) })
+        // (review fix 9: the step-in box's answer is the bug report's, never the step's own words)
+        if (stepInAsk) await journal($, { ev: 'stepin.answer', during: ctx.state.current, text: E.answerText(res).slice(0, 600) })
+        else await journal($, { ev: 'answer', step: ctx.state.current, text: E.answerText(res).slice(0, 6000) })
       }
       return res
     }
@@ -1627,6 +1637,7 @@ export const register: Register = on => {
     const steppedIn = stepInTurn
     stepInTurn = false
     askedThisTurn = false
+    stepInBox = null // (review fix 9: a step-in box never asked this turn is dropped)
     askClosedThisTurn = false
     if (!ctx) return r
     // F231: a stall the watchdog held while this turn ran is judged now (the engine's own work belongs here).

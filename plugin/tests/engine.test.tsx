@@ -1834,3 +1834,35 @@ test('F215 review fix 7: "bmuz stage" during a fix run is refused: finish or sto
   expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'bug' })
   expect(JSON.parse(w.files['/proj/bmuz.json']).pipeline).toBe('hello')
 })
+
+const OFTEN_BOX = { question: 'Does it happen every time, or just once?', header: 'How often', multiSelect: false, options: [{ label: 'Every time', description: '' }, { label: 'Just once', description: '' }, { label: 'Not sure', description: '' }] }
+test('F215 review fix 9: the step-in\'s "how often" box is kept apart from the step\'s record: the step\'s own box is still pending after it, and an unasked one is dropped at the turn\'s end', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = bugWorld(on, { current: 'name', status: 'working' })
+  await start($, true)
+  await $.tool.call({ tool: SAY, line: 'define.pitch.how' } as any)
+  const boxes = () => JSON.parse(w.files['/proj/.bmuz/state.json']).boxes.map((b: any) => b.id)
+  expect(boxes()).toEqual(['define.pitch.how'])
+  const r: any = await $.tool.call({ tool: 'mcp__bmuz__bug', ask: true } as any)
+  expect(JSON.parse(String(r.result)).box.question).toBe(OFTEN_BOX.question)
+  expect(boxes()).toEqual(['define.pitch.how'])
+  expect(events(w).some((j: any) => j.ev === 'line' && j.line === 'bug.often')).toBe(false)
+  expect(events(w).find((j: any) => j.ev === 'stepin.box')).toMatchObject({ during: 'name' })
+  expect(refused(await $.tool.call({ tool: 'AskUserQuestion', questions: [OFTEN_BOX] } as any))).toBe(false)
+  expect(boxes()).toEqual(['define.pitch.how'])
+  expect(refused(await $.tool.call({ tool: 'AskUserQuestion', questions: [PITCH_BOX] } as any))).toBe(false)
+  // one handed out but never asked goes at the turn's end
+  await $.tool.call({ tool: 'mcp__bmuz__bug', ask: true } as any)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(refused(await $.tool.call({ tool: 'AskUserQuestion', questions: [OFTEN_BOX] } as any))).toBe(true)
+})
+
+test('F215 review fix 9: the answer to the step-in box is journaled as the bug report\'s, not as the step\'s own answer', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = bugWorld(on, { current: 'name', status: 'working' })
+  await start($, true)
+  await $.tool.call({ tool: 'mcp__bmuz__bug', ask: true } as any)
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [OFTEN_BOX] } as any)
+  expect(events(w).some((j: any) => j.ev === 'answer' && j.step === 'name')).toBe(false)
+  expect(events(w).some((j: any) => j.ev === 'stepin.answer' && j.during === 'name')).toBe(true)
+})
