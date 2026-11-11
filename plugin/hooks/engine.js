@@ -867,6 +867,22 @@ export const PASTE_TOOL = 'mcp__bmuz__ask_paste'
 export const PASTE_ASK = 'Share your links — paste them with Alt+V. I can read Google Drive folder and/or doc links, GitHub links, and even folder and file links from your computer. If you don\'t want to share any links, just say "never mind".'
 export const PASTE_RETURNED = { open: true, say: PASTE_ASK, note: 'Write exactly the "say" text as your whole reply — nothing before or after it, no question box — and end your turn. The creative\'s next chat message is the answer.' }
 
+// What the start already took (F231, live run 2026-11-10: Ideate asked for the Drive link the start had): the names of
+// intake.json's sources and of the links and paths it left for Ideate to read ("later"). [] when none.
+export function materialTaken(intake) {
+  if (!intake || typeof intake !== 'object') return []
+  const names = [
+    ...(Array.isArray(intake.sources) ? intake.sources : []).map(s => s && s.name),
+    ...(Array.isArray(intake.unreadable) ? intake.unreadable : []).filter(u => u && (u.later || /^https?:\/\//i.test(String(u.path || '')))).map(u => u.path),
+  ]
+  return names.filter(n => typeof n === 'string' && n.trim())
+}
+export function materialTakenProblem(intake) {
+  const names = materialTaken(intake)
+  if (!names.length) return null
+  return `BMUZ engine: the start already took their material (${names.slice(0, 5).join(', ')}${names.length > 5 ? ', …' : ''}); Ideate's reading step reads it next. Don't ask for links again: say in one short line what will be read, then carry on (the craft note says when the one-breath question is still needed).`
+}
+
 // The open ask, when it belongs to the step that is running now; else null (a finished or undone step's is stale).
 export function pasteOpen(state) {
   const p = state && state.paste

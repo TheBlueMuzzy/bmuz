@@ -795,6 +795,14 @@ async function askPaste($: any, e: any) {
   if (!step || step.kind !== 'talk' || ctx.state.status !== 'working') {
     return { deny: 'BMUZ engine: no talk step is open, so there is nothing to ask for. End your turn.' }
   }
+  // After the start (any later stage): links the start already took are never asked for again.
+  if (ctx.pipeline.id !== 'start') {
+    const taken = E.materialTakenProblem(await readJson($, `${ctx.dir}/.planning/research/intake.json`))
+    if (taken) {
+      await journal($, { ev: 'deviation', step: step.id, tool: E.PASTE_TOOL, agentId: null, why: taken })
+      return { deny: taken }
+    }
+  }
   ctx.state = { ...ctx.state, paste: { step: step.id } }
   await journal($, { ev: 'paste.open', step: step.id })
   await save($)

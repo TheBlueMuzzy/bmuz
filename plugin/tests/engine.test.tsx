@@ -328,6 +328,16 @@ test('live look round 5: an open ask survives a new window, and a "bmuz go" resu
   expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste).toEqual({ step: 'ask' })
 })
 
+test('F231: after the start, ask_paste is refused when the start already took their links (live run: Ideate asked for the Drive link again)', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = pasteWorld(on)
+  w.files['/proj/.planning/research/intake.json'] = JSON.stringify({ sources: [], unreadable: [{ path: 'https://drive.google.com/drive/folders/1mGTFuDLcFBOKxRrR2s9ylI7LeQxOFN74', why: 'a link: Ideate reads it next', later: true }] })
+  await start($, true)
+  const r: any = await $.tool.call({ tool: PASTE } as any)
+  expect(why(r)).toMatch(/the start already took their material \(https:\/\/drive\.google\.com/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).paste ?? null).toBeNull()
+})
+
 test('live look round 5: ask_paste is refused in an auto run', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const { w } = pasteWorld(on)
