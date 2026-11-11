@@ -223,7 +223,7 @@
       "needs": ["content"],
       "description": "The tables, into content/data/ (the files the game reads) and onto your project page",
       "run": ["node", "{plugin}/scripts/tables.mjs", "step", "content", "worked out"],
-      "writes": [".planning/design/tables.json", ".planning/GDD.md", ".planning/project-page.html"]
+      "writes": ["content/data/*.json", ".planning/design/tables.json", ".planning/GDD.md", ".planning/project-page.html"]
     },
     {
       "id": "balance",
@@ -244,7 +244,7 @@
       "needs": ["balance"],
       "description": "Any fixes, into the tables (your own edits kept)",
       "run": ["node", "{plugin}/scripts/tables.mjs", "step", "balance", "worked out"],
-      "writes": [".planning/design/tables.json", ".planning/GDD.md", ".planning/project-page.html"]
+      "writes": ["content/data/*.json", ".planning/design/tables.json", ".planning/GDD.md", ".planning/project-page.html"]
     },
     {
       "id": "time",

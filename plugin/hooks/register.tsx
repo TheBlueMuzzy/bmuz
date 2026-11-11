@@ -321,10 +321,27 @@ async function checkpoint($: any, step: any) {
   // (a "writes" path may carry a slug from an earlier result: .planning/research/discover-{slug}.md)
   const files = E.writesOf(step, vars())
   if (!files.length) return
-  const saved: Record<string, string | null> = {}
-  for (const f of files) saved[f] = await readText($, `${ctx.dir}/${f}`)
+  const saved: Record<string, any> = {}
+  for (const f of files) {
+    if (!E.isPattern(f)) { saved[f] = await readText($, `${ctx.dir}/${f}`); continue }
+    // (a pattern, content/data/*.json: the files it matches now are saved, and the list, so an undo can delete new ones)
+    const found = await matching($, f)
+    saved[f] = { pattern: found }
+    for (const g of found) saved[g] = await readText($, `${ctx.dir}/${g}`)
+  }
   await $.fs.write(`${ctx.dir}/.bmuz/checkpoint-${step.id}.json`, JSON.stringify(saved))
   await journal($, { ev: 'checkpoint', step: step.id, files: Object.keys(saved) })
+}
+
+// The project files a "writes" pattern matches (scripts/ls.mjs), each re-checked: inside the project, matching it.
+async function matching($: any, pattern: string) {
+  try {
+    const ran: any = await $.process.run(['node', `${ctx.root}/scripts/ls.mjs`, ctx.dir, pattern], { timeoutMs: 10000 })
+    const list = JSON.parse(String(ran?.stdout ?? '[]'))
+    return Array.isArray(list) ? list.filter((g: any) => typeof g === 'string' && E.isSafePath(g) && E.matchesPattern(pattern, g)) : []
+  } catch (err) {
+    return []
+  }
 }
 
 async function rollback($: any, step: any) {
@@ -336,6 +353,16 @@ async function rollback($: any, step: any) {
   for (const [f, body] of Object.entries(saved)) {
     // The checkpoint file can be hand-edited: re-check each path right before writing or deleting.
     if (!E.isSafePath(f)) continue
+    if (body && typeof body === 'object') {
+      // a pattern: a file it matches now that wasn't there before the step was made by the step, so it goes
+      const had = Array.isArray(body.pattern) ? body.pattern : []
+      for (const g of await matching($, f)) {
+        if (had.includes(g)) continue
+        await $.process.run(['node', `${ctx.root}/scripts/rm.mjs`, `${ctx.dir}/${g}`])
+        undone.push(g)
+      }
+      continue
+    }
     if (body === null) await $.process.run(['node', `${ctx.root}/scripts/rm.mjs`, `${ctx.dir}/${f}`])
     else await $.fs.write(`${ctx.dir}/${f}`, String(body))
     undone.push(f)

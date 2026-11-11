@@ -166,6 +166,7 @@ export function checkPipeline(p) {
       if (!isList(s.writes)) problems.push(`${at}: "writes" must be a list of file paths`)
       else for (const f of s.writes) {
         if (!isSafePath(f)) problems.push(`${at}: "writes" path "${f}" must stay inside the project (relative, forward slashes, no "..", not .bmuz)`)
+        else if (isPattern(f) && f.split('/').slice(0, -1).some(p => p.includes('*'))) problems.push(`${at}: "writes" path "${f}" may have a * only in its file name, like content/data/*.json`)
         // (a {hole} in a "writes" path is checked below, once the step's known holes are worked out)
       }
     }
@@ -729,6 +730,19 @@ export function resultProblems(p, step, result) {
     if (inPaths.has(k) && !(typeof r[k] === 'string' && NAME_RE.test(r[k]) && r[k].length <= 60)) return `"${k}" names a file, so it must be a short slug in lower case letters, digits and dashes, like "screen-shake" (got ${JSON.stringify(r[k]).slice(0, 80)})`
   }
   return null
+}
+
+// A "writes" path with a * in its file name (content/data/*.json) stands for every file it matches in that one
+// folder: the engine saves them all before the step, and an undo puts them back and deletes the ones it made (F227
+// review: the content steps' tables, one file per table, weren't put back).
+export const isPattern = f => String(f).includes('*')
+export function matchesPattern(pattern, path) {
+  const at = pattern.lastIndexOf('/')
+  const folder = pattern.slice(0, at + 1)
+  if (!String(path).startsWith(folder)) return false
+  const name = String(path).slice(folder.length)
+  const re = new RegExp(`^${pattern.slice(at + 1).split('*').map(s => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')}$`)
+  return re.test(name)
 }
 
 // A step's "writes" paths with their {holes} filled. A path whose hole isn't a slug, or that ends up

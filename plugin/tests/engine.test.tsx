@@ -824,6 +824,44 @@ test('undo: a hand-edited checkpoint that points outside the project is skipped'
   expect(w.runs.filter(r => r.some(a => a.endsWith('rm.mjs'))).map(r => r[r.length - 1])).toEqual(['/proj/plan.json'])
 })
 
+// F227 review A6: the content steps write content/data/<table>.json, one file per table, named by the step's result;
+// a "writes" path may end in a * file name (content/data/*.json): every file it matches is checkpointed, and an undo
+// puts those back and deletes the ones the step made.
+const PIPE_DATA = { ...PIPE, steps: PIPE.steps.map(s => (s.id === 'plan' ? { ...s, writes: ['plan.json', 'data/*.json'] } : s)) }
+test('F227 review A6: a "writes" pattern checkpoints every file it matches, and the list of them', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  let w: any = null
+  w = world(on, { ...base({ current: null, status: 'idle', finished: ['name', 'approve'] }), PIPELINE: JSON.stringify(PIPE_DATA) }, argv => {
+    if (String(argv[1] ?? '').endsWith('ls.mjs')) return { exitCode: 0, stdout: JSON.stringify(Object.keys(w.files).filter(f => /^\/proj\/data\/[^/]*\.json$/.test(f)).map(f => f.slice(6))) }
+    if (argv.includes('x.mjs')) { w.files['/proj/plan.json'] = '{"name":"Moon Goat"}'; w.files['/proj/data/a.json'] = '{"v":2}'; w.files['/proj/data/b.json'] = '{"new":1}' }
+    return { exitCode: 0, stdout: '{}' }
+  })
+  w.files['/proj/data/a.json'] = '{"v":1}'
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as any)
+  expect(JSON.parse(w.files['/proj/.bmuz/checkpoint-plan.json'])).toEqual({ 'plan.json': null, 'data/*.json': { pattern: ['data/a.json'] }, 'data/a.json': '{"v":1}' })
+})
+test('F227 review A6: undo of a step whose "writes" has a pattern puts its files back and deletes the ones the step made', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  let w: any = null
+  w = world(on, { ...base({ current: null, status: 'done', finished: ['name', 'approve', 'plan', 'review'] }), PIPELINE: JSON.stringify(PIPE_DATA) }, argv => {
+    if (String(argv[1] ?? '').endsWith('ls.mjs')) return { exitCode: 0, stdout: JSON.stringify(Object.keys(w.files).filter(f => /^\/proj\/data\/[^/]*\.json$/.test(f)).map(f => f.slice(6))) }
+    return { exitCode: 0, stdout: '{}' }
+  })
+  Object.assign(w.files, { '/proj/plan.json': '{"name":"Moon Goat"}', '/proj/data/a.json': '{"v":2}', '/proj/data/b.json': '{"new":1}' })
+  w.files['/proj/.bmuz/checkpoint-plan.json'] = JSON.stringify({ 'plan.json': null, 'data/*.json': { pattern: ['data/a.json'] }, 'data/a.json': '{"v":1}' })
+  await start($, false)
+  const undone: any = await $.prompt.submit({ text: 'bmuz undo plan' } as any)
+  expect(String(undone.text)).toMatch(/went back to before "plan"/)
+  expect(w.files['/proj/data/a.json']).toBe('{"v":1}')
+  expect('/proj/data/b.json' in w.files).toBe(false)
+  expect('/proj/plan.json' in w.files).toBe(false)
+})
+
 test('doctor: a damaged state file is rebuilt from the journal at start, and /bmuz-doctor says so plainly', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const w = world(on, base({}))
