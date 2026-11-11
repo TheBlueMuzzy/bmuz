@@ -2,7 +2,7 @@
 
 Every fixed line BMUZ says lives here, and only here (F232). The engine sends them: Claude asks for a line by its id,
 the engine fills its slots and hands back the exact words, and checks they were said unchanged. The wording is the
-approved script's (framework .planning/research/bmuz-vision/bmuz-design-doc.html, Stages 1–4); a test compares every
+approved script's (framework .planning/research/bmuz-vision/bmuz-design-doc.html, Stages 1–5); a test compares every
 fixed part of the script with this file.
 
 How an entry reads:
@@ -815,6 +815,69 @@ Here's the tutorial I'd build: {steps}. Each one teaches one thing, in the order
 
 ## develop.idea · say · added
 Noted on Ideas for Later: {idea}. It comes back at the milestone where it fits.
+
+# Stage 5 · Deliver
+
+## deliver.welcome · say
+**Welcome to Deliver**
+{milestone} is built and approved, so it's time to turn it into something you can play and share. You'll come back here at each milestone:
+· **Playable**: each vertical slice. A link for you, and one to share.
+· **Alpha**: every must-have feature in, still rough. For friends and playtesters.
+· **Beta**: basically finished. For wider testing.
+· **1.0**: the release. Then Stage 6 takes it public.
+The checks grow with each stage. After every build, playtest notes go back into Develop.
+
+## deliver.check · say
+**Release Check** · {stage}
+{checks}
+
+## deliver.notready · free
+Not ready yet: {missing} isn't done. Want to finish it first, or move it to the next stage?
+
+## deliver.standins · say
+**Polish & Stand-ins**
+These are still placeholders: {standins}. For a {stage} build, placeholders are usually fine.
+
+## deliver.standins.box · box
+? Which should be polished before this build? (pick any)
+header: Polish
+many: yes
+- [each standins] {.}
+- None, ship it as it is
+
+## deliver.safety · say
+**Safety & Legal** · {stage}
+{checks}
+[[{later}]]
+
+## deliver.build · say
+**Build & Share**
+The {stage} build is ready and tested on {tested}:
+· For you: {local}
+· To share: {share}
+
+## deliver.share.box · box
+? Share it?
+header: Share
+- Not yet — next, tell me what's missing
+- Share it — the share link goes live
+
+## deliver.live · say · added
+It's live: {link} (version {version}).
+
+## deliver.back · say · added
+Back to Develop to {what}.
+
+## deliver.notes · free
+**Playtest Notes**
+Once people have played it, tell me what happened: what they did, what they said, where they got stuck. Paste notes, links or messages, any way you have them.
+
+## deliver.notes.feelings · say
+Against the feelings you chose:
+{feelings}
+
+## deliver.notes.added · say
+From your notes I've added {added} to the roadmap. Back to Develop.
 
 # Any stage
 
