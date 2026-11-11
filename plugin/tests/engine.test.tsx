@@ -2029,3 +2029,42 @@ test('F216 review fix 4: during a feature run, "bmuz bug stop" is refused (no bu
   await $.prompt.submit({ text: 'bmuz stage define' } as any)
   expect(prompts[prompts.length - 1]).toMatch(/finish building F01 first, or say "bmuz park" to set it aside/)
 })
+
+test('F216 review fix 3: a feature run that ended BLOCKED or parked gets its status even when the window closed on the way back (side.json "leave" carries it); a status that fails to apply is said, not ignored', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = loopWorld(on, [{ done: true }])
+  // the way back, cut short: the feature run's record is still in place, the stage's parked, side.json at "leave"
+  w.files['/proj/.bmuz/parked/state.json'] = JSON.stringify({ pipeline: 'hello', current: 'features', status: 'working', results: {}, retries: {}, finished: [], blocked: null, startedAt: 1 })
+  w.files['/proj/.bmuz/parked/journal.jsonl'] = ''
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ pipeline: 'feature', current: 'build', status: 'blocked', results: {}, retries: { build: 3 }, finished: [], blocked: { step: 'build', why: 'tests fail' }, startedAt: 1, given: { feature: 'F01' } })
+  w.files['/proj/.bmuz/journal.jsonl'] = ''
+  w.files['/proj/.bmuz/side.json'] = JSON.stringify({ pipeline: 'feature', feature: 'F01', at: null, from: 'hello', n: 1, phase: 'leave', outcome: 'blocked', place: 'x' })
+  await start($, false)
+  expect(w.files['/proj/.bmuz/side.json']).toBeUndefined()
+  expect(w.runs.some(a => String(a[1]).endsWith('sprint.mjs') && a[2] === 'status' && a[3] === 'F01' && a[4] === 'blocked')).toBe(true)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ pipeline: 'hello', current: 'features' })
+})
+
+test('F216 review fix 3: endFeatureRun checks sprint.mjs status: when it fails, the journal and the creative are told', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push(String(e.text)); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const answers = [{ start: { feature: 'F01', at: null } }, { done: true }]
+  const w = world(on, base({}), (argv: string[]) => {
+    if (argv[1] === 'sprint.mjs' && argv[2] === 'next') return { exitCode: 0, stdout: JSON.stringify(answers.shift() ?? { done: true }) }
+    if (String(argv[1]).endsWith('sprint.mjs') && argv[2] === 'status') return { exitCode: 1, stdout: '✘ the sprint record is damaged' }
+    return { exitCode: 0, stdout: '{}' }
+  })
+  w.files.PIPELINE = JSON.stringify(LOOP_PIPE)
+  w.files['PIPELINE:feature'] = JSON.stringify(FEAT_PIPE)
+  w.files.SCRIPT = SCRIPT + WAITING_LINE
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ pipeline: 'hello', current: null, status: 'idle', results: {}, retries: {}, finished: [], blocked: null, startedAt: null })
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't1')
+  await $.prompt.submit({ text: 'bmuz park' } as any)
+  await turn($, 't2')
+  expect(events(w).find((j: any) => j.ev === 'side.status-failed')).toMatchObject({ feature: 'F01', status: 'parked' })
+  expect(prompts.some(p => /couldn't mark F01 parked in the sprint: ✘ the sprint record is damaged/.test(p))).toBe(true)
+})

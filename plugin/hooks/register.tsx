@@ -269,7 +269,29 @@ async function leaveSide($: any, dir: string, root: string, side: any, outcome: 
     runs.push({ n: side.n, ...item, from: side.from, status: old?.status ?? null, outcome: side.outcome ?? outcome, record: `.bmuz/${record}`, at: await $.clock.now() })
     await $.fs.write(list, JSON.stringify(runs, null, 2))
   }
+  // (F216 review fix 3: a feature run that ended blocked or parked gets that status here, on the way back — side.json
+  // carries it, so a window closed half way applies it at the next start; a status that won't apply is told)
+  const ended = side.outcome ?? outcome
+  if (side.feature !== undefined && ended !== 'done') {
+    let ran: any
+    try {
+      ran = await $.process.run(['node', `${root}/scripts/sprint.mjs`, 'status', side.feature, ended], { cwd: dir, timeoutMs: 60000 })
+    } catch (err) {
+      ran = { exitCode: -1, stdout: String(err).slice(0, 200) }
+    }
+    if (ran?.exitCode !== 0) sideStatusFailed = { feature: side.feature, status: ended, why: String(ran?.stdout ?? '').trim().slice(0, 300) }
+  }
   await $.process.run(['node', `${root}/scripts/rm.mjs`, `${bmuz}/side.json`])
+}
+// (a feature run's status that sprint.mjs refused on the way back, to be told once the engine is loaded again)
+let sideStatusFailed: null | { feature: string, status: string, why: string } = null
+// Journals it and returns the words for the creative (null when nothing failed); the caller says them its own way.
+async function statusFailedWords($: any) {
+  const f = sideStatusFailed
+  sideStatusFailed = null
+  if (!f) return null
+  await journal($, { ev: 'side.status-failed', ...f })
+  return `couldn't mark ${f.feature} ${f.status} in the sprint: ${f.why}. Tell the creative in one plain line (.bmuz/develop/sprint.json may need a look)`
 }
 
 // bugs.mjs in the project folder; its answer is one JSON line ({ ok, … }), or plain words when it says something else.
@@ -418,8 +440,8 @@ async function endFeatureRun($: any, side: any, outcome: string) {
   const out = await reload($)
   if (out) return out
   await journal($, { ev: 'side.back', feature: side.feature, outcome, record: `.bmuz/${E.sideRecord(side)}`, step: ctx.state.current ?? null, status: ctx.state.status })
-  if (outcome !== 'done') await runSprint($, ['status', side.feature, outcome])
-  return null
+  const failed = await statusFailedWords($)
+  return failed ? { failed } : null
 }
 
 // The engine loaded again after a side trip's move (like a session start).
@@ -950,7 +972,9 @@ async function advance($: any, resume: boolean, opts: { timer?: boolean, go?: bo
       // F216: an auto run moves past a feature run that BLOCKED: back to Develop's loop, the feature marked BLOCKED
       if (!(ctx.auto && ctx.side && ctx.side.feature !== undefined)) return
       const why = await endSide($, 'blocked')
-      if (why) {
+      // (review fix 3: the BLOCKED status didn't apply: noted for the creative; the loop still goes on)
+      if (why && why.failed) await addQuestions($, 'features', [{ question: `BMUZ ${why.failed}` }])
+      else if (why) {
         await $.prompt.submit({ text: `BMUZ engine: ${why.why}. Tell the creative in one plain line, then end your turn.` })
         return
       }
@@ -1769,8 +1793,10 @@ export const register: Register = on => {
       if (busy && busy.kind === 'flow' && ctx.state.status === 'working') return say(`BMUZ engine: the "${busy.id}" helpers are still working; say "bmuz park" again once they're done.`)
       const parked = ctx.side.feature
       const out = await endSide($, 'parked')
-      if (out) return say(`BMUZ engine: ${out.why}`)
+      if (out && !out.failed) return say(`BMUZ engine: ${out.why}`)
       pending = 'resume'
+      // (review fix 3: a status sprint.mjs refused is said, not ignored)
+      if (out && out.failed) return next({ ...(e as any), text: `${text}\n(BMUZ engine: ${parked}'s run was set aside, but the engine ${out.failed}. Then end your turn; the engine picks the sprint up itself.)` })
       return next({ ...(e as any), text: `${text}\n(BMUZ engine: ${parked} is parked (the sprint says so; a later sprint takes it up again) and the sprint carries on. Reply with one short line; the engine picks it up itself.)` })
     }
     const cmd = text.match(/^\s*bmuz (undo|retry|doctor)\b\s*(.*)$/i)
