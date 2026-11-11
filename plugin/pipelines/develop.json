@@ -1,0 +1,96 @@
+{
+  "id": "develop",
+  "version": 1,
+  "description": "Develop (F216, the approved script's Stage 4): the welcome → Setup → The Roadmap (Start with …?) → Plan the Sprint (the plan card; Build this sprint?) → each feature built, proven, played and approved, tuned until it feels right (a feature run each: plugin/pipelines/feature.json, kept like a fix run) → the Sprint Look-Back → Teaching (only after playtests) → the next sprint (this pipeline again, from Plan the Sprint), until a milestone is ready for Deliver",
+  "watchdogMs": 1200000,
+  "next": { "pipeline": "{onward}", "at": "plan", "ask": false },
+  "steps": [
+    {
+      "id": "welcome", "kind": "talk", "needs": [], "no": "4.0", "title": "Welcome to Develop",
+      "description": "Now we build: the loop, and how what you bring is handled",
+      "tools": ["Read"], "lines": ["develop.welcome"], "opening": ["develop.welcome"], "craft": "craft/develop-welcome.md"
+    },
+    {
+      "id": "setup", "kind": "talk", "needs": ["welcome"], "no": "4.1", "title": "Setup",
+      "description": "The project, the tools and any accounts set up; your logins one step at a time",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep", "Bash", "Write", "Edit", "WebSearch", "WebFetch"],
+      "lines": ["develop.setup", "develop.setup.needs", "develop.setup.nologin", "develop.setup.step"], "opening": ["develop.setup"],
+      "craft": "craft/develop-setup.md", "results": ["needs", "logins"]
+    },
+    {
+      "id": "roadmap", "kind": "talk", "needs": ["setup"], "no": "4.2", "title": "The Roadmap",
+      "description": "The whole journey ahead, on your project page",
+      "tools": ["Read", "Glob", "Grep"], "lines": ["develop.roadmap"], "opening": ["develop.roadmap"], "craft": "craft/develop-roadmap.md", "results": ["first"]
+    },
+    {
+      "id": "reorder", "kind": "talk", "needs": ["roadmap"], "onBack": true,
+      "description": "The roadmap's order changed, as you said",
+      "tools": ["Read", "Glob", "Grep", "Edit"], "lines": ["develop.roadmap"], "craft": "craft/develop-reorder.md", "results": ["changed"],
+      "writes": [".planning/ROADMAP.md"]
+    },
+    {
+      "id": "roadmap-ok", "kind": "gate", "needs": ["reorder"], "no": "4.2", "title": "The Roadmap",
+      "description": "Start with the current milestone?",
+      "line": "develop.roadmap.box", "approve": "Yes, start building", "backTo": "reorder", "auto": "carry"
+    },
+    {
+      "id": "propose", "kind": "script", "needs": ["roadmap-ok"], "always": true, "no": "4.3", "title": "Plan the Sprint",
+      "description": "The features ready to build now, from the roadmap",
+      "run": ["node", "{plugin}/scripts/sprint.mjs", "propose"]
+    },
+    {
+      "id": "plan", "kind": "talk", "needs": ["propose"], "no": "4.3", "title": "Plan the Sprint",
+      "description": "The plan card: what you'll see, done when, not doing yet, needs from you",
+      "tools": ["Read", "Glob", "Grep"], "lines": ["develop.plan"], "craft": "craft/develop-plan.md", "results": ["features", "goal"],
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/sprint.mjs", "plan-check", "{features}"] }
+    },
+    {
+      "id": "plan-write", "kind": "script", "needs": ["plan"], "no": "4.3", "title": "Plan the Sprint",
+      "description": "The sprint written (.planning/SPRINT.md) and its plan card shown",
+      "run": ["node", "{plugin}/scripts/sprint.mjs", "plan-write"],
+      "writes": [".planning/SPRINT.md", ".planning/project-page.html"],
+      "show": ".bmuz/develop/say-plan.md"
+    },
+    {
+      "id": "plan-ok", "kind": "gate", "needs": ["plan-write"], "no": "4.3", "title": "Plan the Sprint",
+      "description": "Build this sprint?",
+      "line": "develop.plan.box", "approve": "Yes, build it", "backTo": "plan", "auto": "carry"
+    },
+    {
+      "id": "features", "kind": "script", "needs": ["plan-ok"], "no": "4.4", "title": "Build & Prove",
+      "description": "Each feature built and proven, played and approved, tuned (a feature run each)",
+      "run": ["node", "{plugin}/scripts/sprint.mjs", "next", "{auto}"], "loop": "feature", "timeoutMs": 3600000
+    },
+    {
+      "id": "lookback-prep", "kind": "script", "needs": ["features"], "no": "4.7", "title": "Sprint Look-Back",
+      "description": "The sprint's numbers: the milestone's %, the notes",
+      "run": ["node", "{plugin}/scripts/sprint.mjs", "lookback-prep"]
+    },
+    {
+      "id": "lookback", "kind": "talk", "needs": ["lookback-prep"], "no": "4.7", "title": "Sprint Look-Back",
+      "description": "Three lines on how it went; your words win",
+      "tools": ["Read", "Glob", "Grep"], "lines": ["develop.lookback"], "opening": ["develop.lookback"], "craft": "craft/develop-lookback.md",
+      "results": ["retro", "built", "gdd", "rulebook", "tdd", "onward", "playtested"],
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/sprint.mjs", "lookback-check", "{onward}", "{playtested}", "{retro}"] }
+    },
+    {
+      "id": "lookback-write", "kind": "script", "needs": ["lookback"], "no": "4.7", "title": "Sprint Look-Back",
+      "description": "The retro kept, the sprint archived; the GDD, the rulebook and the TDD updated to match what we built",
+      "run": ["node", "{plugin}/scripts/sprint.mjs", "lookback-write"],
+      "writes": [".planning/SPRINT.md", ".planning/ROADMAP.md", ".planning/GDD.md", ".planning/design/RULEBOOK.md", ".planning/TDD.md", ".planning/archive/sprints/*.md", ".planning/project-page.html"],
+      "show": ".bmuz/develop/say-lookback.md"
+    },
+    {
+      "id": "teaching", "kind": "talk", "needs": ["lookback-write"], "when": "{playtested}", "no": "4.8", "title": "Teaching",
+      "description": "How a new player learns it, now that people have played it",
+      "tools": ["Read", "Glob", "Grep"], "lines": ["develop.teaching", "develop.teaching.ask", "develop.teaching.plan"], "opening": ["develop.teaching"],
+      "must": ["develop.teaching.ask", "develop.teaching.plan"], "craft": "craft/develop-teaching.md", "results": ["steps", "learn"]
+    },
+    {
+      "id": "teaching-write", "kind": "script", "needs": ["teaching"], "when": "{playtested}", "no": "4.8", "title": "Teaching",
+      "description": "The tutorial in the GDD (chapter 14) and on the roadmap",
+      "run": ["node", "{plugin}/scripts/sprint.mjs", "teaching-write"],
+      "writes": [".planning/GDD.md", ".planning/ROADMAP.md", ".planning/project-page.html"]
+    }
+  ]
+}

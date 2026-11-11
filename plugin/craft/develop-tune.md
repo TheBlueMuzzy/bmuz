@@ -1,0 +1,8 @@
+Craft note (feature run, step "tune" — the script's 4.6 Tune & Revise: name the feeling › watch what players do › sort the cause › one knob at a time, MDA's diagnose).
+1. Open with mcp__bmuz__say {"line": "develop.tune"}: a free question, your whole reply; end your turn. Their next message is what's wrong, in their words.
+2. Sort the cause, from their words, the rulebook (.planning/design/RULEBOOK.md) and the code: how it feels to control · whether they can read what's happening · a pattern of play · the rule itself.
+3. A setting can fix it: pick ONE setting in content/ (content/tuning/*.json or a content/data/*.json table, never the code), say mcp__bmuz__say {"line": ["develop.tune.try", "develop.tune.keep"], "slots": {"cause": "<the cause, plainly: a pattern of play: the leader can always answer a storm>", "setting": "<its name and the change: Storm cards per hand, 2 → 1>", "expect": "<what you expect: storms to land more often>"}}, change that one value with Edit, and finish. Exactly one value changes: the engine checks it, and runs the tests.
+4. No setting can: say mcp__bmuz__say {"line": "develop.tune.rule"} (a free question: your whole reply, end your turn). If they want to, look at the rule together (their next message), then hand back "rule": "yes" and the rulebook change; no setting changes.
+Values the creative saved in the Dev Kit are decisions: never change one of those back.
+
+Hand back: "cause", "setting", "expect", "rule": "yes" | "no", and "rulebook": {} — or, for a rule, {"log": "<what changed in the rule and why>", plus the section that changed: "actions": [{"name", "text"}] or "flow": […]}.

@@ -1,0 +1,75 @@
+{
+  "id": "feature",
+  "version": 1,
+  "description": "One feature of Develop's sprint (F216, the approved script's 4.4–4.6), run by Develop's loop as a side trip and kept in .bmuz/feature-runs/: the progress line → built by a fresh builder helper (every rule a test; proven by a script that runs them) → reviewed by a separate read-only reviewer, the confirmed findings fixed once (proven again) → ready for you to check → Play & Approve (nothing is done without your OK; an auto run leaves it as a question) → Tune & Revise (one setting, or the rule back to the rulebook) → recorded and committed",
+  "watchdogMs": 1800000,
+  "steps": [
+    {
+      "id": "start", "kind": "script", "needs": [], "no": "4.4", "title": "Build & Prove",
+      "description": "Building it: the progress line",
+      "run": ["node", "{plugin}/scripts/sprint.mjs", "feature-start"],
+      "writes": [".planning/ROADMAP.md", ".planning/project-page.html"],
+      "show": ".bmuz/develop/say-progress.md"
+    },
+    {
+      "id": "build", "kind": "flow", "needs": ["start"], "no": "4.4", "title": "Build & Prove",
+      "description": "A fresh builder helper builds it, every rule with a test; the engine runs the tests",
+      "workflow": "bmuz:build-flow", "args": { "mode": "build", "brief": ".bmuz/develop/brief.md", "tries": ".bmuz/develop/tries.md" },
+      "agentTools": ["Read", "Glob", "Grep", "Write", "Edit", "Bash"], "timeoutMs": 2400000,
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/sprint.mjs", "prove"] },
+      "stuck": ".bmuz/develop/say-stuck.md"
+    },
+    {
+      "id": "review", "kind": "flow", "needs": ["build"], "no": "4.4", "title": "Build & Prove",
+      "description": "A reviewer who didn't build it reads it; each finding confirmed by another reader",
+      "workflow": "bmuz:build-flow", "args": { "mode": "review", "brief": ".bmuz/develop/brief.md" },
+      "agentTools": ["Read", "Glob", "Grep"], "timeoutMs": 1200000
+    },
+    {
+      "id": "review-save", "kind": "script", "needs": ["review"], "no": "4.4", "title": "Build & Prove",
+      "description": "The confirmed findings, for the builder",
+      "run": ["node", "{plugin}/scripts/sprint.mjs", "review-save"]
+    },
+    {
+      "id": "fix", "kind": "flow", "needs": ["review-save"], "no": "4.4", "title": "Build & Prove",
+      "description": "The confirmed findings fixed, once; the engine runs the tests again",
+      "workflow": "bmuz:build-flow", "args": { "mode": "fix", "brief": ".bmuz/develop/brief.md", "review": ".bmuz/develop/review.md" },
+      "agentTools": ["Read", "Glob", "Grep", "Write", "Edit", "Bash"], "timeoutMs": 2400000,
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/sprint.mjs", "prove"] }
+    },
+    {
+      "id": "ready", "kind": "script", "needs": ["fix"], "no": "4.5", "title": "Play & Approve",
+      "description": "Ready for you to check: what changed, how to try it, what was checked",
+      "run": ["node", "{plugin}/scripts/sprint.mjs", "ready"],
+      "writes": [".planning/ROADMAP.md", ".planning/SPRINT.md", ".planning/project-page.html"],
+      "show": ".bmuz/develop/say-ready.md"
+    },
+    {
+      "id": "approve", "kind": "talk", "needs": ["ready"], "no": "4.5", "title": "Play & Approve",
+      "description": "Did it feel the way it should? Nothing is done without your OK",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"], "lines": ["develop.approve.box"], "must": ["develop.approve.box"],
+      "craft": "craft/develop-approve.md", "results": ["answer", "tune"],
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/sprint.mjs", "approval", "{answer}", "{auto}"] }
+    },
+    {
+      "id": "tune", "kind": "talk", "needs": ["approve"], "when": "{tune}", "no": "4.6", "title": "Tune & Revise",
+      "description": "What feels off, its cause, one setting to try (or the rule itself)",
+      "tools": ["Read", "Glob", "Grep", "Edit"], "lines": ["develop.tune", "develop.tune.try", "develop.tune.keep", "develop.tune.rule"], "opening": ["develop.tune"],
+      "craft": "craft/develop-tune.md", "results": ["cause", "rule", "rulebook"],
+      "writes": ["content/tuning/*.json", "content/data/*.json"],
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/sprint.mjs", "tuned", "{rule}", "{rulebook}"] }
+    },
+    {
+      "id": "tune-rb", "kind": "script", "needs": ["tune"], "when": "{rule}", "no": "4.6", "title": "Tune & Revise",
+      "description": "The rule back to the rulebook, with a dev log entry",
+      "run": ["node", "{plugin}/scripts/rulebook.mjs", "step", "tune", "worked out"],
+      "writes": [".planning/design/RULEBOOK.md", ".planning/GDD.md", ".planning/project-page.html"]
+    },
+    {
+      "id": "end", "kind": "script", "needs": ["tune-rb"], "always": true,
+      "description": "Recorded: approved, tuned or waiting for your OK; committed",
+      "run": ["node", "{plugin}/scripts/sprint.mjs", "feature-end"],
+      "writes": [".planning/SPRINT.md", ".planning/ROADMAP.md", ".planning/project-page.html"]
+    }
+  ]
+}
