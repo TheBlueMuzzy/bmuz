@@ -139,6 +139,63 @@ const GARDEN_DEFINE = {
 const CHART = {
   ideate: { 1: 'loose', 2: 'empty', 3: 'loose', 4: 'loose', 5: 'loose', 6: 'loose', 7: 'loose', 8: 'loose', 9: 'empty', 10: 'loose', 11: 'loose', 12: 'loose', 13: 'empty', 14: 'empty' },
   define: { 1: 'chosen', 2: 'chosen', 3: 'chosen', 4: 'chosen', 5: 'chosen', 6: 'chosen', 7: 'chosen', 8: 'loose', 9: 'empty', 10: 'loose', 11: 'loose', 12: 'loose', 13: 'empty', 14: 'empty' },
+  design: { 1: 'chosen', 2: 'chosen', 3: 'worked out', 4: 'worked out', 5: 'worked out', 6: 'worked out', 7: 'worked out', 8: 'worked out', 9: 'worked out', 10: 'worked out', 11: 'worked out', 12: 'worked out', 13: 'worked out', 14: 'loose' },
+}
+
+// F227: the creative's Design answers for the garden race (bmuz-design-doc.html "Example · Design, filled in": the
+// Flow, Rule A / Rule B for hail, the Seed cards' first rows), from the GDD Define left (tests/fixtures/garden-defined).
+const GARDEN_DESIGN = {
+  sketches: { 'Build them in this order?': 'Yes, build them' },
+  'sketch-play': {
+    'Did S01 answer the question?': 'Yes, keep what it showed',
+    'Did S02 answer the question?': 'Yes, keep what it showed',
+    'Pasted values': 'none',
+  },
+  'rules-ask': { 'Before we start, want me to read the rulebooks of the closest games?': 'No, start now' },
+  flow: {
+    'Walk me through one turn, step by step': "1. Draw two cards. 2. Play one card: plant a seed in one of your rows, or send weather to one of your friend's rows. 3. Any row with three blooms scores and is cleared. 4. Your friend's turn. Rule A / Rule B, to test: hail destroys one bloom (A) or the whole row (B).",
+  },
+  'flow-check': { 'Is that how a turn goes?': 'Yes' },
+  sections: {
+    'How do you win, and how does a game end?': 'When the seed deck runs out you finish the round; the most blooms wins.',
+    'How is the game set up, before the first turn?': 'Shuffle the seed and weather cards together, deal three cards each; each player has three empty rows.',
+    'What are all the pieces? Anything missing?': 'That is all, plus a score track.',
+    'For each action: what exactly happens, and what can\'t you do?': 'Plant: put a seed card in one of your rows; you can\'t plant on a row with hail on it. Send weather: put it on one of your friend\'s rows; rain makes a seed bloom a turn sooner, hail is the Rule A / Rule B to test.',
+    'What happens when (an edge case)?': 'Two weather cards on the same row: the second one waits a turn. The exact rule is TBD.',
+    'What\'s secret, from whom, and until when?': 'Your hand is secret until you play a card.',
+    'What do players call each thing and each action?': 'Seed, bloom, row, weather, hail, rain, plant.',
+    'Is that right? (each section)': 'Yes',
+  },
+  content: {
+    'Anything missing? (the kinds of things)': 'That is all.',
+    'Columns for each kind, and the ones you have in mind': 'Those columns are fine. Sunflower: cost 1, blooms in 1 turn, 6 of them. Rose: cost 2, blooms in 2 turns, scores double, 4 of them. Hail and rain: 3 each.',
+  },
+  balance: { 'Want me to suggest fixes, or would you rather adjust them yourself?': "I'll adjust them myself." },
+  time: {
+    'Change Over Time (one message)': 'At the end the deck is thin and every card matters. Between games only the shuffle changes. There is no longer journey.',
+    'Keep that, or soften it?': 'Keep it.',
+  },
+  scope2: { 'Each new piece: if it were missing, would the game be pointless?': 'The score track: Must. Repairing hail rows: Could. Anything else new: Should.' },
+  'scope2-report': { 'Does the pitch still say it right?': 'Yes' },
+  players: {
+    'How should the computer opponent play?': 'It goes for full rows, sends hail at your best row on hard, and always plays to win.',
+    'Online: someone leaves, goes quiet, comes back, joins late? Play again?': 'If someone leaves, the computer takes their seat; quiet for a minute, it plays for them; they can come back; the room can play again.',
+    'How long is one game? Paused or saved?': 'About three minutes; no saving halfway.',
+    'Which of these does the game need?': 'None of these',
+  },
+  look: { 'Share any pictures or games whose look you love': 'Bright hand-drawn flowers, like a picture book; soft colours.' },
+  'look-pick': {
+    'Which look is closest?': 'The first look (A)',
+    'How do the pieces move?': 'Cards slide; blooms pop up with a little bounce.',
+    'What should it sound like? Placeholder sound OK?': 'Soft rain and plucky strings; a placeholder sound is fine for the first playable.',
+  },
+  screens: {
+    'The screen map: anything missing?': 'Looks right.',
+    "During play, where are the player's eyes?": 'On my rows and the cards in my hand; the score at a glance.',
+    'What do players choose before a game, and what is a setting?': 'Who to play: a friend on this phone, online, or the computer. Sound on or off is a setting.',
+    'At the end of a game?': "Both gardens side by side; the winner's flowers bloom.",
+    'Which UI style fits?': 'Cozy',
+  },
 }
 const gardenScratch = name => {
   if (!/^bmuz-garden-/.test(name)) throw new Error(`the garden scenarios use .scratch/bmuz-garden-* folders only, not ${name}`)
@@ -337,6 +394,38 @@ const scenarios = {
     const lock = read('.planning/research/define-lock.md') || ''
     check('F232 (define): the concept lock page: the script\'s words, the ✓ lines filled, on the project page', /^\*\*Concept Lock\*\*\nHere's the concept, one page, on your project page now: file:\/\/\//.test(lock) && (lock.match(/^✓ /gm) || []).length === 6 && /Locking means Design builds on this page\./.test(lock), lock.slice(0, 700))
     check('F232 (define): the clash check ran as separate reviewers and wrote its report', js.some(j => j.ev === 'flow.launched' && j.workflow === 'bmuz:clash-flow') && /## Clashes/.test(read('.planning/research/define-clash.md') || ''), (read('.planning/research/define-clash.md') || '').slice(0, 500))
+  },
+
+  // F227: Design on the script, 3.0–3.10, with the garden race, from where Define left it (Define's lock: the GDD of a
+  // define-garden run, tests/fixtures/garden-defined/GDD.md): every fixed line word for word, the two sketches on the
+  // list built as real pages by the sketch flow, rulebook research declined, the rulebook, the content tables, the
+  // TDD and the roadmap written, the chapters ending where the growth chart says, and the Blueprint Review gate left
+  // for the creative (an auto run never approves).
+  async 'design-garden'() {
+    const dir = gardenScratch('bmuz-garden-design')
+    mkdirSync(join(dir, '.planning'), { recursive: true })
+    writeFileSync(join(dir, '.planning/GDD.md'), readFileSync(join(here, 'fixtures', 'garden-defined', 'GDD.md'), 'utf8'))
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'design', testAnswers: GARDEN_DESIGN }, null, 2))
+    const out = runIn(dir, 'bmuz go', `${TOOLS} ToolSearch mcp__bmuz__say WebSearch WebFetch`, true)
+    writeFileSync(join(dir, 'run-output.txt'), out)
+    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
+    const js = journalOf(dir)
+    const starts = [...new Set(js.filter(j => j.ev === 'step.start').map(j => j.step))]
+    const UP_TO_REVIEW = ['welcome', 'sketches', 'sketch-prep', 'sketch-build', 'sims', 'sketch-play', 'sketch-play-gdd', 'rules-ask', 'flow', 'flow-rb', 'flow-check', 'flow-check-rb', 'flow-check-gdd', 'sections', 'sections-rb', 'rules-done', 'content', 'content-fill', 'balance', 'balance-fill', 'time', 'time-gdd', 'scope2', 'scope2-gdd', 'scope2-report', 'scope2-report-gdd', 'players-read', 'players-read-gdd', 'players', 'players-gdd', 'tdd-start', 'look', 'look-build', 'look-pick', 'look-gdd', 'screens', 'screens-gdd', 'plan', 'plan-write', 'change-gdd', 'change-rb', 'review-show', 'review']
+    check('F227 (design): Design ran 3.0–3.10 in order to the Blueprint Review; rulebook research skipped on "No"; "change" only on a "Not yet"', JSON.stringify(starts) === JSON.stringify(UP_TO_REVIEW) && js.some(j => j.ev === 'step.skip' && j.step === 'rules-research') && js.some(j => j.ev === 'step.skip' && j.step === 'change'), `${starts.join(' ')} | ${trailOf(js.slice(-8))}`)
+    check('F227 (design): an auto run never approves: the gate asked the script\'s box and stopped', js.some(j => j.ev === 'gate.pending' && j.step === 'review' && j.question === 'Ready to build?' && JSON.stringify(j.options) === JSON.stringify(['Not yet: change something', 'Approve: start building'])) && !js.some(j => j.ev === 'step.done' && j.step === 'approved'), trailOf(js.slice(-6)))
+    scriptChecks(dir, out, 'design', js, ['design.welcome', 'design.sketches', 'design.sketches.list', 'design.sketches.order', 'design.sketch.ready', 'design.sketch.answered', 'design.rulebook', 'design.rulebook.research', 'design.rulebook.flow', 'design.rulebook.flow.here', 'design.rulebook.flow.ok', 'design.rulebook.win', 'design.rulebook.setup', 'design.rulebook.pieces', 'design.rulebook.action', 'design.rulebook.secret', 'design.rulebook.names', 'design.content', 'design.content.kinds', 'design.content.columns', 'design.content.balance', 'design.content.playtest', 'design.time', 'design.scope2', 'design.scope2.added', 'design.scope2.report', 'design.scope2.pitch', 'design.players', 'design.players.read', 'design.players.ai', 'design.players.online', 'design.players.length', 'design.players.needs', 'design.look', 'design.look.refs', 'design.look.sketches', 'design.look.pick', 'design.look.motion', 'design.look.sound', 'design.screens', 'design.screens.map', 'design.screens.eyes', 'design.screens.choose', 'design.screens.end', 'design.screens.style', 'design.screens.teach', 'design.plan'])
+    const manifest = JSON.parse(read('.planning/research/sketches/sketches.json') || '{"sketches":[]}')
+    const pages = manifest.sketches.filter(s => !s.numbers).map(s => read(s.file) || '')
+    check('F227 (design): the sketches on the list were built as real pages (changed from the starter, "Copy values for Claude" kept) and are on the project page', manifest.sketches.length >= 2 && pages.length > 0 && pages.every(p => /Copy values for Claude/.test(p) && !/<title>S1: Sketch name<\/title>/.test(p)) && manifest.sketches.every(s => (read('.planning/project-page.html') || '').includes(String(s.file || s.sim || '').split('/').pop().replace(/\.sim\.mjs$/, ''))) && js.some(j => j.ev === 'flow.launched' && j.workflow === 'bmuz:sketch-flow'), JSON.stringify(manifest.sketches.map(s => [s.id, s.file || s.sim])))
+    const rb = read('.planning/design/RULEBOOK.md') || ''
+    check('F227 (design): the rulebook in Muzzy\'s order, the Flow numbered, a Rule A / Rule B and a dated Development Log entry', ['## Overview', '## Components', '## How to Win', '## Setup', '## Gameplay', '### The Flow', '## Game End', '## Scoring', '## Keywords', '## Development Log'].every((h, i, a) => rb.indexOf(h) >= 0 && (i === 0 || rb.indexOf(h) > rb.indexOf(a[i - 1]))) && /\n1\. Draw two cards/.test(rb) && /Rule A/.test(rb) && /\n- v0\.1 · \d{4}-\d{2}-\d{2} · /.test(rb), rb.slice(0, 900))
+    const tables = JSON.parse(read('.planning/design/tables.json') || '{"tables":{}}').tables
+    const seed = Object.values(tables).map(t => JSON.parse(read(t.file) || 'null')).find(t => t && /seed/i.test(t.name))
+    check('F227 (design): the content tables in content/data/ (Seed cards with Sunflower and Rose; the Playtesting table)', !!seed && seed.rows.some(r => /sunflower/i.test(JSON.stringify(r))) && seed.rows.some(r => /rose/i.test(JSON.stringify(r))) && !!read('content/data/playtesting.json'), JSON.stringify(Object.keys(tables)))
+    const tdd = read('.planning/TDD.md') || ''
+    const rm = read('.planning/ROADMAP.md') || ''
+    check('F227 (design): the TDD (its sections, the content tables decision) and the roadmap (milestones, F## features with needs, the first sprint in the review)', /## 1\. At a glance/.test(tdd) && /D01 · Content tables/.test(tdd) && /## 8\. Decisions log/.test(tdd) && /^# .+ — Roadmap/.test(rm) && /\n## v0\.1 — .+← current/.test(rm) && /\n- 🟢 F01 \S+ .+ — .+ — must:/u.test(rm) && /first sprint it would start with: F01 — /.test(read('.planning/research/design-review.md') || ''), `${tdd.slice(0, 300)} || ${rm.slice(0, 500)}`)
   },
 
 
