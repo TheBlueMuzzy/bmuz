@@ -514,14 +514,20 @@ const nextVersion = (v, kind) => {
   return p.join('.')
 }
 
-// The release scripts refuse to go on while git shows files nobody committed. The engine's own record (.bmuz/) is one
-// of them in a project that doesn't ignore it, so while they run it is hidden from git on this machine only
-// (.git/info/exclude, put back as it was after), never by changing the project's .gitignore.
+// The release scripts refuse to go on while git shows files nobody committed. The engine's own files are such files in
+// a project that doesn't ignore them: its record (.bmuz/) and, before it was ever committed, bmuz.json. While the
+// scripts run they are hidden from git on this machine only (.git/info/exclude, put back as it was after), never by
+// changing the project's .gitignore. A bmuz.json git already keeps is committed as the engine left it (a stage move
+// rewrites it).
 function withBmuzHidden(dir, fn) {
   const gitDir = gitOut(dir, ['rev-parse', '--git-dir'])
   const file = gitDir ? join(resolve(dir, gitDir), 'info', 'exclude') : null
   const before = file && existsSync(file) ? readFileSync(file, 'utf8') : null
-  if (file && !/^\/?\.bmuz\/?$/m.test(before || '')) { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, `${(before || '').replace(/\n*$/, '\n')}/.bmuz/\n`) }
+  const tracked = gitOut(dir, ['ls-files', '--', 'bmuz.json']) === 'bmuz.json'
+  if (tracked && B.dirtyFiles(dir).includes('bmuz.json')) B.commitFiles(dir, ['bmuz.json'], 'BMUZ: the stage as the engine left it')
+  const have = (before || '').split('\n').map(l => l.trim())
+  const hide = ['/.bmuz/', ...(tracked ? [] : ['/bmuz.json'])].filter(p => !have.includes(p))
+  if (file && hide.length) { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, `${(before || '').replace(/\n*$/, '\n')}${hide.join('\n')}\n`) }
   try { return fn() } finally { if (file) { if (before === null) writeFileSync(file, ''); else writeFileSync(file, before) } }
 }
 

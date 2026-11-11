@@ -67,6 +67,27 @@ const runIn = (dir, prompt, tools, stream = false) => {
   console.log(`      (${Math.round((Date.now() - took) / 1000)} s; last lines: ${out.trim().split('\n').slice(-4).join(' / ').slice(0, 400)})`)
   return out
 }
+// F219: like runIn (stream), with more settings in the environment, stopped as soon as `done()` says so (checked every
+// 3 s) or at `maxMs`; hands back every assistant message so far. Deliver's run 2 stops once the project is back in
+// Develop (the next sprint is develop-garden's business).
+const runCollect = async (dir, prompt, tools, done, maxMs, extra = {}) => {
+  const took = Date.now()
+  const child = spawn('claude', ['-p', prompt, ...base, ...(tools ? ['--allowedTools', tools] : []), '--output-format', 'stream-json', '--verbose'], { cwd: dir, env: { ...env, BMUZ_TEST: '1', ...extra }, stdio: ['ignore', 'pipe', 'pipe'] })
+  let raw = ''
+  child.stdout.on('data', d => { raw += d })
+  child.stderr.on('data', d => { raw += d })
+  let ended = false
+  child.on('exit', () => { ended = true })
+  while (!ended && !done() && Date.now() - took < maxMs) await wait(3000)
+  if (!ended) {
+    await wait(5000) // (the last message of the turn that got it there)
+    if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'])
+    else child.kill('SIGTERM')
+  }
+  const out = raw.split('\n').map(l => { try { const j = JSON.parse(l); return j.type === 'assistant' ? (j.message?.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') : '' } catch (e) { return '' } }).filter(Boolean).join('\n')
+  console.log(`      (${Math.round((Date.now() - took) / 1000)} s; ${ended ? 'ended by itself' : 'stopped once done'}; last lines: ${out.trim().split('\n').slice(-3).join(' / ').slice(0, 300)})`)
+  return out
+}
 
 const RULEBOOK = [
   '# Tidekeeper — rules (draft 3)',
@@ -670,6 +691,84 @@ const scenarios = {
     const ids = new Set(allJournals().filter(j => j.ev === 'line').map(j => j.line))
     const need = ['develop.welcome', 'develop.setup', 'develop.roadmap', 'develop.approve.box', 'develop.tune', 'develop.tune.try', 'develop.tune.keep', 'develop.lookback', 'develop.waiting']
     check('F216 (develop): the script\'s lines for this run were all said', need.every(id => ids.has(id)) && ['plan-write', 'start', 'ready', 'lookback-write'].every(s => js.some(j => j.ev === 'show' && j.step === s)), `not said: ${need.filter(id => !ids.has(id)).join(', ')}`)
+  },
+
+  // F219: Deliver on the garden race at Develop's end (tests/fixtures/garden-developed: v0.1's musts approved, ready to
+  // deliver, a dev/vertical-slice branch, a tiny web game). NOTHING REAL: origin is a bare repository in a folder beside
+  // it, the "host" is tests/fixtures/fake-host.mjs on 127.0.0.1, and the release scripts' cleanup stands aside.
+  // Run 1, an auto run: Develop's end hands over to Deliver, which runs 5.0–5.4 and stops at "Share it?" with nothing
+  // merged, tagged, pushed or deployed. Run 2, the creative types "bmuz approve Share it": merged, v0.1.0 tagged,
+  // pushed to the local origin only, deployed to the stand-in host, the live check passes; the playtest notes (test
+  // answers) land in the roadmap and BUGS.md, and the project goes back to Develop. Run 3, a must not done: "Not ready
+  // yet", "finish it first", back to Develop with nothing shared.
+  async 'deliver-garden'() {
+    const { setupDevelopedGarden } = await import('./fixtures/garden-developed-setup.mjs')
+    const dir = gardenScratch('bmuz-garden-deliver')
+    const port = 43000 + Math.floor(Math.random() * 1000)
+    const { host, origin } = setupDevelopedGarden(dir, { port })
+    const server = spawn(process.execPath, [join(here, 'fixtures', 'fake-host.mjs'), host, String(port)], { stdio: 'ignore' })
+    const extra = { BMUZ_CLEANUP: join(here, 'fixtures', 'noop-cleanup.sh'), BMUZ_LIVE_TRIES: '4', BMUZ_POLL_MS: '2000' }
+    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
+    const json = f => { try { return JSON.parse(read(f) || 'null') } catch (e) { return null } }
+    const git = (args, cwd = dir) => (spawnSync('git', args, { cwd, encoding: 'utf8' }).stdout || '').trim()
+    const allJournals = (d = dir) => {
+      const out = []
+      const root = join(d, '.bmuz', 'stages')
+      if (existsSync(root)) for (const s of readdirSync(root).sort()) { const f = join(root, s, 'journal.jsonl'); if (existsSync(f)) out.push(...readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l) } catch (e) { return {} } })) }
+      return [...out, ...journalOf(d)]
+    }
+    // Develop finished with the milestone ready ("onward": deliver), as its look-back leaves it
+    const develop = JSON.parse(readFileSync(join(plugin, 'pipelines', 'develop.json'), 'utf8'))
+    const finishedDevelop = d => {
+      mkdirSync(join(d, '.bmuz'), { recursive: true })
+      writeFileSync(join(d, '.bmuz/state.json'), JSON.stringify({ ...E.freshState('develop'), finished: develop.steps.map(s => s.id), status: 'done', results: { onward: 'deliver', at: 'first' } }, null, 2))
+      writeFileSync(join(d, 'bmuz.json'), JSON.stringify({ pipeline: 'develop' }, null, 2))
+    }
+    finishedDevelop(dir)
+    const mainBefore = git(['rev-parse', 'main'])
+    const shownIn = (out, js) => js.filter(j => j.ev === 'show').filter(j => { const t = read(j.path); return t && t.trim() && !plain(out).includes(plain(t)) })
+    try {
+      // run 1: the auto run (only auto-run.json's pre-approvals, as overnight)
+      const out1 = (await runCollect(dir, 'bmuz go', null, () => (json('.bmuz/state.json') || {}).current === 'share', 1_500_000, extra))
+      // (the run's words beside the project, not in it: the release scripts refuse files nobody committed)
+      writeFileSync(`${dir}-run-output-1.txt`, out1)
+      let js = allJournals()
+      const started = [...new Set(js.filter(j => j.ev === 'step.start').map(j => j.step))]
+      const st1 = json('.bmuz/state.json') || {}
+      check('F219 (deliver): Develop\'s end hands over to Deliver, which runs 5.0 Welcome → 5.1 Release Check → 5.2 Polish & Stand-ins → 5.3 Safety & Legal → 5.4 Build & Share and stops at "Share it?" (the question noted)', (json('.bmuz/stages.json') || []).some(s => s.pipeline === 'develop') && st1.pipeline === 'deliver' && st1.current === 'share' && ['prep', 'welcome', 'check', 'decide', 'polish', 'polish-do', 'safety', 'build'].every(id => started.includes(id)) && js.some(j => j.ev === 'gate.pending' && j.step === 'share') && /Share it\?/.test(read('.bmuz/questions.md') || ''), `${JSON.stringify({ p: st1.pipeline, cur: st1.current })} | ${trailOf(js.slice(-20))}`)
+      check('F219 (deliver): the auto run shared nothing: still on dev/vertical-slice, no tag, the local origin\'s main untouched, nothing on the stand-in host, version 0.0.0', git(['rev-parse', '--abbrev-ref', 'HEAD']) === 'dev/vertical-slice' && git(['tag']) === '' && git(['rev-parse', 'main'], origin) === mainBefore && !existsSync(join(host, 'garden-race')) && json('version.json').version === '0.0.0' && !js.some(j => j.ev === 'step.start' && j.step === 'publish'), `${git(['rev-parse', '--abbrev-ref', 'HEAD'])} tags: ${git(['tag'])}`)
+      const said1 = js.filter(j => j.ev === 'line' && j.kind !== 'box').filter(j => !plain(out1).includes(plain(j.text)))
+      const unshown1 = shownIn(out1, js)
+      check('F219 (deliver): every Stage 5 line of run 1 (the welcome, the Release Check, the stand-ins, Safety & Legal, the build card) is in Claude\'s words word for word', js.some(j => j.ev === 'line' && j.line === 'deliver.standins') && ['welcome', 'check', 'safety', 'build'].every(s => js.some(j => j.ev === 'show' && j.step === s)) && said1.length === 0 && unshown1.length === 0, `${said1.map(j => `${j.line}: ${plain(j.text).slice(0, 100)}`).join(' | ')} ${unshown1.map(j => j.step).join(',')}`)
+      // run 2: the creative's own "Share it", then their playtest notes (as test answers)
+      writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ ...(json('bmuz.json') || {}), pipeline: 'deliver', testAnswers: { notes: { 'Playtest Notes (what happened)': 'Played with my partner and two friends, four games. Three of four games came down to the last card and they asked for a rematch right away. Hail felt too strong late in the game. The rain card text was cut off on my small phone. Someone asked whether you can play weather on your own row. A seasons mode would be fun.' } } }, null, 2))
+      const out2 = await runCollect(dir, 'bmuz approve Share it', null, () => (json('bmuz.json') || {}).pipeline === 'develop', 1_500_000, extra)
+      writeFileSync(`${dir}-run-output-2.txt`, out2)
+      js = allJournals()
+      check('F219 (deliver): "bmuz approve Share it" (the creative\'s own words, journaled) ran publish: merged into main, v0.1.0 tagged, pushed to the local origin, deployed to the stand-in host, the live check passed', js.some(j => j.ev === 'gate.answer' && j.step === 'share' && j.answer === 'Share it') && js.some(j => j.ev === 'step.done' && j.step === 'publish') && git(['tag']) === 'v0.1.0' && git(['tag'], origin) === 'v0.1.0' && git(['rev-parse', 'main'], origin) === git(['rev-parse', 'main']) && /Merge dev\/vertical-slice into main/.test(git(['log', '--format=%s', 'main'])) && /version 0\.1\.0/.test(existsSync(join(host, 'garden-race', 'index.html')) ? readFileSync(join(host, 'garden-race', 'index.html'), 'utf8') : '') && /v0\.1\.0 http:\/\/127\.0\.0\.1/.test(read('.planning/live-pass') || ''), `${trailOf(js.filter(j => ['publish', 'share'].includes(j.step)))} | tags ${git(['tag'])}`)
+      check('F219 (deliver): nothing reached anything real: the only remote is the folder on this machine, the "live" page is 127.0.0.1, no deploy workflow (no GitHub run)', git(['remote']) === 'origin' && git(['remote', 'get-url', 'origin']) === origin && /\bLive: http:\/\/127\.0\.0\.1:\d+\//.test(read('.planning/STATE.md') || '') && !/\bLive: https?:\/\/(?!127\.0\.0\.1)/.test(read('.planning/STATE.md') || '') && !existsSync(join(dir, '.github')), `${git(['remote', '-v'])}`)
+      check('F219 (deliver): the playtest notes landed: each feeling checked, a tuning task and a rulebook question on the roadmap, a bug in BUGS.md (found in Deliver), an idea; the 5.5 lines word for word', js.some(j => j.ev === 'step.done' && j.step === 'notes-write') && /^- 🟢 F\d+ ✨ Tuning: /m.test(read('.planning/ROADMAP.md') || '') && /^### B\d{3} · P[0-3] · open · found \d{4}-\d\d-\d\d in Deliver · Playtest Notes/m.test(read('.planning/BUGS.md') || '') && /^Against the feelings you chose:/.test(read('.bmuz/deliver/say-notes.md') || '') && plain(out2).includes(plain(read('.bmuz/deliver/say-notes.md') || '~')) && js.some(j => j.ev === 'line' && j.line === 'deliver.notes'), `${(read('.bmuz/deliver/say-notes.md') || '').slice(0, 300)} | ${trailOf(js.filter(j => /notes/.test(j.step || '')))}`)
+      const st2 = json('.bmuz/state.json') || {}
+      check('F219 (deliver): back to Develop at Plan the Sprint (Deliver\'s record kept in .bmuz/stages/)', (json('bmuz.json') || {}).pipeline === 'develop' && st2.pipeline === 'develop' && (json('.bmuz/stages.json') || []).some(s => s.pipeline === 'deliver') && js.some(j => j.ev === 'stage.enter' && j.from === 'deliver' && j.to === 'develop'), JSON.stringify({ p: st2.pipeline, cur: st2.current }))
+      const unsaid2 = js.filter(j => j.ev === 'line' && j.kind !== 'box' && /^deliver\./.test(j.line || '')).filter(j => !plain(`${out1}\n${out2}`).includes(plain(j.text)))
+      check('F219 (deliver): every Stage 5 fixed line of run 2 (It\'s live, the notes ask, the notes lines) is in Claude\'s words word for word', unsaid2.length === 0 && plain(out2).includes(plain(read('.bmuz/deliver/say-live.md') || '~')), unsaid2.map(j => j.line).join(', '))
+    } finally {
+      server.kill()
+    }
+
+    // run 3: not ready — F03 isn't approved yet; the creative says "finish it first"
+    const nr = gardenScratch('bmuz-garden-deliver-nr')
+    const { origin: origin3 } = setupDevelopedGarden(nr, { port: 1 })
+    writeFileSync(join(nr, '.planning/ROADMAP.md'), readFileSync(join(nr, '.planning/ROADMAP.md'), 'utf8').replace('- ✅ F03 🎮 Weather cards', '- 🎛️ F03 🎮 Weather cards').replace('F03[✅ F03', 'F03[🎛️ F03'))
+    spawnSync('git', ['commit', '-qam', 'F03 waits for its OK'], { cwd: nr })
+    finishedDevelop(nr)
+    writeFileSync(join(nr, 'bmuz.json'), JSON.stringify({ pipeline: 'develop', testAnswers: { notready: { 'Finish it first, or move it to the next stage?': 'Finish it first.' } } }, null, 2))
+    const out3 = await runCollect(nr, 'bmuz go', null, () => (JSON.parse(readFileSync(join(nr, 'bmuz.json'), 'utf8')).pipeline === 'develop' && existsSync(join(nr, '.bmuz/stages.json')) && /deliver/.test(readFileSync(join(nr, '.bmuz/stages.json'), 'utf8'))), 900_000, extra)
+    writeFileSync(`${nr}-run-output.txt`, out3)
+    const js3 = allJournals(nr)
+    const check3 = existsSync(join(nr, '.bmuz/deliver/say-check.md')) ? readFileSync(join(nr, '.bmuz/deliver/say-check.md'), 'utf8') : ''
+    const rm3 = readFileSync(join(nr, '.planning/ROADMAP.md'), 'utf8')
+    check('F219 (deliver, not ready): the Release Check names F03 in "Not ready yet: … Want to finish it first, or move it to the next stage?" word for word; "finish it first" sends it back to Develop with v0.1 current again and nothing shared', /✗ 2 of 3 musts for this stage are done/.test(check3) && /Not ready yet: F03 — Weather cards isn't done\. Want to finish it first, or move it to the next stage\?/.test(check3) && plain(out3).includes(plain(check3)) && /^## v0\.1 — Vertical slice {2}← current/m.test(rm3) && !js3.some(j => j.ev === 'step.start' && ['safety', 'build', 'publish'].includes(j.step)) && (spawnSync('git', ['tag'], { cwd: nr, encoding: 'utf8' }).stdout || '').trim() === '' && (spawnSync('git', ['rev-parse', 'main'], { cwd: origin3, encoding: 'utf8' }).stdout || '').trim() === (spawnSync('git', ['rev-parse', 'main'], { cwd: nr, encoding: 'utf8' }).stdout || '').trim() && js3.some(j => j.ev === 'stage.enter' && j.from === 'deliver' && j.to === 'develop'), `${check3} | ${trailOf(js3.filter(j => j.ev !== 'line').slice(-16))}`)
   },
 
   // Check 16: motor B — "bmuz next" from a shell reads the same pipeline and state.

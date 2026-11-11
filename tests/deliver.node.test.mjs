@@ -193,6 +193,8 @@ test('5.4 "Share it": merged, versioned v0.1.0 and tagged, smoke pass, pushed to
   D.prep(dir, NOW)
   D.build(dir, script)
   journal(dir, [{ ev: 'step.done', step: 'build' }, { ev: 'gate.answer', step: 'share', answer: 'Share it' }])
+  // (the engine's bmuz.json, never committed yet: hidden from git while the release scripts run, like .bmuz/)
+  writeFileSync(join(dir, 'bmuz.json'), '{ "pipeline": "deliver" }\n')
   const was = process.env.BMUZ_TEST
   process.env.BMUZ_TEST = '1'
   let r
