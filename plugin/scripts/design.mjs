@@ -175,7 +175,7 @@ export function newTdd(name) {
   for (const [key, head] of TDD_SECTIONS) out.push(`## ${head}`, M.block(`td:${key}`, G.NOTHING), '')
   return out.join('\n')
 }
-function tddWrite(dir, parts, by) {
+export function tddWrite(dir, parts, by) {
   const gdd = G.readFileIn(dir, G.GDD) || ''
   let doc = G.readFileIn(dir, TDD) || newTdd(G.gameName(gdd))
   const wrote = []

@@ -1,0 +1,12 @@
+{
+  "name": "Playtesting",
+  "columns": [
+    "Date",
+    "Players",
+    "Start",
+    "End",
+    "Length",
+    "Scores"
+  ],
+  "rows": []
+}

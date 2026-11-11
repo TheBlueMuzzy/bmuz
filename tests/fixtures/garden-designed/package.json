@@ -1,0 +1,10 @@
+{
+  "name": "garden-race",
+  "private": true,
+  "type": "module",
+  "description": "The garden race at Design's end (F216's headless fixture): the blueprint, the content, and a tiny game to build on.",
+  "scripts": {
+    "test": "node --test",
+    "play": "node src/play.mjs"
+  }
+}

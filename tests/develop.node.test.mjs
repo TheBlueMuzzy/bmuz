@@ -1,0 +1,274 @@
+// F216 task 2: sprint.mjs — Develop's sprints on the plan files, without Claude, on the garden race where Design left it
+// (tests/fixtures/garden-designed: the GDD, the rulebook, the TDD, the roadmap, content/ and a tiny game).
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import * as E from '../plugin/hooks/engine.js'
+import * as S from '../plugin/scripts/sprint.mjs'
+import * as G from '../plugin/scripts/gdd.mjs'
+import * as M from '../plugin/scripts/marks.mjs'
+
+const here = fileURLToPath(new URL('.', import.meta.url))
+const script = E.parseScript(readFileSync(join(here, '..', 'plugin', 'script.md'), 'utf8'))
+const NOW = new Date('2026-11-11T14:05:00')
+
+function project(git = false) {
+  const dir = mkdtempSync(join(tmpdir(), 'bmuz-develop-'))
+  cpSync(join(here, 'fixtures', 'garden-designed'), dir, { recursive: true })
+  mkdirSync(join(dir, '.bmuz'), { recursive: true })
+  if (git) for (const args of [['init', '-q', '-b', 'main'], ['config', 'user.email', 'test@example.com'], ['config', 'user.name', 'BMUZ test'], ['add', '-A'], ['commit', '-q', '-m', 'the garden']]) spawnSync('git', args, { cwd: dir })
+  return dir
+}
+const read = (dir, f) => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
+const state = (dir, s) => writeFileSync(join(dir, '.bmuz/state.json'), JSON.stringify({ pipeline: 'develop', finished: [], results: {}, retries: {}, ...s }, null, 2))
+const journal = (dir, rows) => writeFileSync(join(dir, '.bmuz/journal.jsonl'), rows.map(r => JSON.stringify(r)).join('\n') + '\n')
+const card = (id, tasks = 3) => ({ id, see: `you see ${id} work`, done: `${id} works by the rulebook`, notYet: 'animations', needs: 'nothing', tasks: Array.from({ length: tasks }, (_, i) => ({ who: i === 2 ? '🙋' : '🤖', text: `task ${i + 1} of ${id}` })), check: `node --test proves ${id}` })
+function planned(dir) {
+  S.propose(dir)
+  state(dir, { resultsBy: { plan: { features: [card('F01'), card('F02')], goal: 'a turn you can play' } } })
+  return S.planWrite(dir, script, NOW)
+}
+
+test('propose: the current milestone\'s ready features (every need done), at most 3, in roadmap order', () => {
+  const dir = project()
+  const p = S.propose(dir)
+  assert.equal(p.sprint, 1)
+  assert.equal(p.milestone, 'Vertical slice')
+  assert.deepEqual(p.ready.map(f => f.id), ['F01', 'F02'])
+  assert.equal(p.ready[0].name, 'Turn engine')
+  assert.equal(p.pct, '0%')
+})
+
+test('plan-check: only proposed features, every card field, 3–8 tasks, a check line', () => {
+  const dir = project()
+  S.propose(dir)
+  assert.deepEqual(S.planProblems(dir, [card('F01'), card('F02')]), [])
+  const bad = S.planProblems(dir, [card('F03'), { ...card('F01'), see: '', tasks: [{ who: '🤖', text: 'one' }] }])
+  assert.ok(bad.some(p => /F03 isn't one of the ready features \(F01 — Turn engine, F02 — Seed cards\)/.test(p)), bad.join('|'))
+  assert.ok(bad.some(p => /F01: the card's "see" is empty/.test(p)))
+  assert.ok(bad.some(p => /F01: 1 tasks; a feature has 3 to 8/.test(p)))
+})
+
+test('plan-write: SPRINT.md in PROJECT-FILES\' format, the record, a work branch, the 4.3 plan card word for word', () => {
+  const dir = project(true)
+  const r = planned(dir)
+  const md = read(dir, S.SPRINT)
+  assert.match(md, /^# Sprint 01 — a turn you can play\nStarted 2026-11-11 · Milestone Vertical slice · Features: F01, F02 \(in this order\)\n/)
+  assert.match(md, /## F01 🧱 Turn engine\nYou'll see: you see F01 work\nDone when: F01 works by the rulebook\nNot doing yet: animations\nNeeds from you: nothing\n- \[ \] 🤖 1\. task 1 of F01\n- \[ \] 🤖 2\. task 2 of F01\n- \[ \] 🙋 3\. task 3 of F01\nCheck: node --test proves F01/)
+  assert.equal(r.branch, 'dev/vertical-slice')
+  assert.equal(S.readRecord(dir).features[1].status, 'planned')
+  const say = read(dir, S.SAY.plan)
+  assert.equal(say.split('\n\n')[0], E.renderLine(script, 'develop.plan', { n: '1', milestone: 'Vertical slice', count: '2' }).text)
+  assert.match(say, /\*\*F02 — Seed cards\*\*\n· You'll see: you see F02 work\n· Done when: F02 works by the rulebook\n· Not doing yet: animations\n· Needs from you: nothing/)
+  // the project page has a Sprint tab
+  G.writePage(dir)
+  assert.match(read(dir, G.PAGE), /Sprint/)
+  assert.ok(G.designTabs(dir).some(t => t.id === 'sprint'))
+})
+
+test('the roadmap: a state changed in place (the graph too), the ready rule, the musts counted, BMUZ\'s marks kept true', () => {
+  const dir = project()
+  let rm = read(dir, S.ROADMAP)
+  rm = S.setStates(rm, { F01: '✅', F02: '✅' })
+  assert.match(rm, /^- ✅ F01 🧱 Turn engine/m)
+  assert.match(rm, /F01\[✅ F01 Turn engine\]/)
+  // F03 needed F01 and F02: now ready
+  assert.match(rm, /^- 🟢 F03 🎮 Weather cards/m)
+  assert.match(rm, /^Release target: playable — musts 2\/4 done$/m)
+  assert.equal(Object.values(M.readBlocks(rm)).some(b => b.edited), false)
+  assert.equal(S.milestonePct(S.currentMilestone(rm)).pct, '67%')
+})
+
+test('the roadmap: a hand-edited block stays theirs (its words kept), and the state still moves', () => {
+  const dir = project()
+  const mine = read(dir, S.ROADMAP).replace('Goal: one full game for two on one phone', 'Goal: one full game for two on one phone (my words)')
+  const rm = S.setStates(mine, { F01: '🔨' })
+  assert.match(rm, /\(my words\)/)
+  assert.match(rm, /^- 🔨 F01 /m)
+  assert.equal(M.readBlocks(rm)['rm:plan'].edited, true)
+})
+
+test('an idea lands under the roadmap\'s Ideas once, dated, and in the GDD\'s Ideas for Later', () => {
+  const dir = project()
+  S.idea(dir, 'seasons that change the weather deck', NOW)
+  S.idea(dir, 'seasons that change the weather deck', NOW)
+  const rm = read(dir, S.ROADMAP)
+  assert.equal(rm.split('- 2026-11-11 — seasons that change the weather deck').length, 2)
+  assert.match(rm, /## Ideas\n- 2026-11-11 — seasons/)
+  assert.equal(M.readBlocks(rm)['rm:plan'].edited, false)
+  assert.match(read(dir, G.GDD), /seasons that change the weather deck/)
+})
+
+test('the loop: an auto run only builds; live shows a built feature again, asks a tuned one again, builds a blocked one', () => {
+  const dir = project()
+  planned(dir)
+  assert.deepEqual(S.next(dir, 'auto'), { start: { feature: 'F01', at: null } })
+  const rec = S.readRecord(dir)
+  const set = (a, b) => { rec.features[0].status = a; rec.features[1].status = b; writeFileSync(join(dir, S.RECORD), JSON.stringify(rec)) }
+  set('built', 'planned')
+  assert.deepEqual(S.next(dir, 'auto'), { start: { feature: 'F02', at: null } })
+  assert.deepEqual(S.next(dir, 'live'), { start: { feature: 'F01', at: 'ready' } })
+  set('built', 'blocked')
+  assert.deepEqual(S.next(dir, 'auto'), { wait: ['F01', 'F02'], features: ['F01 — Turn engine', 'F02 — Seed cards'] })
+  set('approved', 'tuning')
+  assert.deepEqual(S.next(dir, 'live'), { start: { feature: 'F02', at: 'approve' } })
+  set('approved', 'approved')
+  assert.deepEqual(S.next(dir, 'live'), { done: true })
+})
+
+// A feature run's start: F01 being built.
+function building(dir, id = 'F01') {
+  planned(dir)
+  state(dir, { pipeline: 'feature', given: { feature: id } })
+  return S.featureStart(dir, script, NOW)
+}
+
+test('a feature run starts: 🔨, the builder\'s brief, the 4.4 progress line with the clock time', () => {
+  const dir = project()
+  building(dir)
+  assert.match(read(dir, S.ROADMAP), /^- 🔨 F01 /m)
+  assert.equal(read(dir, S.SAY.progress).trim(), '⏳ 14:05: building F01 — Turn engine (feature 1 of 2). Next update when it\'s done.')
+  assert.match(read(dir, S.BRIEF), /# Build F01 — Turn engine \(Sprint 01 · Vertical slice\)/)
+  assert.match(read(dir, S.BRIEF), /\.planning\/design\/RULEBOOK\.md \(the rules: the single truth; every rule this feature builds gets a test\)/)
+})
+
+const builtTest = [
+  "import { test } from 'node:test'", "import assert from 'node:assert/strict'", "import { newGame } from '../src/garden.js'",
+  "test('F01 the turn passes to the other player', () => { assert.equal(newGame().turn, 0) })", '',
+].join('\n')
+
+test('prove: the builder\'s word is never enough — its named tests run and pass, the suite is green; stuck twice says the script\'s line', () => {
+  const dir = project()
+  building(dir)
+  const result = r => journal(dir, [{ ev: 'step.start', step: 'build' }, { ev: 'flow.result', step: 'build', result: r }])
+  result({ changed: ['a turn'] })
+  assert.throws(() => S.prove(dir, script, NOW), /the builder handed back no tests/)
+  writeFileSync(join(dir, 'tests/turn.test.mjs'), builtTest)
+  result({ tests: [{ rule: 'the turn passes', file: 'tests/turn.test.mjs', name: 'F01 the turn does not exist' }] })
+  assert.throws(() => S.prove(dir, script, NOW), /didn't run in tests\/turn\.test\.mjs: the runner reported "F01 the turn passes to the other player"/)
+  // two failed tries: the stuck line, word for word from the script
+  assert.equal(read(dir, S.SAY.stuck).split('.')[0], 'F01 — Turn engine isn\'t working, and two tries haven\'t fixed it')
+  assert.match(read(dir, S.TRIES), /^Try 1 failed its check: the builder handed back no tests/)
+  result({ tests: [{ rule: 'the turn passes', file: 'tests/turn.test.mjs', name: 'F01 the turn passes to the other player' }], changed: ['you can take a turn'], try: 'npm run play' })
+  const proof = S.prove(dir, script, NOW)
+  assert.equal(proof.tests[0].sha.length, 12)
+  assert.ok(proof.passed >= 1)
+  assert.ok(existsSync(join(dir, '.bmuz/develop/F01.json')))
+})
+
+test('ready: 4.5\'s card word for word, 🎛️, the 🤖 tasks ticked, "Checked:" written, the work committed', () => {
+  const dir = project(true)
+  building(dir)
+  writeFileSync(join(dir, 'tests/turn.test.mjs'), builtTest)
+  journal(dir, [{ ev: 'flow.result', step: 'build', result: { tests: [{ rule: 'the turn passes', file: 'tests/turn.test.mjs', name: 'F01 the turn passes to the other player' }], changed: ['you can take a turn', 'the turn passes'], try: 'take one turn each' } }])
+  const proof = S.prove(dir, script, NOW)
+  const r = S.ready(dir, script, NOW)
+  assert.equal(r.say, `**F01 — Turn engine — ready for you to check**\n· What changed: you can take a turn; the turn passes\n· Try it: npm run play · no phone build yet\n· Try this: take one turn each\n· Checked: ${proof.passed === 1 ? '1 test passes' : `${proof.passed} tests pass`}`)
+  assert.match(read(dir, S.ROADMAP), /^- 🎛️ F01 /m)
+  const md = read(dir, S.SPRINT)
+  assert.match(md, /- \[x\] 🤖 1\. task 1 of F01\n- \[x\] 🤖 2\. task 2 of F01\n- \[ \] 🙋 3\. task 3 of F01/)
+  assert.match(md, /Checked: \d+ tests? pass(es)? \(2026-11-11\)/)
+  assert.match(spawnSync('git', ['log', '--format=%s'], { cwd: dir, encoding: 'utf8' }).stdout, /^F01: built — Turn engine/m)
+  assert.equal(S.readRecord(dir).features[0].status, 'built')
+})
+
+test('approval: nothing is done without the creative\'s OK — an auto run can only wait; live needs their own answer to the box', () => {
+  const dir = project()
+  building(dir)
+  assert.equal(S.approvalProblem(dir, 'waiting', 'auto'), null)
+  assert.match(S.approvalProblem(dir, 'approved', 'auto'), /an auto run never answers for the creative/)
+  assert.match(S.approvalProblem(dir, 'waiting', 'live'), /ask them with the script's box/)
+  journal(dir, [{ ev: 'step.start', step: 'approve' }])
+  assert.match(S.approvalProblem(dir, 'approved', 'live'), /no answer from the creative/)
+  journal(dir, [{ ev: 'step.start', step: 'approve' }, { ev: 'answer', step: 'approve', text: 'User has answered: "Did it feel like a race?"="Close, needs tuning"' }])
+  assert.match(S.approvalProblem(dir, 'approved', 'live'), /answered "Close, needs tuning", not "Yes, approve it"/)
+  assert.equal(S.approvalProblem(dir, 'tune', 'live'), null)
+  // an answer from an earlier try of the step doesn't count
+  journal(dir, [{ ev: 'step.start', step: 'approve' }, { ev: 'answer', step: 'approve', text: '"Yes, approve it"' }, { ev: 'step.start', step: 'approve' }])
+  assert.match(S.approvalProblem(dir, 'approved', 'live'), /no answer from the creative/)
+})
+
+test('tuned: exactly one setting changed (in content/), the suite still green; the rule route changes none and logs the rule', () => {
+  const dir = project()
+  building(dir)
+  const g = read(dir, 'content/tuning/game.json')
+  writeFileSync(join(dir, '.bmuz/checkpoint-tune.json'), JSON.stringify({ 'content/tuning/*.json': { pattern: ['content/tuning/game.json'] }, 'content/tuning/game.json': g }))
+  assert.match(S.tunedProblem(dir, 'no'), /no setting changed/)
+  writeFileSync(join(dir, 'content/tuning/game.json'), g.replace('"weatherCardsPerHand": 2', '"weatherCardsPerHand": 1'))
+  assert.equal(S.tunedProblem(dir, 'no'), null)
+  assert.deepEqual(S.changedValues(dir), [{ file: 'content/tuning/game.json', key: 'weatherCardsPerHand', from: 2, to: 1 }])
+  writeFileSync(join(dir, 'content/tuning/game.json'), g.replace('"weatherCardsPerHand": 2', '"weatherCardsPerHand": 1').replace('"handSize": 3', '"handSize": 4'))
+  assert.match(S.tunedProblem(dir, 'no'), /one setting at a time: 2 changed/)
+  writeFileSync(join(dir, 'content/tuning/game.json'), g)
+  assert.match(S.tunedProblem(dir, 'yes', null), /give "rulebook" with its "log"/)
+  assert.equal(S.tunedProblem(dir, 'yes', { log: 'hail destroys one bloom, not the row' }), null)
+})
+
+test('feature-end: approved → ✅ and done; tuned → 🎛️ with the Tuning note (knob old→new); waiting → nothing changes', () => {
+  const dir = project(true)
+  building(dir)
+  const g = read(dir, 'content/tuning/game.json')
+  writeFileSync(join(dir, '.bmuz/checkpoint-tune.json'), JSON.stringify({ 'content/tuning/game.json': g }))
+  writeFileSync(join(dir, 'content/tuning/game.json'), g.replace('"weatherCardsPerHand": 2', '"weatherCardsPerHand": 1'))
+  state(dir, { pipeline: 'feature', given: { feature: 'F01' }, resultsBy: { approve: { answer: 'tune' }, tune: { setting: 'Weather cards per hand', cause: 'a pattern of play', expect: 'storms to land more often', rule: 'no' } } })
+  assert.equal(S.featureEnd(dir, NOW).status, 'tuning')
+  assert.match(read(dir, S.SPRINT), /Notes: Tuning: Weather cards per hand 2→1 — a pattern of play — expect storms to land more often/)
+  assert.match(spawnSync('git', ['log', '-1', '--format=%s'], { cwd: dir, encoding: 'utf8' }).stdout, /^F01: tuned — Turn engine \(weatherCardsPerHand 2 → 1\)/)
+  state(dir, { pipeline: 'feature', given: { feature: 'F01' }, resultsBy: { approve: { answer: 'waiting' } } })
+  assert.equal(S.featureEnd(dir, NOW).status, 'tuning')
+  state(dir, { pipeline: 'feature', given: { feature: 'F01' }, resultsBy: { approve: { answer: 'Yes, approve it' } } })
+  assert.equal(S.featureEnd(dir, NOW).status, 'approved')
+  assert.match(read(dir, S.ROADMAP), /^- ✅ F01 /m)
+  assert.match(spawnSync('git', ['log', '-1', '--format=%s'], { cwd: dir, encoding: 'utf8' }).stdout, /^F01: done — Turn engine \(approved\)/)
+})
+
+test('the look-back: the milestone\'s %, onward checked, the Retro written and the sprint archived, the GDD as built, 4.7\'s line, committed', () => {
+  const dir = project(true)
+  planned(dir)
+  const rec = S.readRecord(dir)
+  for (const f of rec.features) f.status = 'approved'
+  writeFileSync(join(dir, S.RECORD), JSON.stringify(rec))
+  writeFileSync(join(dir, S.ROADMAP), S.setStates(read(dir, S.ROADMAP), { F01: '✅', F02: '✅' }))
+  const p = S.lookbackPrep(dir)
+  assert.equal(p.pct, '67%')
+  assert.equal(p.onward, 'develop')
+  assert.equal(p.playtested, 'no')
+  assert.match(S.lookbackProblem(dir, 'deliver', 'no'), /"onward" is "develop" \(Vertical slice has musts left\)/)
+  assert.equal(S.lookbackProblem(dir, 'develop', 'no'), null)
+  assert.match(S.retroProblem({ well: 'x' }), /"wrong", "change" are empty/)
+  state(dir, { resultsBy: { lookback: { retro: { well: 'small features', wrong: 'one flaky test', change: 'name tests after the rule' }, built: [4], gdd: { chapters: { 4: 'Draw two, play one: built and played.' } }, rulebook: { log: 'the turn as built' }, onward: 'develop' } } })
+  const r = S.lookbackWrite(dir, script, NOW)
+  const arch = read(dir, '.planning/archive/sprints/sprint-01.md')
+  assert.match(arch, /\nRetro:\n- went well: small features\n- went wrong: one flaky test\n- change: name tests after the rule\n$/)
+  assert.match(read(dir, G.GDD), /### 4 · The Core Loop\n\*[^\n]*\*\n\nLevel: built/)
+  assert.match(read(dir, '.planning/design/RULEBOOK.md'), /the turn as built/)
+  assert.equal(r.next, 'F03 — Weather cards')
+  assert.equal(read(dir, S.SAY.lookback).trim(), 'I\'ve updated the GDD, the rulebook and the technical plan to match what we built. Next sprint: F03 — Weather cards.')
+  assert.match(spawnSync('git', ['log', '-1', '--format=%s'], { cwd: dir, encoding: 'utf8' }).stdout, /^Sprint 01 done/)
+  // the next sprint is number 2
+  assert.equal(S.propose(dir).sprint, 2)
+})
+
+test('a milestone whose musts are all done: onward is deliver, and the next milestone becomes current', () => {
+  const dir = project()
+  planned(dir)
+  writeFileSync(join(dir, S.ROADMAP), S.setStates(read(dir, S.ROADMAP), { F01: '✅', F02: '✅', F03: '✅' }))
+  assert.equal(S.lookbackPrep(dir).onward, 'deliver')
+  const rm = S.moveCurrent(read(dir, S.ROADMAP))
+  assert.match(rm, /^## v0\.1 — Vertical slice  \(→ playable\)  ✅ ready to deliver \d{4}-\d\d-\d\d$/m)
+  assert.match(rm, /^## v0\.2 — Alpha  ← current  \(→ alpha\)$/m)
+  assert.equal(S.currentMilestone(rm).name, 'Alpha')
+})
+
+test('teaching: the tutorial into GDD chapter 14 (worked out) and a 🎮 Tutorial feature on the current milestone', () => {
+  const dir = project()
+  state(dir, { resultsBy: { teaching: { steps: ['plant a seed', 'send weather', 'score a row'], learn: 'weather goes on your friend\'s rows' } } })
+  const r = S.teachingWrite(dir, NOW)
+  assert.equal(r.id, 'F05')
+  assert.match(read(dir, S.ROADMAP), /^- 🟢 F05 🎮 Tutorial — 3 short steps, each teaching one thing in the order players meet it — must:playable$/m)
+  assert.match(read(dir, G.GDD), /### 14 · Teaching\n\*[^\n]*\*\n\nLevel: worked out/)
+})

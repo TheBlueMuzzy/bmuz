@@ -367,6 +367,9 @@ export function designTabs(dir) {
   // (F215) the bug list, as .planning/BUGS.md has it (bugs.mjs writes it)
   const bugs = read('.planning/BUGS.md')
   if (bugs) tabs.push({ id: 'bugs', title: 'Bugs', html: `<section class="list">${mdHtml(unmark(bugs).replace(/^# .*\n/, ''))}</section>` })
+  // (F216) the sprint being built, as .planning/SPRINT.md has it (sprint.mjs writes it): each feature's plan card and tasks
+  const sprint = read('.planning/SPRINT.md')
+  if (sprint) tabs.push({ id: 'sprint', title: 'Sprint', html: `<section class="list">${mdHtml(unmark(sprint).replace(/^- \[x\] /gm, '- ✔ ').replace(/^- \[ \] /gm, '- ☐ '))}</section>` })
   return tabs
 }
 

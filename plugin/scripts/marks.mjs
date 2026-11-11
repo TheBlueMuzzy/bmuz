@@ -65,5 +65,19 @@ export function writeBlock(text, key, body, { after = null, by = {} } = {}) {
   return { text: lines.join('\n'), changed: true, kept: true }
 }
 
+// After BMUZ changed lines in place (F216: a feature's state mark in the roadmap, a ticked task in the sprint, a line
+// added under Ideas): every block that was BMUZ's own before the change (its text matched its fingerprint) gets the
+// fingerprint of its new text, so it stays BMUZ's. A block the creative had edited keeps its old fingerprint: theirs.
+export function refreshMarks(before, after) {
+  const was = readBlocks(before)
+  const now = readBlocks(after)
+  const lines = nl(after).split('\n')
+  for (const [key, b] of Object.entries(now)) {
+    if (!was[key] || was[key].edited) continue
+    lines[b.start] = `<!-- bmuz ${key} · ${fingerprint(b.text)} -->`
+  }
+  return lines.join('\n')
+}
+
 // The text with the marks taken out (for showing on the page).
 export const unmarked = text => nl(text).split('\n').filter(l => !/^<!-- \/?bmuz [a-z][a-z0-9:-]*( · [0-9a-f]{8})? -->$/.test(l)).join('\n')
