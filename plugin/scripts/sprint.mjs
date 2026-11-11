@@ -206,8 +206,9 @@ function featureOf(dir, rec = recordOf(dir)) {
 }
 export const sprintNumber = dir => {
   const d = join(dir, ARCHIVE)
-  const done = existsSync(d) ? readdirSync(d).filter(f => /^sprint-\d+\.md$/.test(f)).length : 0
-  return done + 1
+  // (review fix 7: the highest archived number + 1, not a count: a missing or extra file must never reuse a number)
+  const nums = existsSync(d) ? readdirSync(d).map(f => (f.match(/^sprint-(\d+)\.md$/) || [])[1]).filter(Boolean).map(Number) : []
+  return (nums.length ? Math.max(...nums) : 0) + 1
 }
 
 // ---- 4.3 Plan the Sprint ----
@@ -670,6 +671,9 @@ export function lookbackWrite(dir, script = loadScript(), now = new Date()) {
   // 1. the Retro, then the sprint archived (PROJECT-FILES: archive/sprints/sprint-NN.md)
   const sprint = (readIn(dir, SPRINT) || sprintMd(rec)).replace(/\n*$/, '\n')
   const text = `${sprint.replace(/\nRetro:[\s\S]*$/, '\n')}\nRetro:\n- went well: ${clean(lb.retro.well)}\n- went wrong: ${clean(lb.retro.wrong)}\n- change: ${clean(lb.retro.change)}\n`
+  // (review fix 7: an archived sprint is never overwritten; the same text again — a retry after a crash — is fine)
+  const archived = readIn(dir, `${ARCHIVE}/sprint-${pad(rec.n)}.md`)
+  if (archived !== null && archived !== text) throw new Error(`${ARCHIVE}/sprint-${pad(rec.n)}.md is already archived with other words; BMUZ never overwrites an archived sprint (rename or move it, then run the look-back again)`)
   write(dir, `${ARCHIVE}/sprint-${pad(rec.n)}.md`, text)
   B.writeIn(dir, SPRINT, text)
   // 2. the GDD (chapters as built), the rulebook, the TDD: "to match what we built"

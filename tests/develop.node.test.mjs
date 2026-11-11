@@ -53,6 +53,20 @@ test('plan-check: only proposed features, every card field, 3–8 tasks, a check
   assert.ok(bad.some(p => /F01: 1 tasks; a feature has 3 to 8/.test(p)))
 })
 
+test('review fix 7: the next sprint is the highest archived number + 1 (not a count), and an archived sprint is never overwritten', () => {
+  const dir = project()
+  mkdirSync(join(dir, S.ARCHIVE), { recursive: true })
+  writeFileSync(join(dir, S.ARCHIVE, 'sprint-01.md'), 'one')
+  writeFileSync(join(dir, S.ARCHIVE, 'sprint-03.md'), 'three')
+  assert.equal(S.sprintNumber(dir), 4)
+  planned(dir)
+  const rec = S.readRecord(dir)
+  writeFileSync(join(dir, S.RECORD), JSON.stringify({ ...rec, n: 3 }))
+  state(dir, { resultsBy: { lookback: { retro: { well: 'a', wrong: 'b', change: 'c' } } } })
+  assert.throws(() => S.lookbackWrite(dir, script, NOW), /sprint-03\.md is already archived/)
+  assert.equal(read(dir, `${S.ARCHIVE}/sprint-03.md`), 'three')
+})
+
 test('review fix 12: a sprint of one feature says "1 feature", not "1 features"', () => {
   const dir = project()
   S.propose(dir)
