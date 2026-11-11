@@ -66,7 +66,7 @@ export function enterAt(p, state, at, given = {}) {
   const empties = {}
   for (const id of skipped) {
     const s = stepById(p, id)
-    const keys = s.kind === 'talk' ? [...(s.results || []), ...(s.done && s.done.key ? [s.done.key] : [])] : []
+    const keys = resultKeysOf(s)
     empties[id] = Object.fromEntries(keys.map(k => [k, g[k] !== undefined && g[k] !== '' ? g[k] : null]))
   }
   return { state: { ...applyWrap(state, skipped, empties), given: g, entered: { at, skipped } }, skipped }
@@ -97,7 +97,8 @@ const STEP_KEYS = {
   // in a turn of its own (F228: Ideate's "the game so far"), then goes on
   // loop (F216): the step runs another pipeline once per item its script names, each run a kept side trip (Develop's
   // feature runs); the step finishes when the script names none
-  script: ['run', 'writes', 'done', 'show', 'loop'],
+  // results (F216 review fix 11): keys the script hands back in its last line of JSON ({"results": {…}}), for a later "when"
+  script: ['run', 'writes', 'done', 'show', 'loop', 'results'],
   // stuck (F216): a .md file the done-check writes when the step is stuck twice; said before the last try
   flow: ['workflow', 'args', 'agentTools', 'writes', 'craft', 'done', 'stuck'],
 }
@@ -185,7 +186,7 @@ export function checkPipeline(p) {
     if (s.results !== undefined && !(isList(s.results) && s.results.every(k => /^\w+$/.test(k)))) problems.push(`${at}: "results" must be a list of result keys (letters, digits, _)`)
     // (F216 review fix 8: a result key may never stand in for one of the engine's own holes)
     for (const k of isList(s.results) ? s.results.filter(k => BUILT_IN_HOLES.includes(k)) : []) problems.push(`${at}: result key "${k}" is one of the engine's own holes ({${BUILT_IN_HOLES.join('}, {')}}); name it something else`)
-    if (s.results !== undefined && s.kind !== 'talk') problems.push(`${at}: only talk steps hand back a result, so "results" can't be on a ${s.kind} step`)
+    if (s.results !== undefined && s.kind !== 'talk' && s.kind !== 'script') problems.push(`${at}: only talk and script steps hand back a result, so "results" can't be on a ${s.kind} step`)
     if (s.done !== undefined) {
       const d = s.done
       const keys = d && DONE_KEYS[d.type]
@@ -252,7 +253,7 @@ export function checkPipeline(p) {
       seen.add(id)
       const n = byId.get(id)
       if (n.kind === 'talk' && n.done && n.done.type === 'result-has') known.add(n.done.key)
-      if (n.kind === 'talk' && isList(n.results)) for (const k of n.results) { known.add(k); listed.add(k) }
+      if ((n.kind === 'talk' || n.kind === 'script') && isList(n.results)) for (const k of n.results) { known.add(k); listed.add(k) }
       for (const m of Array.isArray(n.needs) ? n.needs : []) walk(m)
     }
     for (const n of Array.isArray(s.needs) ? s.needs : []) walk(n)
@@ -291,7 +292,7 @@ function nextProblems(p) {
   if (n.at !== undefined && !(typeof n.at === 'string' && (hole(n.at) || NAME_RE.test(n.at)))) out.push('"next" "at" must be a step id of the next pipeline, or one {hole}')
   if (n.carry !== undefined && !(isSafePath(n.carry) && n.carry.endsWith('.json'))) out.push('"next" "carry" must be a .json file inside the project, like .planning/research/intake.json')
   if (n.ask !== undefined && typeof n.ask !== 'boolean') out.push('"next" "ask" must be true or false')
-  const known = new Set((Array.isArray(p.steps) ? p.steps : []).filter(s => s && s.kind === 'talk').flatMap(s => [...(isList(s.results) ? s.results : []), ...(s.done && s.done.key ? [s.done.key] : [])]))
+  const known = new Set((Array.isArray(p.steps) ? p.steps : []).filter(Boolean).flatMap(resultKeysOf))
   for (const h of new Set(holesIn([n.pipeline, n.at]))) if (!known.has(h)) out.push(`"next": {${h}} isn't a result any talk step hands back`)
   return out
 }
@@ -341,7 +342,7 @@ export function wrapEmpties(p, state, skipped) {
   const out = {}
   for (const id of skipped) {
     const s = stepById(p, id)
-    const keys = (s && s.kind === 'talk' ? s.results || [] : []).concat(s && s.kind === 'talk' && s.done && s.done.key ? [s.done.key] : [])
+    const keys = resultKeysOf(s)
     out[id] = Object.fromEntries(keys.filter(k => state.results[k] === undefined).map(k => [k, null]))
   }
   return out
@@ -1142,6 +1143,26 @@ export function checkFiles(step, vars) {
 }
 
 // How many retries a step gets: its own "retries", else MAX_RETRIES.
+// The keys a step hands back: a talk step's results (and its result-has key), a script step's results (F216 review fix 11).
+export function resultKeysOf(s) {
+  if (!s) return []
+  if (s.kind === 'talk') return [...(isList(s.results) ? s.results : []), ...(s.done && s.done.key ? [s.done.key] : [])]
+  if (s.kind === 'script') return isList(s.results) ? s.results : []
+  return []
+}
+
+// A script step's result: the "results" object of its last line of JSON, with every key it names. { result } or { error }.
+export function scriptResults(step, stdout) {
+  if (!isList(step && step.results)) return { result: null }
+  const last = String(stdout || '').trim().split('\n').pop() || ''
+  let j = null
+  try { j = JSON.parse(last) } catch (err) { j = null }
+  const r = j && j.results && typeof j.results === 'object' && !Array.isArray(j.results) ? j.results : null
+  const missing = step.results.filter(k => !r || r[k] === undefined || r[k] === null)
+  if (missing.length) return { error: `the script hands back ${missing.map(k => `"${k}"`).join(', ')} in its last line of JSON ({"results": {…}}), and it didn't: ${last.slice(0, 160)}` }
+  return { result: Object.fromEntries(step.results.map(k => [k, r[k]])) }
+}
+
 export function retriesOf(step) {
   return step && Number.isInteger(step.retries) ? step.retries : MAX_RETRIES
 }

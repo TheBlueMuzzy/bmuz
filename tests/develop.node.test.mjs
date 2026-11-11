@@ -54,6 +54,22 @@ test('plan-check: only proposed features, every card field, 3–8 tasks, a check
   assert.ok(bad.some(p => /F01: 1 tasks; a feature has 3 to 8/.test(p)))
 })
 
+test('review fix 11: the fix helper runs only when the reviewer confirmed findings (review-save hands back "findings", the fix step runs "when" it is yes)', () => {
+  assert.deepEqual(E.checkPipeline(FEAT), [])
+  assert.equal(stepOf(FEAT, 'fix').when, '{findings}')
+  assert.deepEqual(stepOf(FEAT, 'review-save').results, ['findings'])
+  assert.equal(E.isWanted(stepOf(FEAT, 'fix'), { findings: 'no' }), false)
+  assert.equal(E.isWanted(stepOf(FEAT, 'fix'), { findings: 'yes' }), true)
+  // a script step's results come from its last line of JSON
+  assert.deepEqual(E.scriptResults(stepOf(FEAT, 'review-save'), '✔ x\n{"results":{"findings":"no"}}'), { result: { findings: 'no' } })
+  assert.match(E.scriptResults(stepOf(FEAT, 'review-save'), '✔ x').error, /hands back "findings"/)
+  // skipped (no findings), the ready step still finds the build's report
+  const dir = project()
+  building(dir)
+  journal(dir, [{ ev: 'flow.result', step: 'build', result: { tests: [], changed: ['x'] } }, { ev: 'flow.result', step: 'review', result: { findings: [] } }])
+  assert.equal(S.reviewSave(dir).length, 0)
+})
+
 test('review fix 10: tests get 10 minutes by default, bmuz.json "testTimeoutMs" changes it, and a run past it says so plainly — neither a pass nor a fail', () => {
   assert.equal(E.testTimeoutOf({}), 600000)
   assert.equal(E.testTimeoutOf({ testTimeoutMs: 1200000 }), 1200000)

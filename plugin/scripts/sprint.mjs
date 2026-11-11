@@ -760,7 +760,8 @@ if (isMain) {
       say(true, `✔ ${p.feature}: ${p.tests.length} tests for its rules pass, ${p.passed} in all; the suite is green${p.ui ? '; phone and desktop screenshots' : ''}`)
     } else if (mode === 'review-save') {
       const f = reviewSave(dir)
-      say(true, `✔ ${REVIEW}: ${f.length} confirmed finding${f.length === 1 ? '' : 's'}`)
+      // (review fix 11: the last line hands back "findings", so the fix step runs only when there are some)
+      say(true, `✔ ${REVIEW}: ${f.length} confirmed finding${f.length === 1 ? '' : 's'}\n${JSON.stringify({ results: { findings: f.length ? 'yes' : 'no' } })}`)
     } else if (mode === 'ready') {
       ready(dir)
       say(true, `✔ ${SAY.ready}`)

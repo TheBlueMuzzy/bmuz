@@ -898,7 +898,11 @@ async function runScript($: any, step: any) {
     const said = String(ran.stdout || ran.stderr || '').trim()
     return { ok: false, why: `script exited ${ran.exitCode}${said ? `: ${said.length > 600 ? said.slice(0, 600) + '…' : said}` : ''}` }
   }
-  return E.doneCheck(step, vars(), await look($, step, null))
+  // (F216 review fix 11: a script step with "results" hands them back in its last line of JSON, for a later "when")
+  const sr = E.scriptResults(step, ran.stdout)
+  if (sr.error) return { ok: false, why: sr.error }
+  const verdict = E.doneCheck(step, vars(), await look($, step, null))
+  return sr.result ? { ...verdict, result: sr.result } : verdict
 }
 
 async function askGate($: any, step: any) {
@@ -1042,7 +1046,7 @@ async function advance($: any, resume: boolean, opts: { timer?: boolean, go?: bo
     }
     if (step.kind === 'script') {
       const verdict = await runScript($, step)
-      const next = await settle($, step, verdict, null)
+      const next = await settle($, step, verdict, verdict.ok ? verdict.result ?? null : null)
       // (F216: an auto run's feature run that BLOCKED goes straight back to Develop's loop: the top of this loop)
       if (next === 'stop' && pending === 'advance' && ctx.state.status === 'blocked') { pending = null; continue }
       if (next === 'stop') return

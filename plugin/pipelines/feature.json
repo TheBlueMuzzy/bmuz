@@ -28,10 +28,10 @@
     {
       "id": "review-save", "kind": "script", "needs": ["review"], "no": "4.4", "title": "Build & Prove",
       "description": "The confirmed findings, for the builder",
-      "run": ["node", "{plugin}/scripts/sprint.mjs", "review-save"]
+      "run": ["node", "{plugin}/scripts/sprint.mjs", "review-save"], "results": ["findings"]
     },
     {
-      "id": "fix", "kind": "flow", "needs": ["review-save"], "no": "4.4", "title": "Build & Prove",
+      "id": "fix", "kind": "flow", "needs": ["review-save"], "when": "{findings}", "no": "4.4", "title": "Build & Prove",
       "description": "The confirmed findings fixed, once; the engine runs the tests again",
       "workflow": "bmuz:build-flow", "args": { "mode": "fix", "brief": ".bmuz/develop/brief.md", "review": ".bmuz/develop/review.md" },
       "agentTools": ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "StructuredOutput"], "timeoutMs": 2400000,
