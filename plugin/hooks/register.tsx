@@ -877,7 +877,7 @@ async function advance($: any, resume: boolean, opts: { timer?: boolean, go?: bo
 // show it word for word. Returns false (nothing shown, the run goes on) when the file isn't there.
 async function showFile($: any, step: any) {
   // (the path is from the plugin's own pipeline file, checked at load; re-checked right before it is read)
-  if (!E.isSafePath(step.show)) return false
+  if (!E.isShowPath(step.show)) return false
   const text = await readText($, `${ctx.dir}/${step.show}`)
   if (text === null || !text.trim()) {
     await journal($, { ev: 'show.missing', step: step.id, path: step.show })

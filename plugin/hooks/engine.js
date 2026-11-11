@@ -119,6 +119,12 @@ export function isSafePath(path) {
   return parts[0].toLowerCase() !== '.bmuz'
 }
 
+// A script step's "show" file: inside the project, or (F215 review fix 8) one of the bug pipeline's own lines in
+// .bmuz/bug/, which the engine's scripts write so nothing of a fix run is left in the creative's project.
+export function isShowPath(path) {
+  return isSafePath(path) || /^\.bmuz\/bug\/[a-z0-9-]+\.md$/.test(String(path))
+}
+
 const isList = v => Array.isArray(v) && v.every(x => typeof x === 'string' && x.trim())
 const isPositive = v => typeof v === 'number' && Number.isFinite(v) && v > 0
 const holesIn = v => {
@@ -219,7 +225,7 @@ export function checkPipeline(p) {
       else if (s.options[0] === s.approve) problems.push(`${at} (gate): "${s.approve}" can't be the first option; a stray Enter would approve it. Put the safe choice first`)
       if (s.backTo !== undefined && !byId.has(s.backTo)) problems.push(`${at} (gate): "backTo" "${s.backTo}" is not an earlier step`)
     }
-    if (s.show !== undefined && !(isSafePath(s.show) && s.show.endsWith('.md') && !/\{/.test(s.show))) problems.push(`${at}: "show" must be a .md file inside the project with no {holes}, like .planning/research/so-far.md`)
+    if (s.show !== undefined && !(isShowPath(s.show) && s.show.endsWith('.md') && !/\{/.test(s.show))) problems.push(`${at}: "show" must be a .md file inside the project with no {holes}, like .planning/research/so-far.md`)
     if (s.when !== undefined && !(typeof s.when === 'string' && /^\{\w+\}$/.test(s.when))) problems.push(`${at}: "when" must be one {hole}: a result of a talk step this step needs, like "{priorArt}"`)
     if (s.kind === 'script' && (!isList(s.run) || s.run.length === 0)) problems.push(`${at} (script) needs "run": the command as a list, like ["node", "{plugin}/scripts/x.mjs"]`)
     if (s.kind === 'flow') {

@@ -15,11 +15,9 @@
         "pick"
       ],
       "writes": [
-        ".planning/BUGS.md",
-        
-        ".planning/bugs/say-start.md"
+        ".planning/BUGS.md"
       ],
-      "show": ".planning/bugs/say-start.md"
+      "show": ".bmuz/bug/say-start.md"
     },
     {
       "id": "reproduce",
@@ -61,10 +59,7 @@
         "{plugin}/scripts/bugs.mjs",
         "say-repro"
       ],
-      "writes": [
-        ".planning/bugs/say-repro.md"
-      ],
-      "show": ".planning/bugs/say-repro.md"
+      "show": ".bmuz/bug/say-repro.md"
     },
     {
       "id": "cause",
@@ -199,10 +194,9 @@
       ],
       "writes": [
         ".planning/BUGS.md",
-        ".planning/STATE.md",
-        ".planning/bugs/say-done.md"
+        ".planning/STATE.md"
       ],
-      "show": ".planning/bugs/say-done.md"
+      "show": ".bmuz/bug/say-done.md"
     }
   ]
 }

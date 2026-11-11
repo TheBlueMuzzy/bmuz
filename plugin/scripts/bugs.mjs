@@ -323,7 +323,8 @@ export const FIX_RUN = ['pick', 'repro', 'say-repro', 'verify', 'hits-fail', 'hi
 export const BUG_DIR = '.bmuz/bug'
 export const CURRENT = `${BUG_DIR}/current.json`
 export const STATE_MD = '.planning/STATE.md'
-export const SAY = { start: '.planning/bugs/say-start.md', repro: '.planning/bugs/say-repro.md', done: '.planning/bugs/say-done.md' }
+// (review fix 8: the lines a step shows are written here too, so nothing of the run is left in the project)
+export const SAY = { start: `${BUG_DIR}/say-start.md`, repro: `${BUG_DIR}/say-repro.md`, done: `${BUG_DIR}/say-done.md` }
 const here = dirname(fileURLToPath(import.meta.url))
 export const loadScript = () => E.parseScript(readFileSync(join(here, '..', 'script.md'), 'utf8'))
 const proofPath = id => `${BUG_DIR}/${id}.json`

@@ -116,7 +116,10 @@ test('the fix run on the bug-garden: refused while the test passes, proven faili
   assert.match(log[0], /^Bug B001: fixed in [0-9a-f]{7,}$/)
   const inFix = git(dir, 'show', '--name-only', '--format=', 'HEAD~1').stdout.split('\n').filter(Boolean).sort()
   assert.deepEqual(inFix, ['.planning/BUGS.md', '.planning/STATE.md', 'src/bonus.js', 'src/score.js', 'tests/b001-also-bonus.test.mjs', 'tests/b001-first-row.test.mjs'])
-  assert.equal(git(dir, 'status', '--porcelain', '--', 'src', 'tests').stdout.trim(), '')
+  // (review fix 8: nothing of the run is left in the project: the shown lines and the pointer are in .bmuz/ only)
+  assert.equal(git(dir, 'status', '--porcelain', '--untracked-files=all', '--', '.', ':!.bmuz').stdout.trim(), '')
+  assert.ok(!existsSync(join(dir, '.planning/bugs')))
+  for (const f of Object.values(B.SAY)) assert.match(f, /^\.bmuz\/bug\/say-[a-z]+\.md$/)
   // the closing line, from the script; run again, nothing is added twice
   const done = read(dir, B.SAY.done)
   assert.match(done, /^\*\*Fixed: B001 · Final score misses the first row · P1 — a feature doesn't work\*\*\n· Cause: finalScore/)

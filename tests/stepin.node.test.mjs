@@ -76,3 +76,11 @@ test('the side trip record is checked before it is used', () => {
   assert.match(E.sideProblem({ pipeline: 'bug', bug: 'x', from: 'design', n: 1, phase: 'on' }), /bug number/)
   assert.match(E.sideProblem({ pipeline: 'bug', bug: 'B004', from: 'design', n: 1, phase: 'later' }), /phase/)
 })
+
+test('review fix 8: a "show" file may be the bug pipeline\'s own line in .bmuz/bug/, nothing else in .bmuz', () => {
+  assert.equal(E.isShowPath('.bmuz/bug/say-done.md'), true)
+  assert.equal(E.isShowPath('.planning/research/so-far.md'), true)
+  assert.equal(E.isShowPath('.bmuz/state.json'), false)
+  assert.equal(E.isShowPath('.bmuz/bug/../state.md'), false)
+  assert.equal(E.isShowPath('.bmuz/last-card.md'), false)
+})
