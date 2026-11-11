@@ -655,7 +655,10 @@ const scenarios = {
     }, 3_000_000)
     js = allJournals()
     const tuningAfter = json('content/tuning/game.json') || {}
-    const changed = Object.keys({ ...tuningBefore, ...tuningAfter }).filter(k => JSON.stringify(tuningBefore[k]) !== JSON.stringify(tuningAfter[k]))
+    // (the tune's own change, as the engine recorded its Edit: the builds may add settings of their own to the same file)
+    const tuneRuns = (json('.bmuz/feature-runs.json') || []).map(r => json(`${r.record}/own.json`)).filter(o => o && o.steps && o.steps.tune)
+    const changed = tuneRuns.flatMap(o => Object.entries(o.steps.tune).filter(([f]) => /^content\//.test(f)).flatMap(([f, e]) => Object.keys((e && e.keys) || {}).map(k => `${f} ${k}`)))
+    void tuningAfter
     const arch = read('.planning/archive/sprints/sprint-01.md') || ''
     check('F216 (develop): a tune answer changed exactly one setting in content/ (the Tuning note in the sprint), then the feature was approved', changed.length === 1 && /Notes: Tuning: /.test(arch) && js.some(j => j.ev === 'step.done' && j.step === 'tune'), `${changed.join(', ')} | ${arch.slice(0, 600)}`)
     check('F216 (develop): only the creative\'s answers approved: every feature of sprint 1 ✅ in the roadmap after run 2', cards.every(id => new RegExp(`^- ✅ ${id} `, 'm').test(read('.planning/ROADMAP.md') || '')), (read('.planning/ROADMAP.md') || '').slice(0, 700))
