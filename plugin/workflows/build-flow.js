@@ -41,7 +41,8 @@ const REPORT = {
 const RULES = [
   'Rules:',
   `- Read ${brief} first (the feature: what the creative will see, when it is done, what it is not doing yet, its tasks), then the files it names. The rulebook is the single truth.`,
-  '- Change files inside this project only (relative paths). Never touch the .bmuz folder, never commit or push: the engine commits.',
+  '- Read files with the Read tool (the brief and the earlier tries in .bmuz/develop/ too); run commands with Bash, from the project folder, with relative paths.',
+  '- Change files inside this project only (relative paths). Never change anything in the .bmuz folder, never commit or push: the engine commits.',
   '- Every rule this feature builds gets a test (node --test unless package.json says otherwise), named "<feature id> <the rule in a few words>". Tests check behaviour, not wording.',
   '- Every number a designer could tune (speeds, counts, odds) lives in content/ JSON (content/tuning/*.json or content/data/*.json), never written in the code.',
   '- Run the tests in the foreground with a timeout (npm test), never start one in the background and wait. Fix until they pass.',

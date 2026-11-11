@@ -15,7 +15,7 @@
       "id": "build", "kind": "flow", "needs": ["start"], "no": "4.4", "title": "Build & Prove",
       "description": "A fresh builder helper builds it, every rule with a test; the engine runs the tests",
       "workflow": "bmuz:build-flow", "args": { "mode": "build", "brief": ".bmuz/develop/brief.md", "tries": ".bmuz/develop/tries.md" },
-      "agentTools": ["Read", "Glob", "Grep", "Write", "Edit", "Bash"], "timeoutMs": 2400000,
+      "agentTools": ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "StructuredOutput"], "timeoutMs": 2400000,
       "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/sprint.mjs", "prove"] },
       "stuck": ".bmuz/develop/say-stuck.md"
     },
@@ -23,7 +23,7 @@
       "id": "review", "kind": "flow", "needs": ["build"], "no": "4.4", "title": "Build & Prove",
       "description": "A reviewer who didn't build it reads it; each finding confirmed by another reader",
       "workflow": "bmuz:build-flow", "args": { "mode": "review", "brief": ".bmuz/develop/brief.md" },
-      "agentTools": ["Read", "Glob", "Grep"], "timeoutMs": 1200000
+      "agentTools": ["Read", "Glob", "Grep", "StructuredOutput"], "timeoutMs": 1200000
     },
     {
       "id": "review-save", "kind": "script", "needs": ["review"], "no": "4.4", "title": "Build & Prove",
@@ -34,7 +34,7 @@
       "id": "fix", "kind": "flow", "needs": ["review-save"], "no": "4.4", "title": "Build & Prove",
       "description": "The confirmed findings fixed, once; the engine runs the tests again",
       "workflow": "bmuz:build-flow", "args": { "mode": "fix", "brief": ".bmuz/develop/brief.md", "review": ".bmuz/develop/review.md" },
-      "agentTools": ["Read", "Glob", "Grep", "Write", "Edit", "Bash"], "timeoutMs": 2400000,
+      "agentTools": ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "StructuredOutput"], "timeoutMs": 2400000,
       "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/sprint.mjs", "prove"] }
     },
     {

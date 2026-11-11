@@ -212,6 +212,16 @@ const GARDEN_DESIGN = {
     'Which UI style fits?': 'Cozy',
   },
 }
+// F216: the creative's Develop answers for the garden race (run 2 of develop-garden): F01 tuned once, then approved.
+const GARDEN_DEVELOP = {
+  approve: {
+    'Did … feel like …? — F01, the first time it is asked (no "Tuning:" note for F01 in .planning/SPRINT.md yet)': 'Close, needs tuning',
+    'Did … feel like …? — F01, once SPRINT.md has its "Tuning:" note': 'Yes, approve it',
+    'Did … feel like …? — every other feature': 'Yes, approve it',
+  },
+  tune: { "In your words, what's wrong with it?": 'A turn drags: drawing two cards every turn makes my hand too big. Try drawing one.' },
+  lookback: { 'Your three lines (your words win)': 'Fine, keep your draft.' },
+}
 const gardenScratch = name => {
   if (!/^bmuz-garden-/.test(name)) throw new Error(`the garden scenarios use .scratch/bmuz-garden-* folders only, not ${name}`)
   const dir = join(here, '..', '..', '.scratch', name)
@@ -580,6 +590,79 @@ const scenarios = {
     const resumed = js.find(j => j.ev === 'resume' && j.step === 'flow')
     const done = js.find(j => j.ev === 'step.done' && j.step === 'flow')
     check('F215 (step-in): "bmuz go" goes back to the same step and it finishes on its first try', !!resumed && !!done && !js.some(j => j.ev === 'retry' && j.step === 'flow') && js.filter(j => j.ev === 'step.start').every(j => j.step !== 'flow' || j.attempt === 1), trailOf(js.slice(-12)))
+  },
+
+  // F216: Develop from Design's end on the garden race (tests/fixtures/garden-designed: the blueprint + a tiny game).
+  // Run 1, an auto run with no one to approve: Design hands over to Develop, which runs 4.0–4.4 (the gates carried, the
+  // plan card written), builds and proves each feature with a fresh builder and a separate reviewer, shows it ready, and
+  // leaves every approval as a question without stalling. Run 2, the creative's answers as test answers: F01 tuned once
+  // (one setting), then approved; F02 approved; the look-back writes the retro and the loop reaches sprint 2.
+  async 'develop-garden'() {
+    const dir = gardenScratch('bmuz-garden-develop')
+    cpSync(join(here, 'fixtures', 'garden-designed'), dir, { recursive: true })
+    for (const args of [['init', '-q', '-b', 'main'], ['config', 'user.email', 'test@example.com'], ['config', 'user.name', 'BMUZ test'], ['add', '-A'], ['commit', '-q', '-m', 'the garden, as Design left it']]) spawnSync('git', args, { cwd: dir })
+    const design = JSON.parse(readFileSync(join(plugin, 'pipelines', 'design.json'), 'utf8'))
+    mkdirSync(join(dir, '.bmuz'), { recursive: true })
+    writeFileSync(join(dir, '.bmuz/state.json'), JSON.stringify({ ...E.freshState('design'), finished: design.steps.map(s => s.id), status: 'done' }, null, 2))
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'design' }, null, 2))
+    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
+    const json = f => { try { return JSON.parse(read(f) || 'null') } catch (e) { return null } }
+    const tools = `${TOOLS} Edit Bash ToolSearch WebSearch WebFetch mcp__bmuz__say mcp__bmuz__bug mcp__bmuz__idea`
+    // every journal of the run: the stages' archives, the feature runs' records, the current one
+    const allJournals = () => {
+      const out = []
+      for (const sub of ['stages', 'feature-runs']) {
+        const root = join(dir, '.bmuz', sub)
+        if (existsSync(root)) for (const d of readdirSync(root).sort()) { const f = join(root, d, 'journal.jsonl'); if (existsSync(f)) out.push(...readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l) } catch (e) { return {} } })) }
+      }
+      return [...out, ...journalOf(dir)]
+    }
+    const tuningBefore = json('content/tuning/game.json')
+    // run 1: the auto run
+    const out1 = runIn(dir, 'bmuz go', tools, true)
+    writeFileSync(join(dir, 'run-output-1.txt'), out1)
+    let js = allJournals()
+    const rec1 = json('.bmuz/develop/sprint.json') || { features: [] }
+    const stages = json('.bmuz/stages.json') || []
+    check('F216 (develop): Design\'s end hands over to Develop, which runs 4.0 Welcome → 4.1 Setup → 4.2 The Roadmap → 4.3 Plan the Sprint, both gates carried by the auto run (nothing approved)', stages.some(s => s.pipeline === 'design') && ['welcome', 'setup', 'roadmap', 'propose', 'plan', 'plan-write', 'features'].every(id => js.some(j => j.ev === 'step.start' && j.step === id)) && js.filter(j => j.ev === 'gate.carried').map(j => j.step).join(',') === 'roadmap-ok,plan-ok' && !js.some(j => j.ev === 'gate.answer'), trailOf(js.slice(0, 40)))
+    const sprint = read('.planning/SPRINT.md') || ''
+    const cards = rec1.features.map(f => f.id)
+    check('F216 (develop): the plan card for each feature in SPRINT.md (You\'ll see · Done when · Not doing yet · Needs from you, tasks 🤖/🙋, Check) and shown word for word', cards.length >= 1 && cards.every(id => new RegExp(`## ${id} [^\\n]+\\nYou'll see: .+\\nDone when: .+\\nNot doing yet: .+\\nNeeds from you: .+\\n- \\[[ x]\\] (🤖|🙋) 1\\. `).test(sprint)) && /^# Sprint 01 — /m.test(sprint) && plain(out1).includes(plain(read('.bmuz/develop/say-plan.md') || '~')), sprint.slice(0, 800))
+    const runs1 = json('.bmuz/feature-runs.json') || []
+    const flows = js.filter(j => j.ev === 'flow.result')
+    check('F216 (develop): each feature had a fresh builder, a separate reviewer and the fixer (bmuz:build-flow), each run kept in .bmuz/feature-runs/', runs1.length >= cards.length && cards.every(id => runs1.some(r => r.feature === id && existsSync(join(dir, r.record, 'state.json')))) && ['build', 'review', 'fix'].every(s => flows.filter(j => j.step === s).length >= cards.length), `${JSON.stringify(runs1)} | ${flows.map(j => j.step).join(',')}`)
+    const proofs = cards.map(id => json(`.bmuz/develop/${id}.json`))
+    const proved = js.filter(j => j.ev === 'check.ran' && (j.step === 'build' || j.step === 'fix'))
+    check('F216 (develop): the tests were proven green by the engine\'s script (sprint.mjs prove ran them), fingerprinted under .bmuz/develop/', proofs.every(p => p && p.tests.length > 0 && p.tests.every(t => t.sha && existsSync(join(dir, t.file)))) && proved.some(j => j.exitCode === 0) && spawnSync('npm', ['test'], { cwd: dir, encoding: 'utf8', shell: process.platform === 'win32' }).status === 0, JSON.stringify(proofs.map(p => p && p.tests)))
+    check('F216 (develop): every feature shown ready to check (4.5\'s card) and its approval left as a question: nothing approved, the waiting line said', rec1.features.every(f => f.status === 'built') && js.filter(j => j.ev === 'show' && j.step === 'ready').length >= cards.length && /waiting for your OK/.test(read('.bmuz/questions.md') || '') && js.some(j => j.ev === 'loop.waiting') && !/✅ F0/.test(read('.planning/ROADMAP.md') || ''), `${JSON.stringify(rec1.features.map(f => [f.id, f.status]))} | ${trailOf(js.slice(-10))}`)
+    check('F216 (develop): the auto run never stalled: it ended by itself, no watchdog stop, no BLOCK left standing', !js.some(j => j.ev === 'watchdog' || j.ev === 'watchdog.stopped') && !js.some(j => j.ev === 'blocked' && !runs1.some(r => r.outcome === 'blocked')), trailOf(js.filter(j => /watchdog|blocked|retry/.test(j.ev))))
+    // every fixed line the engine handed out in run 1, and every file it showed, in Claude's words word for word
+    const lines1 = js.filter(j => j.ev === 'line' && j.kind !== 'box')
+    const unsaid1 = lines1.filter(j => !plain(out1).includes(plain(j.text)))
+    const shows1 = js.filter(j => j.ev === 'show')
+    const shownText = { 'plan-write': read('.bmuz/develop/say-plan.md') }
+    const unshown1 = shows1.filter(j => shownText[j.step] && !plain(out1).includes(plain(shownText[j.step])))
+    check('F216 (develop): every Stage 4 fixed line of the auto run (handed out, or a shown file) is in Claude\'s words word for word', lines1.length > 0 && shows1.length > 0 && unsaid1.length === 0 && unshown1.length === 0, `${unsaid1.map(j => `${j.line}: ${plain(j.text).slice(0, 100)}`).join(' | ')} ${unshown1.map(j => j.step).join(',')}`)
+    // run 2: the creative's answers (the project moved on, so bmuz.json says develop now)
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ ...(json('bmuz.json') || {}), pipeline: 'develop', testAnswers: GARDEN_DEVELOP }, null, 2))
+    await runUntil(dir, 'bmuz go', tools, () => {
+      const st = json('.bmuz/state.json')
+      return !!st && /^# Sprint 02 — /m.test(read('.planning/SPRINT.md') || '') && (st.finished || []).includes('plan-write')
+    }, 3_000_000)
+    js = allJournals()
+    const tuningAfter = json('content/tuning/game.json') || {}
+    const changed = Object.keys({ ...tuningBefore, ...tuningAfter }).filter(k => JSON.stringify(tuningBefore[k]) !== JSON.stringify(tuningAfter[k]))
+    const arch = read('.planning/archive/sprints/sprint-01.md') || ''
+    check('F216 (develop): a tune answer changed exactly one setting in content/ (the Tuning note in the sprint), then the feature was approved', changed.length === 1 && /Notes: Tuning: /.test(arch) && js.some(j => j.ev === 'step.done' && j.step === 'tune'), `${changed.join(', ')} | ${arch.slice(0, 600)}`)
+    check('F216 (develop): only the creative\'s answers approved: every feature of sprint 1 ✅ in the roadmap after run 2', cards.every(id => new RegExp(`^- ✅ ${id} `, 'm').test(read('.planning/ROADMAP.md') || '')), (read('.planning/ROADMAP.md') || '').slice(0, 700))
+    check('F216 (develop): the look-back wrote the retro (three lines), archived the sprint and said 4.7\'s lines', /\nRetro:\n- went well: .+\n- went wrong: .+\n- change: .+\n/.test(arch) && js.some(j => j.ev === 'line' && j.line === 'develop.lookback') && js.some(j => j.ev === 'show' && j.step === 'lookback-write'), arch.slice(-400))
+    const st2 = json('.bmuz/state.json') || {}
+    check('F216 (develop): the loop reached sprint 2 (Develop again from Plan the Sprint, the next ready feature on its plan card)', st2.pipeline === 'develop' && /^# Sprint 02 — /m.test(read('.planning/SPRINT.md') || '') && (json('.bmuz/stages.json') || []).filter(s => s.pipeline === 'develop').length >= 1, `${JSON.stringify({ p: st2.pipeline, cur: st2.current, fin: st2.finished })} | ${(read('.planning/SPRINT.md') || '').slice(0, 200)}`)
+    const log = spawnSync('git', ['log', '--format=%s'], { cwd: dir, encoding: 'utf8' }).stdout
+    check('F216 (develop): committed on a work branch: "F01: built …", "F01: done …", "Sprint 01 done"', /^F01: built — /m.test(log) && /^F01: done — /m.test(log) && /^Sprint 01 done$/m.test(log) && /^dev\//.test(spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir, encoding: 'utf8' }).stdout), log)
+    const ids = new Set(allJournals().filter(j => j.ev === 'line').map(j => j.line))
+    const need = ['develop.welcome', 'develop.setup', 'develop.roadmap', 'develop.approve.box', 'develop.tune', 'develop.tune.try', 'develop.tune.keep', 'develop.lookback', 'develop.waiting']
+    check('F216 (develop): the script\'s lines for this run were all said', need.every(id => ids.has(id)) && ['plan-write', 'start', 'ready', 'lookback-write'].every(s => js.some(j => j.ev === 'show' && j.step === s)), `not said: ${need.filter(id => !ids.has(id)).join(', ')}`)
   },
 
   // Check 16: motor B — "bmuz next" from a shell reads the same pipeline and state.

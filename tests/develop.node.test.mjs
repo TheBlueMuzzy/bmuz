@@ -320,7 +320,12 @@ test('the loop and the feature run: fresh builder and fixer may run commands, th
     assert.ok(stepOf(FEAT, id).agentTools.includes('Bash'))
     assert.deepEqual(stepOf(FEAT, id).done.run.slice(-1), ['prove'])
   }
-  assert.deepEqual(stepOf(FEAT, 'review').agentTools, ['Read', 'Glob', 'Grep'])
+  // (StructuredOutput: how a helper with a schema hands its answer back — headless run 2026-11-11, refused, every build failed)
+  assert.deepEqual(stepOf(FEAT, 'review').agentTools, ['Read', 'Glob', 'Grep', 'StructuredOutput'])
+  for (const id of ['build', 'fix']) assert.ok(stepOf(FEAT, id).agentTools.includes('StructuredOutput'), id)
+  assert.equal(E.bashProblem('C:/p', 'cat .bmuz/develop/tries.md 2>/dev/null; cat .bmuz/develop/brief.md'), null)
+  assert.match(E.bashProblem('C:/p', 'echo x > .bmuz/develop/F01.json'), /\.bmuz/)
+  assert.deepEqual(E.rebuildFromJournal('develop', [JSON.stringify({ ev: 'step.start', step: 'features', kind: 'script', t: 1 }), JSON.stringify({ ev: 'loop.waiting', step: 'features' })]).status, 'idle')
   assert.equal(stepOf(FEAT, 'build').stuck, '.bmuz/develop/say-stuck.md')
   const auto = JSON.parse(readFileSync(join(plugin, 'settings', 'auto-run.json'), 'utf8'))
   assert.ok(auto.permissions.allow.includes('Workflow(bmuz:build-flow)'))

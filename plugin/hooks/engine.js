@@ -1299,6 +1299,8 @@ export function rebuildFromJournal(pipelineId, lines) {
     if (j.ev === 'blocked') s = { ...s, status: 'blocked', blocked: { step: j.step, why: j.why }, retries: { ...s.retries, [j.step]: MAX_RETRIES + 1 } }
     if (j.ev === 'unblock') s = unblock(s).state || s
     if (j.ev === 'pipeline.done') s = { ...s, status: 'done', current: null, startedAt: null }
+    // (F216: a loop step an auto run left waiting for the creative is put back between steps)
+    if (j.ev === 'loop.waiting') s = { ...s, current: null, status: 'idle', startedAt: null }
   }
   return s
 }
@@ -1732,7 +1734,10 @@ export function bashProblem(dir, command) {
   const root = String(dir || '').replace(/\\/g, '/').replace(/\/+$/, '')
   if (!c.trim()) return null
   if (/(^|[\s"'=/])\.\.([\/\\\s"']|$)/.test(c)) return 'it reaches outside the project ("..")'
-  if (/(^|[\s"'=/\\])\.bmuz([\/\\\s"']|$)/i.test(c)) return 'it touches the engine\'s own .bmuz folder'
+  // (reading Develop's brief, tries and review there is fine — the builder's own instructions — changing anything isn't)
+  const writes = /(>|\b(rm|mv|cp|del|tee|touch|mkdir|rmdir|chmod|truncate|Remove-Item|Set-Content|Out-File|New-Item)\b|sed\s+-i)/i.test(c.replace(/\d?>\s*\/dev\/null/g, ''))
+  const onlyDevelop = [...c.matchAll(/\.bmuz([\/\\][^\s"';|&)]*)?/gi)].every(m => /^[\/\\]develop[\/\\][\w.-]+\.(md|json)$/i.test(m[1] || ''))
+  if (/(^|[\s"'=/\\])\.bmuz([\/\\\s"']|$)/i.test(c) && (writes || !onlyDevelop)) return 'it touches the engine\'s own .bmuz folder'
   if (/(^|[\s;&|(])(~|\$HOME|%USERPROFILE%|\$env:USERPROFILE)/i.test(c)) return 'it reaches the home folder'
   if (/\bgit\s+(push|remote|config\s+--global)\b/.test(c)) return 'pushing or changing git\'s remotes and settings is the creative\'s call'
   // an absolute path must be inside the project (Windows paths compare without case)
