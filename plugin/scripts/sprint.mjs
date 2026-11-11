@@ -325,7 +325,9 @@ export function next(dir, mode = 'live') {
   const auto = mode === 'auto' && !testAnswered(dir, 'approve')
   for (const f of rec.features) {
     if (f.status === 'planned' || f.status === 'building') return { start: { feature: f.id, at: null } }
-    if (!auto && f.status === 'blocked') return { start: { feature: f.id, at: null } }
+    // (a feature blocked twice is never rebuilt by the loop again: it waits for the creative — headless 2026-11-11, a
+    // block at the end rebuilt it ten times over)
+    if (!auto && f.status === 'blocked' && (f.blocks || 0) < 2) return { start: { feature: f.id, at: null } }
     if (!auto && f.status === 'built') return { start: { feature: f.id, at: 'ready' } }
     if (!auto && f.status === 'tuning') return { start: { feature: f.id, at: 'approve' } }
   }
@@ -639,10 +641,18 @@ export function tunedProblem(dir, rule, rulebook = null) {
 export function featureEnd(dir, now = new Date()) {
   const rec = recordOf(dir)
   const f = featureOf(dir, rec)
-  // (review fix 2c: every test the proof ran is still the test it ran, as F215's record checks)
+  // (review fix 2c: every test the proof ran is still the test it ran, as F215's record checks — the same fingerprint
+  // prove took. One changed since — another feature's build added to the same file, say, reviewed in its own run — is
+  // proven again here: its named tests must still run and pass, or the end is refused.)
   const proof = readJson(dir, `${DEV}/${f.id}.json`)
-  // (the same fingerprint prove took: sha, not the engine's own-edit textSha)
-  for (const t of listOf(proof && proof.tests)) if (t && t.sha && sha(readIn(dir, t.file) || '') !== t.sha) throw new Error(`${t.file} changed after it was proven: run the build's proof again (bmuz undo build), never keep a test changed after its proof`)
+  const moved = listOf(proof && proof.tests).filter(t => t && t.sha && sha(readIn(dir, t.file) || '') !== t.sha)
+  if (moved.length) {
+    const again = proofProblem(dir, { tests: proof.tests, screens: proof.screens })
+    if (typeof again === 'string') throw new Error(`${moved.map(t => t.file).join(', ')} changed after it was proven, and its proof no longer holds: ${again}`)
+    proof.tests = again.tests
+    proof.reproved = now.toISOString()
+    write(dir, `${DEV}/${f.id}.json`, JSON.stringify(proof, null, 2) + '\n')
+  }
   const st = readState(dir)
   const a = answerOf(resultOf(st, 'approve').answer) || 'waiting'
   const tune = resultOf(st, 'tune')
@@ -681,6 +691,7 @@ export function setStatus(dir, id, status, now = new Date()) {
   const f = rec.features.find(x => x.id === id)
   if (!f) throw new Error(`${id} isn't in this sprint`)
   f.status = status
+  if (status === 'blocked') f.blocks = (f.blocks || 0) + 1
   saveRecord(dir, rec)
   const runs = readJson(dir, '.bmuz/feature-runs.json') || []
   const last = [...runs].reverse().find(r => r.feature === id)

@@ -241,6 +241,30 @@ test('ready: 4.5\'s card word for word, 🎛️, the 🤖 tasks ticked, "Checked
   assert.equal(S.readRecord(dir).features[0].status, 'built')
 })
 
+test('review fix 2c (headless): a proven test another feature changed since is proven again at the end (it must still pass); a feature that blocks twice is never rebuilt in a loop', () => {
+  const dir = project(true)
+  building(dir)
+  const proven = { tests: [{ rule: 'a new game has two players', file: 'tests/garden.test.mjs', name: 'a new game has two players' }], changed: ['x'] }
+  journal(dir, [{ ev: 'flow.result', step: 'build', result: proven }])
+  S.prove(dir, script, NOW)
+  // F02's build adds a test to the same file afterwards (reviewed in its own run): F01's end proves it again
+  writeFileSync(join(dir, 'tests/garden.test.mjs'), read(dir, 'tests/garden.test.mjs') + "\ntest('F02 a seed blooms', () => {})\n")
+  state(dir, { pipeline: 'feature', given: { feature: 'F01' }, resultsBy: { approve: { answer: 'waiting' } } })
+  assert.equal(S.featureEnd(dir, NOW).feature, 'F01')
+  // its named test gone: refused
+  writeFileSync(join(dir, 'tests/garden.test.mjs'), "import { test } from 'node:test'\ntest('something else', () => {})\n")
+  assert.throws(() => S.featureEnd(dir, NOW), /changed after it was proven, and its proof no longer holds/)
+  // blocked twice: not rebuilt again by the loop (it waits for the creative)
+  const rec = S.readRecord(dir)
+  rec.features[0].status = 'blocked'; rec.features[0].blocks = 2
+  rec.features[1].status = 'approved'
+  writeFileSync(join(dir, S.RECORD), JSON.stringify(rec))
+  assert.deepEqual(S.next(dir, 'live'), { wait: ['F01'], features: ['F01 — Turn engine'] })
+  rec.features[0].blocks = 1
+  writeFileSync(join(dir, S.RECORD), JSON.stringify(rec))
+  assert.deepEqual(S.next(dir, 'live'), { start: { feature: 'F01', at: null } })
+})
+
 test('review fix 2c: the proof can\'t be weakened — a changed test command is refused; a changed existing test goes to the reviewer, and one it calls weakened refuses the proof; a proven test changed later refuses the end', () => {
   const dir = project(true)
   building(dir)
@@ -268,8 +292,8 @@ test('review fix 2c: the proof can\'t be weakened — a changed test command is 
   // blocked there) unchanged since the proof, the feature ends
   state(dir, { pipeline: 'feature', given: { feature: 'F01' }, resultsBy: { approve: { answer: 'waiting' } } })
   assert.equal(S.featureEnd(dir, NOW).feature, 'F01')
-  // a proven test changed after the proof: the feature's end is refused
-  writeFileSync(join(dir, 'tests/garden.test.mjs'), old + '\n// later\n')
+  // a proven test changed after the proof so that it fails: the feature's end is refused
+  writeFileSync(join(dir, 'tests/garden.test.mjs'), old.replace('assert.equal(g.players.length, 2)', 'assert.equal(g.players.length, 3)'))
   assert.throws(() => S.featureEnd(dir, NOW), /tests\/garden\.test\.mjs changed after it was proven/)
 })
 
