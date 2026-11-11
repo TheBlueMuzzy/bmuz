@@ -1,0 +1,152 @@
+{
+  "from": "framework starters/turn-based/src/ui/kit/styles/*.json (game-ui kit), copied 2026-11-11 for the project page (F227)",
+  "styles": [
+    {
+      "id": "clean",
+      "name": "Clean",
+      "tokens": {
+        "bg": "#f4f5f7",
+        "on-bg": "#1b1e24",
+        "surface": "#ffffff",
+        "on-surface": "#1b1e24",
+        "primary": "#2f5bd3",
+        "on-primary": "#ffffff",
+        "accent": "#f0a030",
+        "border": "#d5d9e0",
+        "border-width": "1px",
+        "radius-control": "0.5rem",
+        "radius-panel": "0.75rem",
+        "font-display": "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+        "font-body": "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+        "depth-1": "0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.1)",
+        "text-case": "none"
+      }
+    },
+    {
+      "id": "cozy",
+      "name": "Cozy",
+      "tokens": {
+        "bg": "#f3e9d7",
+        "on-bg": "#3b2c20",
+        "surface": "#fffaf0",
+        "on-surface": "#3b2c20",
+        "primary": "#4f7c5a",
+        "on-primary": "#fffaf0",
+        "accent": "#e8a33d",
+        "border": "#e2d2b8",
+        "border-width": "2px",
+        "radius-control": "1rem",
+        "radius-panel": "1.5rem",
+        "font-display": "'Nunito', ui-rounded, system-ui, sans-serif",
+        "font-body": "'Nunito', ui-rounded, system-ui, sans-serif",
+        "depth-1": "0 4px 14px rgb(120 84 48 / 0.14), 0 1px 2px rgb(120 84 48 / 0.1)",
+        "text-case": "none"
+      }
+    },
+    {
+      "id": "cartoon",
+      "name": "Cartoon",
+      "tokens": {
+        "bg": "#8fd8ff",
+        "on-bg": "#1d1a33",
+        "surface": "#ffffff",
+        "on-surface": "#1d1a33",
+        "primary": "#ffc629",
+        "on-primary": "#1d1a33",
+        "accent": "#3ccf62",
+        "border": "#1d1a33",
+        "border-width": "3px",
+        "radius-control": "999px",
+        "radius-panel": "1.5rem",
+        "font-display": "'Lilita One', 'Fredoka', system-ui, sans-serif",
+        "font-body": "'Fredoka', ui-rounded, system-ui, sans-serif",
+        "depth-1": "0 6px 0 #1d1a33",
+        "text-case": "none"
+      }
+    },
+    {
+      "id": "pixel",
+      "name": "Pixel",
+      "tokens": {
+        "bg": "#1a1c2c",
+        "on-bg": "#f4f4f4",
+        "surface": "#29366f",
+        "on-surface": "#f4f4f4",
+        "primary": "#38b764",
+        "on-primary": "#1a1c2c",
+        "accent": "#ffcd75",
+        "border": "#f4f4f4",
+        "border-width": "4px",
+        "radius-control": "4px",
+        "radius-panel": "4px",
+        "font-display": "'Silkscreen', 'VT323', monospace",
+        "font-body": "'VT323', monospace",
+        "depth-1": "6px 6px 0 #0d0e17",
+        "text-case": "uppercase"
+      }
+    },
+    {
+      "id": "neon",
+      "name": "Neon",
+      "tokens": {
+        "bg": "#06080f",
+        "on-bg": "#dff8ff",
+        "surface": "#0c1424",
+        "on-surface": "#dff8ff",
+        "primary": "#1fe5ff",
+        "on-primary": "#03141c",
+        "accent": "#ff3fd8",
+        "border": "#1b7f96",
+        "border-width": "1px",
+        "radius-control": "0.625rem",
+        "radius-panel": "1rem",
+        "font-display": "'Orbitron', 'Exo 2', system-ui, sans-serif",
+        "font-body": "'Exo 2', system-ui, sans-serif",
+        "depth-1": "0 0 18px rgb(31 229 255 / 0.18), inset 0 0 22px rgb(31 229 255 / 0.07)",
+        "text-case": "uppercase"
+      }
+    },
+    {
+      "id": "console",
+      "name": "Dark console",
+      "tokens": {
+        "bg": "#10141e",
+        "on-bg": "#f3f4f6",
+        "surface": "#1d2435",
+        "on-surface": "#f3f4f6",
+        "primary": "#318df6",
+        "on-primary": "#081421",
+        "accent": "#49cee9",
+        "border": "#2d4f76",
+        "border-width": "0px",
+        "radius-control": "0.65rem",
+        "radius-panel": "1.1rem",
+        "font-display": "'Exo 2', 'Nunito', system-ui, sans-serif",
+        "font-body": "'Nunito', system-ui, sans-serif",
+        "depth-1": "0 12px 26px rgb(61 148 245 / 0.18)",
+        "text-case": "none"
+      }
+    },
+    {
+      "id": "fantasy",
+      "name": "Fantasy",
+      "tokens": {
+        "bg": "#221811",
+        "on-bg": "#eeeae8",
+        "surface": "#37261b",
+        "on-surface": "#eeeae8",
+        "primary": "#e7b840",
+        "on-primary": "#211a08",
+        "accent": "#55bbdd",
+        "border": "#76622d",
+        "border-width": "2px",
+        "radius-control": "0.3rem",
+        "radius-panel": "0.5rem",
+        "font-display": "'Cinzel', Georgia, serif",
+        "font-body": "'Alegreya', Georgia, serif",
+        "depth-1": "0 10px 24px rgb(0 0 0 / 0.45), 0 0 18px rgb(231 184 64 / 0.12)",
+        "text-case": "none"
+      }
+    }
+  ]
+}

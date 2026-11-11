@@ -16,7 +16,7 @@
 // already there (same words) isn't added twice. Every write is logged under "Changes".
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -290,7 +290,49 @@ function mdHtml(md) {
   return out.join('\n')
 }
 
-export function pageHtml(text, when = '') {
+// (F227) The Design documents, each a tab on the page when it exists: the rulebook, the content tables, the sketches
+// built, the seven UI styles side by side (from the rulebook on), the TDD and the roadmap (the Plan tab).
+export const DESIGN_FILES = { rulebook: '.planning/design/RULEBOOK.md', tables: '.planning/design/tables.json', sketches: '.planning/research/sketches', tdd: '.planning/TDD.md', roadmap: '.planning/ROADMAP.md' }
+const unmark = t => nl(t).split('\n').filter(l => !/^<!-- \/?bmuz [^>]*-->$/.test(l)).join('\n')
+function stylesHtml() {
+  let s = null
+  try { s = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'templates', 'ui-styles.json'), 'utf8')) } catch (e) { s = null }
+  if (!s) return ''
+  return `<div class="styles">${s.styles.map(({ name, tokens: t }) => `<div class="style" style="background:${esc(t.bg)};color:${esc(t['on-bg'])};font-family:${esc(t['font-display'])}">
+<b>${esc(name)}</b><div class="panel" style="background:${esc(t.surface)};color:${esc(t['on-surface'])};border:${esc(t['border-width'])} solid ${esc(t.border)};border-radius:${esc(t['radius-panel'])};box-shadow:${esc(t['depth-1'])}">Score 12 · Round 3<br><span class="btn" style="background:${esc(t.primary)};color:${esc(t['on-primary'])};border-radius:${esc(t['radius-control'])};text-transform:${esc(t['text-case'])}">Play</span> <span class="btn" style="background:${esc(t.accent)};color:${esc(t['on-bg'])};border-radius:${esc(t['radius-control'])}">Options</span></div></div>`).join('\n')}</div>`
+}
+export function designTabs(dir) {
+  const tabs = []
+  const read = rel => readFileIn(dir, rel)
+  const rb = read(DESIGN_FILES.rulebook)
+  if (rb) tabs.push({ id: 'rulebook', title: 'Rulebook', html: `<section class="list">${mdHtml(unmark(rb))}</section>` })
+  let sync = null
+  try { sync = JSON.parse(read(DESIGN_FILES.tables) || 'null') } catch (e) { sync = null }
+  if (sync && sync.tables) {
+    const parts = Object.entries(sync.tables).map(([id, t]) => {
+      let tb = null
+      try { tb = JSON.parse(read(t.file || `content/data/${id}.json`) || 'null') } catch (e) { tb = null }
+      if (!tb || !Array.isArray(tb.columns)) return ''
+      const rows = (tb.rows || []).map(r => `<tr>${tb.columns.map(c => `<td>${esc(r[c])}</td>`).join('')}</tr>`).join('')
+      return `<section class="list"><h3>${esc(tb.name || id)}</h3><p class="holds">${esc(t.file || '')}${t.sheet ? ` · linked to the Google Sheet tab "${esc(t.sheet.tab)}"` : ''}</p><table><tr>${tb.columns.map(c => `<th>${esc(c)}</th>`).join('')}</tr>${rows || `<tr><td colspan="${tb.columns.length}" class="open">nothing yet</td></tr>`}</table></section>`
+    }).filter(Boolean)
+    if (parts.length) tabs.push({ id: 'content', title: 'Content', html: parts.join('\n') })
+  }
+  const sk = join(dir, DESIGN_FILES.sketches)
+  if (existsSync(sk)) {
+    const files = readdirSync(sk).filter(f => /\.html?$/.test(f)).sort()
+    if (files.length) tabs.push({ id: 'sketch-files', title: 'Sketch pages', html: `<section class="list"><ul>${files.map(f => `<li><a href="research/sketches/${encodeURIComponent(f)}">${esc(f.replace(/\.html?$/, ''))}</a></li>`).join('')}</ul></section>` })
+  }
+  if (rb) {
+    const st = stylesHtml()
+    if (st) tabs.push({ id: 'ui-styles', title: 'UI styles', html: `<p class="holds">The seven UI styles of the game-ui kit, side by side.</p>${st}` })
+  }
+  const tdd = read(DESIGN_FILES.tdd)
+  if (tdd) tabs.push({ id: 'tdd', title: 'TDD', html: `<section class="list">${mdHtml(unmark(tdd).replace(/```[\s\S]*?```/g, ''))}</section>` })
+  return tabs
+}
+
+export function pageHtml(text, when = '', tabs = [], roadmap = '') {
   const doc = nl(text)
   const chapters = readGdd(doc)
   const name = gameName(doc) || 'Your game'
@@ -324,18 +366,22 @@ h1 { margin: 0; } h2 { margin-top: 32px; } h3 { margin: 0 0 4px; font-size: 18px
 .holds { color: var(--soft); font-size: 14px; margin: 0 0 8px; } .open { color: var(--soft); font-style: italic; }
 .chip { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
 .empty { background: var(--empty); } .loose { background: var(--loose); } .chosen { background: var(--chosen); color: #fff; } .worked-out { background: var(--worked); color: #fff; } .built { background: var(--built); color: #fff; }
+.styles { display: flex; flex-wrap: wrap; gap: 10px; } .style { width: 180px; padding: 10px; border-radius: 10px; border: 1px solid var(--line); } .style .panel { margin-top: 6px; padding: 8px; font-size: 13px; } .style .btn { display: inline-block; margin-top: 6px; padding: 4px 10px; font-weight: 700; }
 .levels { color: var(--soft); font-size: 14px; } table { border-collapse: collapse; margin: 8px 0; } td, th { border: 1px solid var(--line); padding: 4px 10px; text-align: left; }
 </style></head><body><main>
 <h1>${esc(name)}</h1>
 <p class="levels">The game: ${LEVELS.map(l => `${counts[l]} ${l}`).join(' · ')}${when ? ` · updated ${esc(when)}` : ''}</p>
-<nav><a href="#game">The game</a><a href="#sketches">Sketches</a><a href="#plan">Plan</a><a href="#lists">Open questions &amp; Ideas for Later</a></nav>
+<nav><a href="#game">The game</a>${tabs.filter(t => t.id === 'rulebook' || t.id === 'content').map(t => `<a href="#${t.id}">${esc(t.title)}</a>`).join('')}<a href="#sketches">Sketches</a>${tabs.filter(t => t.id !== 'rulebook' && t.id !== 'content' && t.id !== 'sketch-files').map(t => `<a href="#${t.id}">${esc(t.title)}</a>`).join('')}<a href="#plan">Plan</a><a href="#lists">Open questions &amp; Ideas for Later</a></nav>
 <div id="game">
 ${parts.join('\n')}
 </div>
+${tabs.filter(t => t.id === 'rulebook' || t.id === 'content').map(t => `<h2 id="${t.id}">${esc(t.title)}</h2>\n${t.html}`).join('\n')}
 <h2 id="sketches">Sketches</h2>
 ${listHtml('Sketches')}
+${tabs.filter(t => t.id === 'sketch-files').map(t => t.html).join('\n')}
+${tabs.filter(t => t.id !== 'rulebook' && t.id !== 'content' && t.id !== 'sketch-files').map(t => `<h2 id="${t.id}">${esc(t.title)}</h2>\n${t.html}`).join('\n')}
 <h2 id="plan">Plan</h2>
-<section class="list"><p class="open">Milestones and their progress show here from Design on.</p></section>
+<section class="list">${roadmap ? mdHtml(unmark(roadmap).replace(/```[\s\S]*?```/g, '')) : '<p class="open">Milestones and their progress show here from Design on.</p>'}</section>
 <h2 id="lists">Open questions &amp; Ideas for Later</h2>
 ${listHtml('Open Questions')}
 ${listHtml('Ideas for Later')}
@@ -367,7 +413,7 @@ export function readFileIn(dir, rel) {
 }
 export function writePage(dir, now = new Date()) {
   const doc = readFileIn(dir, GDD) || newGdd()
-  writeFile(dir, PAGE, pageHtml(doc, now.toISOString().slice(0, 16).replace('T', ' ')))
+  writeFile(dir, PAGE, pageHtml(doc, now.toISOString().slice(0, 16).replace('T', ' '), designTabs(dir), readFileIn(dir, DESIGN_FILES.roadmap) || ''))
 }
 export const STAGE_NAMES = { ideate: 'Ideate', define: 'Define', design: 'Design', develop: 'Develop' }
 
