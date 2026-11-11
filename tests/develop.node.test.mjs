@@ -184,12 +184,32 @@ test('approval: nothing is done without the creative\'s OK — an auto run can o
   assert.match(S.approvalProblem(dir, 'waiting', 'live'), /ask them with the script's box/)
   journal(dir, [{ ev: 'step.start', step: 'approve' }])
   assert.match(S.approvalProblem(dir, 'approved', 'live'), /no answer from the creative/)
-  journal(dir, [{ ev: 'step.start', step: 'approve' }, { ev: 'answer', step: 'approve', text: 'User has answered: "Did it feel like a race?"="Close, needs tuning"' }])
+  journal(dir, [{ ev: 'step.start', step: 'approve' }, approveBox('Did it feel like a race?'), { ev: 'answer', step: 'approve', text: 'User has answered your questions: "Did it feel like a race?"="Close, needs tuning". You can now continue.' }])
   assert.match(S.approvalProblem(dir, 'approved', 'live'), /answered "Close, needs tuning", not "Yes, approve it"/)
   assert.equal(S.approvalProblem(dir, 'tune', 'live'), null)
   // an answer from an earlier try of the step doesn't count
-  journal(dir, [{ ev: 'step.start', step: 'approve' }, { ev: 'answer', step: 'approve', text: '"Yes, approve it"' }, { ev: 'step.start', step: 'approve' }])
+  journal(dir, [{ ev: 'step.start', step: 'approve' }, approveBox('Did it feel like a race?'), { ev: 'answer', step: 'approve', text: '"Did it feel like a race?"="Yes, approve it"' }, { ev: 'step.start', step: 'approve' }])
   assert.match(S.approvalProblem(dir, 'approved', 'live'), /no answer from the creative/)
+})
+
+// (review fix 1: the whole answer text was searched, so "Yes, approve it" anywhere in it — inside the moment or the
+// feeling, or a second box — turned "Not right" into approved)
+const approveBox = q => ({ ev: 'line', step: 'approve', line: 'develop.approve.box', kind: 'box', box: { question: q, options: [{ label: 'Yes, approve it' }, { label: 'Close, needs tuning' }, { label: 'Not right' }] } })
+test('review fix 1: only the picked option of this exact approve box counts, compared exactly; other boxes and words in the question are ignored', () => {
+  const dir = project()
+  building(dir)
+  const q = 'Did saying "Yes, approve it" to a storm feel like a comeback?'
+  journal(dir, [{ ev: 'step.start', step: 'approve' }, approveBox(q), { ev: 'answer', step: 'approve', text: `User has answered your questions: "${q}"="Not right". You can now continue.` }])
+  assert.equal(S.boxAnswer(dir), 'not-right')
+  assert.match(S.approvalProblem(dir, 'approved', 'live'), /answered "Not right"/)
+  // a second box in the same step whose answer is "Yes, approve it" is not this box's answer
+  journal(dir, [{ ev: 'step.start', step: 'approve' }, approveBox('Did it feel like a race?'), { ev: 'answer', step: 'approve', text: '"Something else?"="Yes, approve it"' }])
+  assert.equal(S.boxAnswer(dir), null)
+  // a typed answer ("Other") that merely starts with a label is no pick
+  journal(dir, [{ ev: 'step.start', step: 'approve' }, approveBox('Did it feel like a race?'), { ev: 'answer', step: 'approve', text: '"Did it feel like a race?"="Yes, approve it, but the hail is too strong"' }])
+  assert.equal(S.boxAnswer(dir), null)
+  journal(dir, [{ ev: 'step.start', step: 'approve' }, approveBox('Did it feel like a race?'), { ev: 'answer', step: 'approve', text: '"Did it feel like a race?"="Yes, approve it"' }])
+  assert.equal(S.boxAnswer(dir), 'approved')
 })
 
 test('tuned: exactly one setting changed (in content/), the suite still green; the rule route changes none and logs the rule', () => {

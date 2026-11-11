@@ -508,8 +508,17 @@ export function boxAnswer(dir, step = 'approve') {
   let from = -1
   lines.forEach((j, i) => { if (j.ev === 'step.start' && j.step === step) from = i })
   if (from < 0) return null
-  const said = lines.slice(from).filter(j => j.ev === 'answer' && j.step === step).map(j => String(j.text || ''))
-  for (const t of said.reverse()) for (const [k, label] of Object.entries(ANSWERS)) if (t.includes(label)) return k
+  // (review fix 1: only this box — the approve box this try handed out, its question exactly — and only the option
+  // picked for it, compared exactly: "Yes, approve it" in the moment, the feeling or another box is no answer)
+  const rest = lines.slice(from)
+  const box = rest.filter(j => j.ev === 'line' && j.line === 'develop.approve.box' && j.box && j.box.question).pop()
+  if (!box) return null
+  const asked = `"${box.box.question}"="`
+  const said = rest.filter(j => j.ev === 'answer' && j.step === step).map(j => String(j.text || '')).filter(t => t.includes(asked))
+  for (const t of said.reverse()) {
+    const picked = t.slice(t.lastIndexOf(asked) + asked.length)
+    for (const [k, label] of Object.entries(ANSWERS)) if (picked.startsWith(`${label}"`) && /^($|[.,;\s])/.test(picked.slice(label.length + 1))) return k
+  }
   return null
 }
 const testAnswered = (dir, step) => process.env.BMUZ_TEST === '1' && !!(readJson(dir, 'bmuz.json') || {}).testAnswers?.[step]
