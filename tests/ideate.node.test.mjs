@@ -306,3 +306,17 @@ test('live look round 5: GitHub and a folder outside the project, end to end (a 
   }
 })
 
+
+test('F232: a file or folder named in words ("the art folder", "my rules doc") is found in the project when exactly one matches', async () => {
+  const { namedInWords } = await import('../plugin/scripts/ideate-fetch.mjs')
+  const dir = mkdtempSync(join(tmpdir(), 'bmuz-named-'))
+  mkdirSync(join(dir, 'art'))
+  writeFileSync(join(dir, 'rules.md'), '# rules')
+  writeFileSync(join(dir, 'notes.txt'), 'n')
+  writeFileSync(join(dir, 'notes.md'), 'n')
+  assert.equal(namedInWords(dir, 'the art folder'), 'art')
+  assert.equal(namedInWords(dir, 'my rules doc'), 'rules.md')
+  assert.equal(namedInWords(dir, 'the notes'), null, 'two match: none picked')
+  assert.equal(namedInWords(dir, 'the lamp art folder'), null, 'more than one word left: none picked')
+  assert.equal(namedInWords(dir, 'music'), null)
+})

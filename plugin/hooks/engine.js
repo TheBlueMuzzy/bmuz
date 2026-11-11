@@ -378,7 +378,7 @@ export function askLines(stepId, asks, day) {
 export function talkPrompt(step, craft, why, auto, decided = [], more = {}) {
   const lines = [`BMUZ step "${step.id}" — this message comes from the BMUZ engine, not the creative; do the step without commenting on the engine.`]
   if (why) lines.push(`The last try did not pass: ${why}.`)
-  if (auto) lines.push(`Auto run: the creative is away. Never ask and never wait for an answer, with AskUserQuestion or in plain text. Where you would ask, pick the sensible default, list it in the result's "asks" as {"question": "...", "picked": "..."}, and carry on.`)
+  if (auto) lines.push(`Auto run: the creative is away. Never ask and never wait for an answer, with AskUserQuestion or in plain text. Where you would ask, pick the sensible default, list it in the result's "asks" as {"question": "...", "picked": "..."}, and carry on.${step.lines ? ` Every script line this step would say is still said: call ${SAY_TOOL} for it and write its words, exactly where a live run would say it (a free question or a box included), then take the answer and carry on.` : ''}`)
   else lines.push(step.lines ? SCRIPT_RULE : ASK_RULE)
   // F232: the step's script lines, and the ones it opens with (said before anything else).
   if (step.lines && more.script) {

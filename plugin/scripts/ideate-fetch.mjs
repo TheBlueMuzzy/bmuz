@@ -70,10 +70,24 @@ function collector() {
 
 // A path inside the project: a file is read or listed; a folder is walked (its folders too, up to MAX_FILES files).
 export function readLocal(project, rel, c) {
-  const path = String(rel).replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '')
+  let path = String(rel).replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '')
+  // F232 (headless run 2026-11-11: "the art folder" handed back as the path): a name said in words is looked up in
+  // this folder — "the art folder" → art, "my rules doc" → rules.md — when exactly one file or folder there matches.
+  if (!existsSync(join(project, path))) path = namedInWords(project, path) || path
   // (re-checked right before it is used: the path came from a hand-editable file)
   if (!E.isSafePath(path)) { c.fail(path, 'outside this folder'); return }
   readTree(join(project, path), path, c)
+}
+
+// The one top-level file or folder of the project a phrase names ("the art folder", "my rules doc"), or null.
+export function namedInWords(project, phrase) {
+  const words = String(phrase).toLowerCase().replace(/[^a-z0-9. -]/g, ' ').split(/\s+/).filter(w => w && !['the', 'my', 'a', 'an', 'our', 'folder', 'file', 'files', 'doc', 'docs', 'document', 'in', 'this', 'here'].includes(w))
+  if (words.length !== 1) return null
+  let names = []
+  try { names = readdirSync(project).filter(n => !n.startsWith('.')) } catch (e) { return null }
+  const base = n => n.toLowerCase().replace(/\.[a-z0-9]+$/, '')
+  const hits = names.filter(n => n.toLowerCase() === words[0] || base(n) === words[0])
+  return hits.length === 1 ? hits[0] : null
 }
 
 // A path anywhere on the creative's computer they pointed at (C:\..., ~/..., a file:/// link): read the same way,

@@ -6,5 +6,5 @@ Craft note (ideate, step "material" — the script's 1.2 Your Material).
 
 Hand back:
 - "links": every web link in their message, exactly as given (Google Drive, GitHub, any other)
-- "files": every file or folder path in their message, exactly as given (in this folder or anywhere on their computer)
+- "files": every file or folder path in their message, exactly as given (in this folder or anywhere on their computer). A file or folder named in words ("the art folder", "my rules doc") is looked up in this folder first (Glob) and handed back as its real path ("art", "rules.md"); not found: hand back their words as they are
 - "pasted": any other text they pasted (notes, rules), exactly as given, as a list ([] when none)
