@@ -60,7 +60,8 @@ const journalOf = dir => (existsSync(join(dir, '.bmuz/journal.jsonl')) ? readFil
 // (stream: every assistant message of the run, not only the last one -p prints: a step shown mid-turn counts)
 const runIn = (dir, prompt, tools, stream = false) => {
   const took = Date.now()
-  const r = spawnSync('claude', ['-p', prompt, ...base, '--allowedTools', tools, ...(stream ? ['--output-format', 'stream-json', '--verbose'] : [])], { cwd: dir, env: { ...env, BMUZ_TEST: '1' }, encoding: 'utf8', input: '', timeout: 3_000_000, maxBuffer: 64 * 1024 * 1024 })
+  // (tools null: nothing but the settings file allows tools: an unattended run's own pre-approvals, F216 review fix 9)
+  const r = spawnSync('claude', ['-p', prompt, ...base, ...(tools ? ['--allowedTools', tools] : []), ...(stream ? ['--output-format', 'stream-json', '--verbose'] : [])], { cwd: dir, env: { ...env, BMUZ_TEST: '1' }, encoding: 'utf8', input: '', timeout: 3_000_000, maxBuffer: 64 * 1024 * 1024 })
   let out = (r.stdout || '') + (r.stderr || '')
   if (stream) out = out.split('\n').map(l => { try { const j = JSON.parse(l); return j.type === 'assistant' ? (j.message?.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') : '' } catch (e) { return '' } }).filter(Boolean).join('\n')
   console.log(`      (${Math.round((Date.now() - took) / 1000)} s; last lines: ${out.trim().split('\n').slice(-4).join(' / ').slice(0, 400)})`)
@@ -619,7 +620,8 @@ const scenarios = {
     }
     const tuningBefore = json('content/tuning/game.json')
     // run 1: the auto run
-    const out1 = runIn(dir, 'bmuz go', tools, true)
+    // (review fix 9: run 1 allows only what auto-run.json pre-approves, as a real overnight run does)
+    const out1 = runIn(dir, 'bmuz go', null, true)
     writeFileSync(join(dir, 'run-output-1.txt'), out1)
     let js = allJournals()
     const rec1 = json('.bmuz/develop/sprint.json') || { features: [] }
@@ -635,6 +637,7 @@ const scenarios = {
     const proved = js.filter(j => j.ev === 'check.ran' && (j.step === 'build' || j.step === 'fix'))
     check('F216 (develop): the tests were proven green by the engine\'s script (sprint.mjs prove ran them), fingerprinted under .bmuz/develop/', proofs.every(p => p && p.tests.length > 0 && p.tests.every(t => t.sha && existsSync(join(dir, t.file)))) && proved.some(j => j.exitCode === 0) && spawnSync('npm', ['test'], { cwd: dir, encoding: 'utf8', shell: process.platform === 'win32' }).status === 0, JSON.stringify(proofs.map(p => p && p.tests)))
     check('F216 (develop): every feature shown ready to check (4.5\'s card) and its approval left as a question: nothing approved, the waiting line said', rec1.features.every(f => f.status === 'built') && js.filter(j => j.ev === 'show' && j.step === 'ready').length >= cards.length && /waiting for your OK/.test(read('.bmuz/questions.md') || '') && js.some(j => j.ev === 'loop.waiting') && !/✅ F0/.test(read('.planning/ROADMAP.md') || ''), `${JSON.stringify(rec1.features.map(f => [f.id, f.status]))} | ${trailOf(js.slice(-10))}`)
+    check('F216 (develop): the builders ran only through the engine\'s run tool (no Bash), with nothing allowed but the pre-approvals of auto-run.json', js.some(j => j.ev === 'run') && !js.some(j => j.ev === 'deviation' && j.tool === 'Bash' && j.agentId), trailOf(js.filter(j => j.ev === 'run' || (j.ev === 'deviation' && j.agentId))))
     check('F216 (develop): the auto run never stalled: it ended by itself, no watchdog stop, no BLOCK left standing', !js.some(j => j.ev === 'watchdog' || j.ev === 'watchdog.stopped') && !js.some(j => j.ev === 'blocked' && !runs1.some(r => r.outcome === 'blocked')), trailOf(js.filter(j => /watchdog|blocked|retry/.test(j.ev))))
     // every fixed line the engine handed out in run 1, and every file it showed, in Claude's words word for word
     const lines1 = js.filter(j => j.ev === 'line' && j.kind !== 'box')

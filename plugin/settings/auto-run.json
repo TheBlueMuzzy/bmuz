@@ -12,7 +12,19 @@
       "Workflow(bmuz:sketch-flow)",
       "Workflow(bmuz:build-flow)",
       "WebSearch",
-      "WebFetch"
+      "WebFetch",
+      "Read",
+      "Glob",
+      "Grep",
+      "Write",
+      "Edit",
+      "ToolSearch",
+      "StructuredOutput",
+      "mcp__bmuz__step_done",
+      "mcp__bmuz__say",
+      "mcp__bmuz__bug",
+      "mcp__bmuz__idea",
+      "mcp__bmuz__run"
     ]
   },
   "askUserQuestionTimeout": "60s",

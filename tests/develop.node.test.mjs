@@ -540,3 +540,18 @@ test('the loop\'s answer and the stuck line before the last try', () => {
   assert.equal(E.sideProblem({ pipeline: 'feature', from: 'develop', feature: 'F07', phase: 'on', n: 3, at: 'ready' }), null)
   assert.match(E.sideProblem({ pipeline: 'feature', from: 'develop', feature: 'X', phase: 'on', n: 3 }), /feature number/)
 })
+
+test('review fix 9: an unattended run\'s settings (auto-run.json, dontAsk) pre-approve every tool Develop and its helpers use — never Bash', () => {
+  const auto = JSON.parse(readFileSync(join(plugin, 'settings', 'auto-run.json'), 'utf8'))
+  assert.equal(auto.permissions.defaultMode, 'dontAsk')
+  const allow = auto.permissions.allow
+  const used = new Set()
+  for (const p of [DEV, FEAT]) for (const s of p.steps) for (const t of [...(s.tools || []), ...(s.agentTools || [])]) used.add(t)
+  for (const t of ['mcp__bmuz__step_done', 'mcp__bmuz__say', 'mcp__bmuz__bug', 'mcp__bmuz__idea']) used.add(t)
+  // (asked only in a live window; Setup's Bash stays the creative's to allow, so an unattended run reports it instead)
+  for (const t of ['AskUserQuestion', 'Bash']) used.delete(t)
+  const missing = [...used].filter(t => !allow.includes(t))
+  assert.deepEqual(missing, [])
+  assert.ok(!allow.includes('Bash'))
+  assert.ok(allow.includes('Workflow(bmuz:build-flow)'))
+})
