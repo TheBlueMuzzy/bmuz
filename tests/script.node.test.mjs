@@ -59,8 +59,29 @@ test('every fixed part of the approved script (Stages 1–3) is in script.md wor
   assert.deepEqual([...new Set(frags.map(f => f.num))], ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '2.0', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '2.8', '3.0', '3.1', '3.2', '3.3', '3.4', '3.5', '3.6', '3.7', '3.8', '3.9', '3.10'])
 })
 
+// F215: the step-in reply for something broken (the spec's "Any time: when the designer steps in") and Develop's welcome
+// bullet for it (4.0), word for word, the [slot] parts cut out.
+export function bugFragments(html) {
+  const ent = s => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+  const txt = s => ent(s.replace(/<br\s*\/?>/g, '\n').replace(/<[^>]+>/g, ''))
+  const anyTime = (html.split('<h2>Any time: when the designer steps in</h2>')[1] || '').split('</section>')[0]
+  const logged = (anyTime.match(/<p class="b">(Logged as a bug:[\s\S]*?)<\/p>/) || [])[1] || ''
+  const welcome = (html.match(/<b>Something broken<\/b>:([^<]*)/) || [])[1] || ''
+  const out = logged.replace(/<span class="slot">[^<]*<\/span>/g, '\u0001').split('\u0001').map(p => E.plainWords(txt(p)).replace(/^[.:,\s]+|[\s]+$/g, '')).filter(w => w.length >= 3)
+  if (welcome) out.push(E.plainWords(`Something broken:${txt(welcome)}`))
+  return out
+}
+
+test('F215: the step-in reply for a bug and the 4.0 "Something broken" line are in script.md word for word', { skip: !existsSync(SPEC) && 'the framework repo is not beside this one' }, () => {
+  const frags = bugFragments(readFileSync(SPEC, 'utf8'))
+  assert.deepEqual(frags, ['Logged as a bug:', "It doesn't block what we're doing, so I'll fix it", "Something broken: say so, or type /bug. If it blocks what we're doing, I fix it now; otherwise it's logged and fixed in order."])
+  const mine = E.plainWords(scriptText.split('# Any time · when the creative steps in (F215)')[1])
+  for (const f of frags) assert.ok(mine.includes(f), f)
+  assert.equal(E.renderLine(script, 'bug.logged', { bug: 'B004 · Score cut off on phone · P2 — annoying, not blocking', when: 'after F07' }).text, "Logged as a bug: B004 · Score cut off on phone · P2 — annoying, not blocking. It doesn't block what we're doing, so I'll fix it after F07.")
+})
+
 test('lines not in the approved script are marked "added" (each one has an Ask Muzzy line)', () => {
-  assert.deepEqual(Object.values(script.lines).filter(l => l.added).map(l => l.id).sort(), ['any.keep', 'define.feelings.eight', 'design.rulebook.ok', 'design.rulebook.section', 'design.sketches.none', 'design.time.notrap'])
+  assert.deepEqual(Object.values(script.lines).filter(l => l.added).map(l => l.id).sort(), ['any.keep', 'bug.fix.done', 'bug.fix.reproduced', 'bug.fix.start', 'bug.none', 'bug.now', 'bug.often', 'bug.verified', 'define.feelings.eight', 'design.rulebook.ok', 'design.rulebook.section', 'design.sketches.none', 'design.time.notrap'])
 })
 
 test('filling a line: slots, lists as · lines, numbered lists, [[ … ]] only when filled, numbered questions left out and renumbered, another line inside', () => {

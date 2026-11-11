@@ -694,3 +694,47 @@ header: Build?
 header: Keep?
 - Keep — {answer}
 - Change — next, tell me what
+
+# Any time · when the creative steps in (F215)
+
+## bug.logged · say
+Logged as a bug: {bug}. It doesn't block what we're doing, so I'll fix it {when}.
+
+## bug.how · say
+**Something broken**: say so, or type /bug. If it blocks what we're doing, I fix it now; otherwise it's logged and fixed in order.
+
+## bug.now · say · added
+Logged as a bug: {bug}. It blocks what we're doing, so I'll fix it now.
+
+## bug.often · box · added
+? Does it happen every time, or just once?
+header: How often
+- Every time
+- Just once
+- Not sure
+
+## bug.none · say · added
+Nothing to fix: there are no open bugs.
+
+## bug.verified · say · added
+Marked {bug} as verified: you checked it and it's right.
+
+# Fixing a bug (F215: the bug pipeline)
+
+## bug.fix.start · say · added
+**Fixing a bug**
+Fixing {bug}. First I make it fail in a test, so we know it's real. Then I find the cause, fix it, and look for the same mistake in other places.
+
+## bug.fix.reproduced · say · added
+Reproduced: {test} fails, as it should while the bug is there.
+
+## bug.fix.done · say · added
+**Fixed: {bug}**
+· Cause: {cause}
+· Guarded by: {test}, which fails if the bug ever comes back.
+[[· The same mistake, also fixed: {also}]]
+[[· Logged as new bugs: {logged}]]
+[[· Committed: "{commit}"]]
+[[· Not committed: {nogit}]]
+[[Check it yourself, then say "bmuz bug verified {check}".]]
+Back to {back}.
