@@ -53,6 +53,15 @@ test('plan-check: only proposed features, every card field, 3–8 tasks, a check
   assert.ok(bad.some(p => /F01: 1 tasks; a feature has 3 to 8/.test(p)))
 })
 
+test('review fix 12: a sprint of one feature says "1 feature", not "1 features"', () => {
+  const dir = project()
+  S.propose(dir)
+  state(dir, { resultsBy: { plan: { features: [card('F01')], goal: 'one turn' } } })
+  const r = S.planWrite(dir, script, NOW)
+  assert.match(r.say, /Here's what I'd build next, 1 feature:/)
+  assert.doesNotMatch(r.say, /1 features/)
+})
+
 test('plan-write: SPRINT.md in PROJECT-FILES\' format, the record, a work branch, the 4.3 plan card word for word', () => {
   const dir = project(true)
   const r = planned(dir)
@@ -308,7 +317,7 @@ test('develop.json is the script\'s Stage 4: 4.0–4.8 in order; every Develop l
   assert.deepEqual(titled, [['4.0', 'Welcome to Develop'], ['4.1', 'Setup'], ['4.2', 'The Roadmap'], ['4.3', 'Plan the Sprint'], ['4.4', 'Build & Prove'], ['4.5', 'Play & Approve'], ['4.6', 'Tune & Revise'], ['4.7', 'Sprint Look-Back'], ['4.8', 'Teaching']])
   const said = new Set([...DEV.steps, ...FEAT.steps].flatMap(s => [...(s.lines || []), ...(s.line ? [s.line] : [])]))
   // composed by sprint.mjs from script.md and shown, or said by the engine itself
-  const composed = ['develop.plan.feature', 'develop.progress', 'develop.stuck', 'develop.ready', 'develop.lookback.updated', 'develop.waiting', 'develop.idea']
+  const composed = ['develop.plan.feature', 'develop.plan.one', 'develop.progress', 'develop.stuck', 'develop.ready', 'develop.lookback.updated', 'develop.waiting', 'develop.idea']
   for (const id of Object.keys(script.lines).filter(id => id.startsWith('develop.') && !composed.includes(id))) assert.ok(said.has(id), id)
   const design = JSON.parse(readFileSync(join(plugin, 'pipelines', 'design.json'), 'utf8'))
   assert.deepEqual(design.next, { pipeline: 'develop', ask: false })

@@ -740,6 +740,10 @@ header: Start
 **Plan the Sprint** · Sprint {n} · {milestone}
 Here's what I'd build next, {count} features:
 
+## develop.plan.one · say · added
+**Plan the Sprint** · Sprint {n} · {milestone}
+Here's what I'd build next, 1 feature:
+
 ## develop.plan.feature · say
 **{feature}**
 · You'll see: {see}

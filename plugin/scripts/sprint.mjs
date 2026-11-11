@@ -303,7 +303,8 @@ export function planWrite(dir, script = loadScript(), now = new Date()) {
   }
   write(dir, SPRINT, text.endsWith('\n') ? text : text + '\n')
   const branch = workBranch(dir, p.milestone)
-  const say = [line('develop.plan', { n: String(rec.n), milestone: rec.milestone, count: String(features.length) }, script),
+  // (review fix 12: one feature is "1 feature")
+  const say = [line(features.length === 1 ? 'develop.plan.one' : 'develop.plan', { n: String(rec.n), milestone: rec.milestone, count: String(features.length) }, script),
     ...features.map(f => line('develop.plan.feature', { feature: named(f), see: f.see, done: f.done, notyet: f.notYet, needs: f.needs }, script))].join('\n\n')
   write(dir, SAY.plan, say + '\n')
   G.writePage(dir, now)
