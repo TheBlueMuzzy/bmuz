@@ -6,9 +6,15 @@
   "next": { "pipeline": "{onward}", "at": "{at}", "ask": false },
   "steps": [
     {
-      "id": "where", "kind": "talk", "needs": [], "no": "6.0", "title": "Welcome to Release",
-      "description": "1.0 goes public: where should it go? (pick any)",
-      "tools": ["AskUserQuestion", "ToolSearch", "Read"], "lines": ["release.welcome", "release.where"], "opening": ["release.welcome", "release.where"], "must": ["release.where"],
+      "id": "welcome", "kind": "script", "needs": [], "no": "6.0", "title": "Welcome to Release",
+      "description": "1.0 goes public: what that takes, and nothing without your clear OK",
+      "run": ["node", "{plugin}/scripts/launch.mjs", "welcome"],
+      "show": ".bmuz/release/say-welcome.md"
+    },
+    {
+      "id": "where", "kind": "talk", "needs": ["welcome"], "no": "6.0", "title": "Welcome to Release",
+      "description": "Where should it go? (pick any)",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read"], "lines": ["release.where"], "opening": ["release.where"], "must": ["release.where"],
       "craft": "craft/release-where.md", "results": ["platforms"],
       "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/launch.mjs", "where", "{platforms}", "{auto}"] }
     },

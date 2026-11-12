@@ -297,7 +297,7 @@ test('release.json is the script\'s Stage 6 in order; a platform\'s launch runs 
   assert.deepEqual(E.checkPipeline(p), [])
   assert.deepEqual(E.checkLines(p, script), [])
   assert.deepEqual([...new Set(p.steps.map(s => s.no))], ['6.0', '6.1', '6.2', '6.3'])
-  assert.deepEqual(p.steps.map(s => s.id), ['where', 'platform', 'research', 'store', 'page', 'page-save', 'notyet', 'notyet-do', 'gate', 'launch', 'walk', 'walk-done', 'more', 'reactions', 'reactions-write', 'lookback', 'lookback-write'])
+  assert.deepEqual(p.steps.map(s => s.id), ['welcome', 'where', 'platform', 'research', 'store', 'page', 'page-save', 'notyet', 'notyet-do', 'gate', 'launch', 'walk', 'walk-done', 'more', 'reactions', 'reactions-write', 'lookback', 'lookback-write'])
   const gate = p.steps.find(s => s.id === 'gate')
   assert.equal(gate.kind, 'gate')
   assert.ok(!gate.auto, 'an auto run stops at "Release it?" (never "carry")')

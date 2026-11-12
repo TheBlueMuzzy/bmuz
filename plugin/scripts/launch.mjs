@@ -44,7 +44,7 @@ import { checkSources } from './check-sources.mjs'
 export const DIR = '.bmuz/release'
 export const RECORD = `${DIR}/run.json`
 export const PAGE_NOW = `${DIR}/page.md`
-export const SAY = { store: `${DIR}/say-store.md`, notyet: `${DIR}/say-notyet.md`, live: `${DIR}/say-live.md`, reactions: `${DIR}/say-reactions.md`, end: `${DIR}/say-end.md` }
+export const SAY = { welcome: `${DIR}/say-welcome.md`, store: `${DIR}/say-store.md`, notyet: `${DIR}/say-notyet.md`, live: `${DIR}/say-live.md`, reactions: `${DIR}/say-reactions.md`, end: `${DIR}/say-end.md` }
 export const RESEARCH_NOW = '.planning/research/release-now.md'
 export const SUGGESTIONS = '.planning/bmuz-suggestions.md'
 const ROADMAP = S.ROADMAP
@@ -555,7 +555,12 @@ if (isMain) {
   const results = r => JSON.stringify({ results: r })
   const json = t => { try { return JSON.parse(t || 'null') } catch (e) { return null } }
   try {
-    if (mode === 'where') {
+    if (mode === 'welcome') {
+      // (6.0's welcome is shown in a turn of its own, before its box: a box would cover a long line written above it)
+      readyFor(dir)
+      write(dir, SAY.welcome, line('release.welcome', {}) + '\n')
+      say(true, `✔ ${SAY.welcome}`)
+    } else if (mode === 'where') {
       const p = whereProblem(dir, a, b)
       say(!p, p ? `✘ ${p}` : `✔ ${picksOf(a).join(', ')}`)
     } else if (mode === 'next') {

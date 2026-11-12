@@ -771,6 +771,92 @@ const scenarios = {
     check('F219 (deliver, not ready): the Release Check names F03 in "Not ready yet: … Want to finish it first, or move it to the next stage?" word for word; "finish it first" sends it back to Develop with v0.1 current again and nothing shared', /✗ 2 of 3 musts for this stage are done/.test(check3) && /Not ready yet: F03 — Weather cards isn't done\. Want to finish it first, or move it to the next stage\?/.test(check3) && plain(out3).includes(plain(check3)) && /^## v0\.1 — Vertical slice {2}← current/m.test(rm3) && !js3.some(j => j.ev === 'step.start' && ['safety', 'build', 'publish'].includes(j.step)) && (spawnSync('git', ['tag'], { cwd: nr, encoding: 'utf8' }).stdout || '').trim() === '' && (spawnSync('git', ['rev-parse', 'main'], { cwd: origin3, encoding: 'utf8' }).stdout || '').trim() === (spawnSync('git', ['rev-parse', 'main'], { cwd: nr, encoding: 'utf8' }).stdout || '').trim() && js3.some(j => j.ev === 'stage.enter' && j.from === 'deliver' && j.to === 'develop'), `${check3} | ${trailOf(js3.filter(j => j.ev !== 'line').slice(-16))}`)
   },
 
+  // F230: Release on the garden race at Deliver's end with its 1.0 build made (tests/fixtures/garden-release-setup.mjs),
+  // on STAND-IN platforms only: the release scripts are tests/fixtures/fake-release, the host is fake-host.mjs on
+  // 127.0.0.1, itch.io's butler is fake-butler.mjs (copies onto that host), Steam is a page on that host, the research is
+  // today's sourced stand-in reports (no research flow runs, no link is fetched). Nothing here reaches anything real.
+  // Run 1, an auto run: Deliver's end hands over to Release, "Where should it go?" (test answers: the web, itch.io,
+  // Steam), the web's Store & Launch, and it stops at "Release Garden Race on the web?" with nothing public.
+  // Runs 2–4, the creative's own "bmuz approve Release it" at each platform's gate: the web goes live (v1.0.0, pushed to
+  // the local origin, deployed, checked from outside); itch.io is uploaded and checked; Steam is walked through and
+  // marked live only on the creative's link (test answers), then First Reactions → Update 1.1, Look Back → both lists,
+  // and the project goes on to Develop for the update.
+  async 'release-garden'() {
+    const { setupReleaseGarden } = await import('./fixtures/garden-release-setup.mjs')
+    const dir = gardenScratch('bmuz-garden-release')
+    const port = 44000 + Math.floor(Math.random() * 1000)
+    const { host, origin } = setupReleaseGarden(dir, { port, research: ['web', 'itch', 'steam'] })
+    // the pretend Steam store page (the creative's own, once it's live there)
+    mkdirSync(join(host, 'steam', 'garden-race'), { recursive: true })
+    writeFileSync(join(host, 'steam', 'garden-race', 'index.html'), '<title>Garden Race on Steam (a stand-in page)</title>')
+    const steamLink = `http://127.0.0.1:${port}/steam/garden-race/`
+    const server = spawn(process.execPath, [join(here, 'fixtures', 'fake-host.mjs'), host, String(port)], { stdio: 'ignore' })
+    const log = `${dir}-release.log`
+    const extra = { BMUZ_RELEASE_TOOLS: join(here, 'fixtures', 'fake-release', 'scripts'), BMUZ_BUTLER: join(here, 'fixtures', 'fake-butler.mjs'), BMUZ_FAKE_RELEASE_LOG: log, BMUZ_SOURCES_OFFLINE: '1', BMUZ_RECIPES: join(here, 'fixtures', 'no-recipes') }
+    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
+    const json = f => { try { return JSON.parse(read(f) || 'null') } catch (e) { return null } }
+    const git = (args, cwd = dir) => (spawnSync('git', args, { cwd, encoding: 'utf8' }).stdout || '').trim()
+    const allJournals = () => {
+      const out = []
+      const root = join(dir, '.bmuz', 'stages')
+      if (existsSync(root)) for (const s of readdirSync(root).sort((a, b) => parseInt(a) - parseInt(b))) { const f = join(root, s, 'journal.jsonl'); if (existsSync(f)) out.push(...readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l) } catch (e) { return {} } })) }
+      return [...out, ...journalOf(dir)]
+    }
+    const rec = () => json('.bmuz/release/run.json') || {}
+    const atGate = key => () => { const st = json('.bmuz/state.json') || {}; return st.pipeline === 'release' && st.current === 'gate' && rec().current === key }
+    // Deliver finished with its 1.0 build made: it hands over to Release from its first step (as its build step says)
+    mkdirSync(join(dir, '.bmuz'), { recursive: true })
+    const deliver = JSON.parse(readFileSync(join(plugin, 'pipelines', 'deliver.json'), 'utf8'))
+    writeFileSync(join(dir, '.bmuz/state.json'), JSON.stringify({ ...E.freshState('deliver'), finished: deliver.steps.map(s => s.id), status: 'done', results: { onward: 'release', at: 'first' } }, null, 2))
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({
+      pipeline: 'deliver',
+      testAnswers: {
+        where: { 'Where should it go? (pick any)': ['The web', 'itch.io', 'Steam'] },
+        page: { 'The store page, written from your pitch (change anything?)': 'Looks good, keep it as it is.' },
+        walk: { 'Each step of the Steam walk-through': 'done', 'When Steam shows Garden Race live, paste its link here.': steamLink },
+        reactions: { 'First Reactions (what players are saying)': 'Reviews so far: five of them say games came down to the last card and they played again straight away. Two say hail is too strong late in the game. One says the rain card text is cut off on a small phone.' },
+        lookback: { 'Look Back (change anything?)': 'Keep your two lists as they are.' },
+      },
+    }, null, 2))
+    const mainBefore = git(['rev-parse', 'main'], origin)
+    const outs = []
+    try {
+      // run 1: the auto run (only auto-run.json's pre-approvals, as overnight)
+      outs.push(await runCollect(dir, 'bmuz go', null, atGate('web'), 1_500_000, extra))
+      writeFileSync(`${dir}-run-output-1.txt`, outs[0])
+      let js = allJournals()
+      const st1 = json('.bmuz/state.json') || {}
+      check('F230 (release): Deliver\'s 1.0 end hands over to Release: 6.0 "Where should it go?" (picked: the web, itch.io, Steam) → the web\'s Store & Launch, and the auto run stops at "Release Garden Race on the web?" (the question noted)', (json('.bmuz/stages.json') || []).some(s => s.pipeline === 'deliver') && st1.pipeline === 'release' && st1.current === 'gate' && JSON.stringify(rec().platforms) === '["web","itch","steam"]' && js.some(j => j.ev === 'gate.pending' && j.step === 'gate' && j.question === 'Release Garden Race on the web?') && /Release Garden Race on the web\?/.test(read('.bmuz/questions.md') || ''), `${JSON.stringify({ p: st1.pipeline, cur: st1.current, rec: rec().platforms })} | ${trailOf(js.slice(-16))}`)
+      check('F230 (release): the auto run released nothing: no v1.0.0 tag, the local origin untouched, nothing on the stand-in host, no launch step, no research flow (today\'s research stood in)', !/v1\.0\.0/.test(git(['tag'])) && git(['rev-parse', 'main'], origin) === mainBefore && !existsSync(join(host, 'garden-race')) && !js.some(j => j.ev === 'step.start' && j.step === 'launch') && !js.some(j => j.step === 'research' && j.ev === 'step.start'), `tags: ${git(['tag'])}`)
+      // runs 2–4: the creative's own "Release it", once per platform
+      outs.push(await runCollect(dir, 'bmuz approve Release it', null, atGate('itch'), 1_500_000, extra))
+      writeFileSync(`${dir}-run-output-2.txt`, outs[1])
+      js = allJournals()
+      check('F230 (release): "bmuz approve Release it" (journaled) put the web live: v1.0.0 tagged and pushed to the local origin, deployed to the stand-in host, checked from outside; "Garden Race is live: … I checked it from outside, and it loads and plays." word for word', js.some(j => j.ev === 'gate.answer' && j.step === 'gate' && j.answer === 'Release it') && git(['tag'], origin).split('\n').includes('v1.0.0') && /version 1\.0\.0/.test(existsSync(join(host, 'garden-race', 'index.html')) ? readFileSync(join(host, 'garden-race', 'index.html'), 'utf8') : '') && (rec().per || {}).web?.status === 'live' && plain(outs[1]).includes(plain(`Garden Race is live: http://127.0.0.1:${port}/garden-race/. I checked it from outside, and it loads and plays.`)) && /^- Live on the web: http:\/\/127\.0\.0\.1/m.test(read('.planning/STATE.md') || ''), `${trailOf(js.filter(j => ['launch', 'gate'].includes(j.step)))} | ${JSON.stringify(rec().per && rec().per.web)}`)
+      outs.push(await runCollect(dir, 'bmuz approve Release it', null, atGate('steam'), 1_500_000, extra))
+      writeFileSync(`${dir}-run-output-3.txt`, outs[2])
+      const calls = existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean) : []
+      check('F230 (release): itch.io, each platform its own Release run: its store page drafted from the pitch (kept), "Release it", 1.0 not released twice, butler (the stand-in) uploaded the build, the page checked from outside', (rec().per || {}).itch?.status === 'live' && /version 1\.0\.0/.test(existsSync(join(host, 'itch', 'garden-race', 'index.html')) ? readFileSync(join(host, 'itch', 'garden-race', 'index.html'), 'utf8') : '') && calls.filter(c => /^release /.test(c)).length === 1 && calls.some(c => /^butler push dist test\/garden-race:html5 --userversion 1\.0\.0$/.test(c)) && /^\*\*Garden Race\*\*$/m.test(read('.planning/release/itch-page.md') || '') && (json('.bmuz/stages.json') || []).filter(s => s.pipeline === 'release').length >= 2, `${calls.join(' | ')} | ${JSON.stringify(rec().per && rec().per.itch)}`)
+      outs.push(await runCollect(dir, 'bmuz approve Release it', null, () => (json('bmuz.json') || {}).pipeline === 'develop', 1_800_000, extra))
+      writeFileSync(`${dir}-run-output-4.txt`, outs[3])
+      js = allJournals()
+      const all = outs.join('\n')
+      check('F230 (release): Steam walked through step by step (BMUZ uploaded nothing to it) and marked live only on the creative\'s own link, checked from outside', (rec().per || {}).steam?.status === 'live' && rec().per.steam.link === steamLink && js.some(j => j.ev === 'line' && j.line === 'release.walk') && js.some(j => j.ev === 'line' && j.line === 'release.walk.link') && js.some(j => j.ev === 'step.done' && j.step === 'walk-done') && !readFileSync(log, 'utf8').split('\n').some(l => /steam/i.test(l)), `${JSON.stringify(rec().per && rec().per.steam)} | ${trailOf(js.filter(j => /walk/.test(j.step || '')).slice(-12))}`)
+      const rm = read('.planning/ROADMAP.md') || ''
+      check('F230 (release): First Reactions read against the feelings; the fixes in an "Update 1.1" milestone (current), the bug in BUGS.md (found in Release); "Against your feelings: … Added to the roadmap as Update 1.1." word for word', /^## v1\.1 — Update 1\.1 {2}← current {2}\(→ update\)$/m.test(rm) && /^- 🟢 F\d+ ✨ .+ — must:update$/m.test(rm) && /^### B\d{3} · P[0-3] · open · found \d{4}-\d\d-\d\d in Release · First Reactions/m.test(read('.planning/BUGS.md') || '') && /^Against your feelings: .+ Added to the roadmap as Update 1\.1\.$/m.test(read('.bmuz/release/say-reactions.md') || '') && plain(all).includes(plain(read('.bmuz/release/say-reactions.md') || '~')), `${(read('.bmuz/release/say-reactions.md') || '').slice(0, 300)} | ${rm.split('\n').filter(l => /Update|must:update/.test(l)).join(' / ')}`)
+      check('F230 (release): Look Back wrote both lists: the lessons for this game in STATE\'s Key facts, the ones for BMUZ in .planning/bmuz-suggestions.md; then on to Develop at Plan the Sprint for Update 1.1 ("Back to Develop to build Update 1.1.")', /^- Lesson: /m.test(read('.planning/STATE.md') || '') && /^## \d{4}-\d\d-\d\d · Garden Race\n- /m.test(read('.planning/bmuz-suggestions.md') || '') && (json('bmuz.json') || {}).pipeline === 'develop' && js.some(j => j.ev === 'stage.enter' && j.from === 'release' && j.to === 'develop') && plain(all).includes(plain('Back to Develop to build Update 1.1.')), `${trailOf(js.filter(j => /lookback|stage/.test(j.step || j.ev || '')).slice(-10))}`)
+      const lines = js.filter(j => j.ev === 'line' && j.kind !== 'box' && /^release\./.test(j.line || ''))
+      const unsaid = lines.filter(j => !plain(all).includes(plain(j.text)))
+      const shownStore = ['the web', 'itch.io', 'Steam'].filter(p => plain(all).includes(plain(`**Store & Launch** · ${p}\nHere's what ${p} needs today:`)))
+      const said = new Set(lines.map(j => j.line))
+      const must = ['release.where', 'release.page', 'release.walk', 'release.walk.link', 'release.reactions', 'release.lookback'].filter(id => !said.has(id))
+      check('F230 (release): every Stage 6 fixed line found word for word — the welcome and "Nothing goes public without your clear OK.", each platform\'s Store & Launch card, the store page, the walk-through, "is live", First Reactions, Look Back', unsaid.length === 0 && shownStore.length === 3 && must.length === 0 && plain(all).includes(plain('Nothing goes public without your clear OK.')) && js.filter(j => j.ev === 'gate.pending' && j.step === 'gate').length >= 3, `unsaid: ${unsaid.map(j => j.line).join(', ')} · store cards: ${shownStore.join(', ')} · not said: ${must.join(', ')}`)
+      check('F230 (release): nothing real was touched: the only remote is the folder on this machine, every live link is 127.0.0.1, butler was the stand-in, no deploy workflow, no research flow ran', git(['remote']) === 'origin' && git(['remote', 'get-url', 'origin']) === origin && !/\bLive( on [^:]+)?: https?:\/\/(?!127\.0\.0\.1)/.test(read('.planning/STATE.md') || '') && Object.values(rec().per || {}).every(p => /^http:\/\/127\.0\.0\.1:/.test(p.link || '')) && !existsSync(join(dir, '.github')) && !js.some(j => j.ev === 'flow.launched' || (j.step === 'research' && j.ev === 'step.start')), `${git(['remote', '-v'])} | ${JSON.stringify(Object.values(rec().per || {}).map(p => p.link))}`)
+    } finally {
+      server.kill()
+    }
+  },
+
   // Check 16: motor B — "bmuz next" from a shell reads the same pipeline and state.
   async motorb() {
     setup('at-review')
