@@ -729,8 +729,11 @@ function publishNow(dir, script, now, opts = {}) {
     if (r.status !== 0) { saveRecord(dir, rec); throw new Error(`pushing ${main}: ${(r.stderr || r.stdout || '').trim().slice(0, 400)}`) }
   }
   const deployIt = () => { if (scripts.deploy) step('the deploy', (({ exitCode, out }) => ({ ok: exitCode === 0, out }))(B.runIn(dir, ['npm', 'run', 'deploy'], 540000))) }
+  // (F230 review fix 1: a platform with its own upload — itch.io, Steam, the phone stores — gets the 1.0 build made here
+  // from the local tag, and nothing goes to origin: a host that builds from main (GitHub Pages) would make it public
+  // without the web's own "Release it". Only the web pushes and deploys.)
+  if (opts.deploy === false) { buildAndScan(); return { tag: p.tag, version: p.version } }
   if (!p.pushed) { buildAndScan(); pushIt(); p.pushed = true; saveRecord(dir, rec) }
-  if (opts.deploy === false) return { tag: p.tag, version: p.version }
   if (!p.deployed) { deployIt(); p.deployed = true; saveRecord(dir, rec) }
   // 7. is it really live? A failed check puts the last good version back (rollback.mjs), live again, and says so.
   if (!p.live) {

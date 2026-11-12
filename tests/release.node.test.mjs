@@ -325,3 +325,30 @@ test('Deliver\'s build at 1.0 hands over to Release ("onward": release, nothing 
   writeFileSync(join(dir, D.RECORD), JSON.stringify({ ...rec, stage: 'beta' }))
   assert.deepEqual(last(run()), { go: 'yes', onward: 'develop', at: 'plan' })
 })
+
+test('review fix 1: itch.io or Steam alone never pushes to origin or deploys the web: 1.0 is merged and tagged here only; only the web\'s own "Release it" pushes', async () => {
+  for (const label of ['itch.io', 'Steam']) {
+    const dir = garden()
+    const origin = `${dir}-origin.git`
+    const before = [git(origin, ['rev-parse', 'main']), git(origin, ['tag'])]
+    picked(dir, [label, 'The web'])
+    L.next(dir, NOW)
+    await L.store(dir, script, NOW)
+    answered(dir, 'Release it')
+    await releaseTest(() => L.launch(dir, script, NOW))
+    assert.equal(git(dir, ['tag', '--sort=v:refname']).split('\n').pop(), 'v1.0.0', `${label}: tagged here`)
+    assert.deepEqual([git(origin, ['rev-parse', 'main']), git(origin, ['tag'])], before, `${label}: origin untouched`)
+    assert.ok(!existsSync(join(`${dir}-host`, 'garden-race')), `${label}: no web deploy`)
+    // then the web's own "Release it" pushes 1.0 and deploys it
+    const rec = L.readRecord(dir)
+    rec.per[rec.current].status = 'live'
+    writeFileSync(join(dir, L.RECORD), JSON.stringify(rec))
+    state(dir, {})
+    L.next(dir, NOW)
+    await L.store(dir, script, NOW)
+    answered(dir, 'Release it')
+    await releaseTest(() => L.launch(dir, script, NOW))
+    assert.equal(git(origin, ['tag', '--sort=v:refname']).split('\n').pop(), 'v1.0.0', `${label}: the web pushed it`)
+    assert.match(read(`${dir}-host`, 'garden-race/index.html'), /version 1\.0\.0/)
+  }
+})
