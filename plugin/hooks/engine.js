@@ -1505,6 +1505,17 @@ function fillTemplate(t, slots, nested) {
 
 // A line ready to say: { id, kind, text } or, for a box, { id, kind: 'box', box: { question, header, multiSelect,
 // options: [{ label, description }] } } — or { error } in plain words.
+// (F230 item 9a) A slot whose value is only a placeholder — "<to fill>", "<milestones>" — or a list item that is: the
+// first one as { slot, value }, else null. A line said with it would reach the creative unfilled.
+export function placeholderSlot(slots = {}) {
+  const isHole = v => typeof v === 'string' && /^\s*<[^<>]{1,60}>\s*$/.test(v)
+  for (const [slot, v] of Object.entries(slots || {})) {
+    const bad = (Array.isArray(v) ? v : [v]).find(isHole)
+    if (bad) return { slot, value: bad.trim() }
+  }
+  return null
+}
+
 export function renderLine(script, id, slots = {}) {
   const line = script && script.lines && script.lines[id]
   if (!line) return { error: `there is no line "${id}" in the script` }

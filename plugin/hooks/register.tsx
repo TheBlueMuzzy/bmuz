@@ -1365,6 +1365,9 @@ async function sayTool($: any, e: any) {
     return deny(`BMUZ engine: this step opens with ${JSON.stringify(step.opening.length === 1 ? step.opening[0] : step.opening)}: say that first (one ${E.SAY_TOOL} call).`)
   }
   const slots = e.slots && typeof e.slots === 'object' && !Array.isArray(e.slots) ? e.slots : {}
+  // (F230 item 9a: a slot holding only a placeholder — "<to fill>" — is no answer: the line would be said unfilled)
+  const hole = E.placeholderSlot(slots)
+  if (hole) return deny(`BMUZ engine: {${hole.slot}} is a placeholder ("${hole.value}"): fill it from the game, then say the line.`)
   const rendered = ids.map(id => E.renderLine(ctx.script, id, slots))
   const bad = rendered.find((r: any) => r.error)
   if (bad) return deny(`BMUZ engine: ${bad.error}.`)
@@ -1382,9 +1385,14 @@ async function sayTool($: any, e: any) {
   const had = ctx.state.said && ctx.state.said.step === step.id && Array.isArray(ctx.state.said.lines) ? ctx.state.said.lines : []
   ctx.state = { ...ctx.state, said: { step: step.id, lines: [...new Set([...had, ...ids])] } }
   if (words.length) {
-    for (const r of words) await journal($, { ev: 'line', step: step.id, line: r.id, kind: r.kind, text: r.text })
     if (turnSaid.step !== step.id) turnSaid = { step: step.id, lines: [] }
-    turnSaid.lines.push(...words.map((r: any) => ({ id: r.id, text: r.text })))
+    // (F230 item 9a: a line said again in this turn replaces its earlier words — only the latest must be written; the
+    // journal keeps which words were replaced)
+    for (const r of words) {
+      const old = turnSaid.lines.find(l => l.id === r.id)
+      await journal($, { ev: 'line', step: step.id, line: r.id, kind: r.kind, text: r.text, ...(old && old.text !== r.text ? { replaced: old.text } : {}) })
+      turnSaid.lines = [...turnSaid.lines.filter(l => l.id !== r.id), { id: r.id, text: r.text }]
+    }
   }
   // (each box handed out gets a number, so the same box can be asked twice: Scope's "[idea]: …?" per idea)
   let n = (ctx.state.boxes || []).reduce((m: number, b: any) => Math.max(m, b.n || 0), 0)

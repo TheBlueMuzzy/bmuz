@@ -2369,3 +2369,40 @@ test('F230: Deliver\'s build at 1.0 says "onward": release, "at": first — the 
   expect([st.pipeline, st.skipped || []]).toEqual(['release', []])
   expect(events(w).some((j: any) => j.ev === 'gate.pending' && j.step === 'share')).toBe(false)
 })
+
+// F230 item 9a (headless develop-garden 2026-11-11 19:45: develop.roadmap said first with "<to fill>" in a slot, then
+// again filled; the filled words were written, but the engine still asked for the first ones, nudged twice and gave up):
+// a slot that is only a placeholder is refused, and a line said again in the same step replaces its earlier words.
+function slotWorld(on: any) {
+  const s = sayWorld(on)
+  const p = JSON.parse(s.w.files.PIPELINE)
+  p.steps[0].lines = [...p.steps[0].lines, 'develop.roadmap']
+  s.w.files.PIPELINE = JSON.stringify(p)
+  s.w.files.SCRIPT = [SCRIPT, '', '## develop.roadmap · say', '**The Roadmap**', 'Milestones, in order: {milestones}', ''].join(String.fromCharCode(10))
+  return s
+}
+test('F230 item 9a: a slot that is only a placeholder ("<to fill>") is refused: fill it from the game', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = slotWorld(on)
+  await start($, true)
+  const r: any = await $.tool.call({ tool: SAY, line: 'develop.roadmap', slots: { milestones: '<to fill>' } } as any)
+  expect(refused(r)).toBe(true)
+  expect(why(r)).toMatch(/\{milestones\} is a placeholder \("<to fill>"\): fill it from the game, then say the line/)
+  expect(events(w).some((j: any) => j.ev === 'line' && j.line === 'develop.roadmap')).toBe(false)
+  const ok: any = await $.tool.call({ tool: SAY, line: 'develop.roadmap', slots: { milestones: ['Vertical slice', 'Alpha'] } } as any)
+  expect(refused(ok)).toBe(false)
+})
+test('F230 item 9a: a line said again in the same step replaces its earlier words: only the latest must be written', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = slotWorld(on)
+  await start($, true)
+  await $.tool.call({ tool: SAY, line: 'develop.roadmap', slots: { milestones: 'Vertical slice' } } as any)
+  await $.tool.call({ tool: SAY, line: 'develop.roadmap', slots: { milestones: 'Vertical slice → Alpha' } } as any)
+  await $.turn.complete({ answer: 'The Roadmap\nMilestones, in order: Vertical slice → Alpha', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(events(w).find((j: any) => j.ev === 'said')).toMatchObject({ lines: ['develop.roadmap'], missing: [] })
+  // (no correction asked for the replaced words)
+  expect(prompts.some((p: string) => /was not written word for word/.test(p))).toBe(false)
+  // the journal says which words were replaced
+  const lines = events(w).filter((j: any) => j.ev === 'line' && j.line === 'develop.roadmap')
+  expect(lines[1].replaced).toBe(lines[0].text)
+})
