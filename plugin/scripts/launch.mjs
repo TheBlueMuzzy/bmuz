@@ -540,15 +540,20 @@ export function reactionsWrite(dir, script = loadScript(), now = new Date()) {
   const why = reactionsProblem(dir, r)
   if (why) throw new Error(why)
   const fixes = listOf(r.fixes).map(clean).filter(Boolean)
-  const bugs = listOf(r.bugs).map(b => B.addIn(dir, b, { where: 'Release · First Reactions' }))
+  // (review fix 7: safe to run again — a crash part way, a retry: a bug already logged from First Reactions with the same
+  // title is that bug, and a fix already on the update milestone isn't added twice)
+  const bugsText = () => readIn(dir, B.BUGS) || ''
+  const loggedAs = b => B.readEntries(bugsText()).find(e => new RegExp(`^### ${e.id} .*in Release · First Reactions`, 'm').test(bugsText()) && clean(B.titleOf(bugsText(), e.id)) === clean(b && b.title))
+  const bugs = listOf(r.bugs).map(b => { const had = loggedAs(b); return had ? { id: had.id } : B.addIn(dir, b, { where: 'Release · First Reactions' }) })
   let update = ''
   if (fixes.length || bugs.length) {
     const u = updateMilestone(readIn(dir, ROADMAP) || '', (readJson(dir, 'version.json') || {}).version)
     let text = u.text
     // (a feature's name: the fix's first sentence, or its first 8 words when that runs long)
     const nameOf = f => { const w = f.split(/[.;:]/)[0].split(' '); return w.length <= 10 ? w.join(' ') : `${w.slice(0, 8).join(' ')}…` }
-    for (const f of fixes) text = D.addFeature(text, u.name, { type: '✨', name: nameOf(f), description: f, scope: 'must:update' }).text
-    if (!fixes.length) text = D.addFeature(text, u.name, { type: '✨', name: 'Fix what players found', description: `the bugs from the first reactions: ${bugs.map(b => b.id).join(', ')}`, scope: 'must:update' }).text
+    const onIt = desc => (S.readRoadmap(text).milestones.find(m => m.name === u.name) || { features: [] }).features.some(x => clean(x.description) === clean(desc))
+    for (const f of fixes) if (!onIt(f)) text = D.addFeature(text, u.name, { type: '✨', name: nameOf(f), description: f, scope: 'must:update' }).text
+    if (!fixes.length && !onIt(`the bugs from the first reactions: ${bugs.map(b => b.id).join(', ')}`)) text = D.addFeature(text, u.name, { type: '✨', name: 'Fix what players found', description: `the bugs from the first reactions: ${bugs.map(b => b.id).join(', ')}`, scope: 'must:update' }).text
     S.writePlan(dir, ROADMAP, text, `${u.name}: what players asked for after 1.0`)
     update = u.name
   }

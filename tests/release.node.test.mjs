@@ -463,3 +463,22 @@ test('review fix 6: butler runs with no shell, and only a target shaped <user>/<
   const body = readFileSync(join(here, '..', 'plugin', 'scripts', 'launch.mjs'), 'utf8').split('function butler')[1].split('\n}\n')[0]
   assert.deepEqual(body.match(/shell:\s*[^,}\s]+/g), ['shell: false'], 'no shell for butler')
 })
+
+test('review fix 7: First Reactions\' write is safe to run again (a crash part way, a retry): one Update milestone, one feature per fix, one bug per report', async () => {
+  const dir = garden()
+  picked(dir, ['The web'])
+  L.next(dir, NOW)
+  wentLive(dir, 'web')
+  writeFileSync(join(dir, 'version.json'), JSON.stringify({ name: 'garden-race', version: '1.0.0' }))
+  const reactions = { feelings: [{ feeling: 'The thrill of a close race that you win right at the end.', seen: 'seen ✓', why: 'reviews' }], fixes: ['Hail is too strong late in the game', 'A bigger font for the scores'], bugs: [{ title: 'Rain text cut off on small phones', level: 'P2', steps: ['open a rain card'], expected: 'the whole text', actual: 'cut off' }] }
+  state(dir, { reactions: { reactions } })
+  const first = L.reactionsWrite(dir, script, NOW)
+  // a crash after the bug went in, before the roadmap: the same write again
+  const second = L.reactionsWrite(dir, script, NOW)
+  assert.deepEqual(second.bugs, first.bugs, 'the same bug, not a second one')
+  const rm = read(dir, S.ROADMAP)
+  assert.equal((rm.match(/^## v1\.1 — Update 1\.1/gm) || []).length, 1)
+  assert.equal((rm.match(/— Hail is too strong late in the game — must:update$/gm) || []).length, 1)
+  assert.equal((rm.match(/— A bigger font for the scores — must:update$/gm) || []).length, 1)
+  assert.equal((read(dir, '.planning/BUGS.md').match(/Rain text cut off on small phones/g) || []).length, 1)
+})
