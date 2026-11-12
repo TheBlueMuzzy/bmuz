@@ -90,7 +90,7 @@ const STEP_KEYS = {
   common: ['id', 'kind', 'needs', 'description', 'timeoutMs', 'always', 'retries', 'when', 'no', 'title', 'onBack'],
   // lines (F232): the script lines the step may say (plugin/script.md); opening: the ones it must say first;
   // must: the ones it always says, so step_done is refused until each was handed out (the rest depend on the game)
-  talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results', 'wrapTo', 'recap', 'lines', 'opening', 'must'],
+  talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results', 'wrapTo', 'recap', 'lines', 'opening', 'must', 'mustIf'],
   // line (F232): the gate's question and options come from that script box
   gate: ['question', 'options', 'approve', 'backTo', 'line', 'auto'],
   // show: a .md file the script wrote; after the step passes, the engine shows it to the creative word for word
@@ -220,6 +220,15 @@ export function checkPipeline(p) {
     if (s.must !== undefined) {
       if (!(isList(s.must) && s.must.length)) problems.push(`${at}: "must" must be a list of the line ids the step always says`)
       else for (const id of s.must) if (!(s.lines || []).includes(id)) problems.push(`${at}: "must" line "${id}" isn't one of the step's "lines"`)
+    }
+    // (F229 review item 8) mustIf: { "<line>": "{resultKey}" } — a line the step must say when its result says yes there
+    if (s.mustIf !== undefined) {
+      if (!(s.mustIf && typeof s.mustIf === 'object' && !Array.isArray(s.mustIf) && Object.keys(s.mustIf).length)) problems.push(`${at}: "mustIf" must be { "<line id>": "{resultKey}" }`)
+      else for (const [id, when] of Object.entries(s.mustIf)) {
+        if (!(s.lines || []).includes(id)) problems.push(`${at}: "mustIf" line "${id}" isn't one of the step's "lines"`)
+        const k = (String(when).match(/^\{(\w+)\}$/) || [])[1]
+        if (!k || !(s.results || []).includes(k)) problems.push(`${at}: "mustIf" for "${id}" must be "{key}" with the key one of the step's "results"`)
+      }
     }
     if (s.kind === 'gate' && s.line !== undefined) {
       if (typeof s.line !== 'string' || !/^[a-z][a-z0-9.-]*$/.test(s.line)) problems.push(`${at} (gate): "line" must be a script box id`)
@@ -831,6 +840,14 @@ export function writesOf(step, vars) {
   return out
 }
 
+// F229 review fix 1: what a step wrote, for a change the creative asks for after it finished: its own "writes" and those
+// of the steps that write its results down (a talk step's answers reach the GDD or the rulebook through the script step
+// after it). Fixed paths only, never the project page (rebuilt) or the research reports.
+export function stepWrites(p, step, vars) {
+  const after = (Array.isArray(p && p.steps) ? p.steps : []).filter(s => s && Array.isArray(s.needs) && s.needs.includes(step.id) && s.kind === 'script')
+  return [...new Set([step, ...after].flatMap(s => writesOf(s, vars)))].filter(f => !isPattern(f) && !/project-page\.html$/.test(f) && !/^\.planning\/research\//.test(f))
+}
+
 // A flow's args: like fillDeep, but a value that is one whole hole ("{assumptions}") gets the result
 // itself, so a list or an object reaches the workflow as a list or an object, not as text.
 export function fillArgs(v, vars) {
@@ -1062,10 +1079,14 @@ export function judgeTool(p, state, call, opts = {}) {
   // F229: a research flow's helper may run the source check's own link test (check-sources.mjs --dead '<url>' …), the
   // one command it needs before its report is checked; the plugin's path is outside the project, so it is let through
   // here, exactly that command, only while research runs (a research step, or the creative's own research).
+  // (review fix 6) Whose helper is calling isn't known, so the two crews never run together: a flow step waits while the
+  // creative's research runs, and that research waits for a flow step's helpers. A helper is the research's only while no
+  // flow step is working.
+  const curStep = stepById(p, state.current)
+  const stepCrew = state.status === 'working' && curStep && curStep.kind === 'flow'
+  const researchCrew = !!(opts.research && opts.research.status === 'running' && !stepCrew)
   if (call.agentId && call.tool === 'Bash' && isLinkCheck((call.input || {}).command, opts.root)) {
-    const cur = stepById(p, state.current)
-    const stepResearch = state.status === 'working' && cur && cur.kind === 'flow' && cur.workflow === RESEARCH_FLOW
-    if (stepResearch || (opts.research && opts.research.status === 'running')) return { allow: true }
+    if ((stepCrew && curStep.workflow === RESEARCH_FLOW) || researchCrew) return { allow: true }
   }
   // F229: research, callable anywhere. The creative's ask goes through the research tool at any moment (a talk step, an
   // open gate, between steps, while helpers work); its one Workflow call is the research flow (the motor pins its name and
@@ -1078,10 +1099,13 @@ export function judgeTool(p, state, call, opts = {}) {
     const stepLaunch = state.status === 'working' && cur && cur.kind === 'flow' && !(state.flow && state.flow.toolUseId)
     if (!stepLaunch) return { allow: true, rewriteResearch: true }
   }
-  if (r && r.status === 'running' && call.agentId) {
+  if (researchCrew && call.agentId) {
     if (RESEARCH_HELPER_TOOLS.includes(call.tool)) return { allow: true }
     if (call.tool === 'Write' && opts.dir && projectPath(opts.dir, (call.input || {}).file_path) === r.out) return { allow: true }
   }
+  // (review fix 1) the creative's answer changes what a finished step wrote: Claude may change those files, this turn only
+  const t = opts.tweak
+  if (t && !call.agentId && ['Edit', 'Write', 'MultiEdit'].includes(call.tool) && opts.dir && t.files.includes(projectPath(opts.dir, (call.input || {}).file_path))) return { allow: true, researchTweak: true }
   // step_done only closes an open talk step; called between steps, it has nothing to finish.
   if (call.tool === ENGINE_TOOL && !call.agentId && !(state.status === 'working' && (stepById(p, state.current) || {}).kind === 'talk')) {
     return { allow: false, why: 'BMUZ engine: no talk step is open, so there is nothing to finish. End your turn; the engine starts the next step itself.' }
@@ -1279,9 +1303,12 @@ export function begin(state, step, now) {
 
 // A talk step's "must" lines not handed out yet (state.said): step_done is refused, naming them, until each was said
 // (headless design-garden 2026-11-11: Players & Opponents finished after its opening alone). null = fine.
-export function mustProblem(step, state) {
+// result: the step_done result — a "mustIf" line is a must when its result key says yes (F229 item 8: design-garden
+// skipped Sketches' "Build them in this order?" though the list had sketches).
+export function mustProblem(step, state, result = {}) {
   const had = state && state.said && state.said.step === step.id && Array.isArray(state.said.lines) ? state.said.lines : []
-  const left = (isList(step.must) ? step.must : []).filter(id => !had.includes(id))
+  const ifs = step.mustIf && typeof step.mustIf === 'object' ? Object.entries(step.mustIf).filter(([, when]) => isWanted({ when }, result || {})).map(([id]) => id) : []
+  const left = [...(isList(step.must) ? step.must : []), ...ifs].filter(id => !had.includes(id))
   if (!left.length) return null
   const many = left.length > 1
   return `the step isn't finished: the script's line${many ? 's' : ''} ${left.map(id => `"${id}"`).join(', ')} ${many ? 'were' : 'was'} never said. Say ${many ? 'each' : 'it'} with ${SAY_TOOL} {"line": "<id>"} the way the craft note says (an auto run too: take the answer from the test answers), then call ${ENGINE_TOOL} again`
@@ -1715,6 +1742,8 @@ export const RESEARCH_TOOL = 'mcp__bmuz__research'
 export const RESEARCH_HELPER_TOOLS = ['ToolSearch', 'WebSearch', 'WebFetch', 'StructuredOutput']
 // The [about 3 minutes] slot: four lenses, a link check and a merge take about this long
 export const RESEARCH_TIME = 'About 5 minutes'
+// (review fix 6) a research running this long never reported back: it is dropped, so no flow step waits on it forever
+export const RESEARCH_STALE_MS = 40 * 60 * 1000
 export const RESEARCH_RULE = `Research, any time: if the creative asks what the research says, whether something has been done, or for research on a creative block, a rule that doesn't work or a risk to test ("what's the research say about this?"), that is a step-in, not an answer to this step. Call ${RESEARCH_TOOL} {"question": "their question, in their words", "about": "what it's about, from this step, in a few words"}, write the line it returns word for word and do what it says: the research runs in the background while this step carries on exactly where it was. Never offer research as a menu.`
 
 // A plain message that may ask for research (a hint only: Claude judges whether it does).
@@ -1735,12 +1764,23 @@ export function researchOut(question, day) {
 
 // What a step reads of the research asked during it (its notes: { step, question, out, found, answer }), or ''.
 export function researchNotesFor(notes, stepId, pipeline) {
-  const mine = (Array.isArray(notes) ? notes : []).filter(n => n && n.step === stepId && (!n.pipeline || n.pipeline === pipeline))
+  const mine = (Array.isArray(notes) ? notes : []).filter(n => n && !n.used && n.step === stepId && (!n.pipeline || n.pipeline === pipeline))
   if (!mine.length) return ''
   return [
     'Research the creative asked for during this step (take it into the step; it is theirs, never a menu, and not to be asked again):',
     ...mine.map(n => `- "${n.question}" (${n.out}): found ${(n.found || []).join(' · ') || 'nothing sourced'}. Their answer to "Does it change anything?": ${n.answer ? `"${n.answer}"` : '(none: an auto run)'}`),
   ].join('\n')
+}
+// (review fix 4) A step run reads its notes once: they are marked used, and only the newest KEEP_USED used notes are kept
+// (research.json no longer grows forever). Returns { text, notes }.
+export const KEEP_USED = 20
+export function useNotes(notes, stepId, pipeline) {
+  const list = Array.isArray(notes) ? notes : []
+  const text = researchNotesFor(list, stepId, pipeline)
+  const marked = list.map(n => (n && !n.used && n.step === stepId && (!n.pipeline || n.pipeline === pipeline) ? { ...n, used: true } : n))
+  const used = marked.filter(n => n && n.used)
+  const drop = new Set(used.slice(0, Math.max(0, used.length - KEEP_USED)))
+  return { text, notes: marked.filter(n => n && !drop.has(n)) }
 }
 
 // ---- Stepping in (F215): something broken, said at any step, is logged as a bug on a side trip ----

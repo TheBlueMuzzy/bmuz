@@ -1607,6 +1607,9 @@ test('F215: a bug that comes as the answer to a question box is logged; the line
   mock.clock(on, { now: 1000 })
   const { w, prompts } = bugWorld(on, { current: 'name', status: 'working', retries: { name: 1 } })
   await start($, true)
+  // (the step started in this window: one waiting from an earlier session is left for "bmuz go", F229 review item 9)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't-go')
   const box: any = await $.tool.call({ tool: SAY, line: 'define.pitch.how' } as any)
   expect(refused(box)).toBe(false)
   await $.tool.call({ tool: 'AskUserQuestion', questions: [PITCH_BOX] } as any)
@@ -1636,6 +1639,8 @@ test('F215: a bug typed while a free question is open: told to ask that question
   p.steps[0].lines = ['ideate.idea', 'define.pitch']
   w.files.PIPELINE = JSON.stringify(p)
   await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't-go')
   await $.tool.call({ tool: SAY, line: 'ideate.idea' } as any)
   await $.turn.complete({ answer: `Your Idea${NL}Tell me about your game in your own words.`, durationMs: 1, isAborted: false, turnId: 't0', reason: 'answer' } as any)
   await $.prompt.submit({ text: 'the score text is cut off on my phone' } as any)
@@ -1739,7 +1744,7 @@ test('F215: "bmuz bug" with nothing open says the script\'s two lines; the bug t
   expect(prompts[prompts.length - 1]).toMatch(/Nothing to fix: there are no open bugs\.\n\n\*\*Something broken\*\*: say so, or type \/bug\./)
   const r: any = await $.tool.call(REPORT as any)
   expect(refused(r)).toBe(false)
-  expect(JSON.parse(String(r.result)).then).toMatch(/Then end your turn\./)
+  expect(JSON.parse(String(r.result)).then).toMatch(/Then end your turn: the gate "approve" is still open and waits for the creative's answer\./)
   expect(JSON.parse(w.files['/proj/.bmuz/state.json'])).toMatchObject({ current: 'approve', status: 'waiting' })
 })
 
@@ -2415,6 +2420,9 @@ const RESEARCH_LINES = [
   '## research.wait · say · added', 'The {helpers} helpers are still working, so I\'ll start looking once they\'re done: "{question}".', '',
   '## research.busy · say · added', 'I\'m still looking into "{question}". One question at a time: ask me this one again once that\'s back.', '',
   '## research.none · say · added', 'I couldn\'t find sources I trust on "{question}", so I have nothing to add yet. Back to {back}.', '',
+  '## research.changed · say · added', 'Changed {file} for your answer: {what}.', '',
+  '## research.notstarted · say · added', 'The research on "{question}" didn\'t start. Ask again when you want it.', '',
+  '## research.lost · say · added', 'Your research on "{question}" stopped {why}. Ask again?', '',
 ].join(NL)
 const FOUND = ['Co-op weather games exist', 'Shared weather reads as fair', 'Players dislike pure luck']
 const FOUND_TEXT = `Here's what I found:${NL}· ${FOUND.join(`${NL}· `)}${NL}Sources are on your project page. Does it change anything?`
@@ -2491,13 +2499,160 @@ test('F229: during a talk step, research runs in the background — the look lin
   // their answer goes back into the step as a note; nothing in the step's record moved
   await $.prompt.submit({ text: 'yes: make the weather help both gardens' } as any)
   expect(prompts[prompts.length - 1]).toMatch(/the creative's answer to the research's "Does it change anything\?"[\s\S]*Take it into step "ask" and carry on exactly where it was/)
-  expect(researchFile(w)).toMatchObject({ now: null, notes: [{ step: 'ask', question: RQ, found: FOUND, answer: 'yes: make the weather help both gardens' }] })
+  // (taken into the step there and then: the note is used, so a restart of the step never reads it again — review fix 4)
+  expect(researchFile(w)).toMatchObject({ now: null, notes: [{ step: 'ask', question: RQ, found: FOUND, answer: 'yes: make the weather help both gardens', used: true }] })
   expect(record(w)).toEqual(before)
-  // the step's next turn reads it (a new window resumes the step)
   await $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: false })
   await $.prompt.submit({ text: 'bmuz go' } as any)
   await turn($, 't3')
-  expect(prompts.some(p => /Research the creative asked for during this step[\s\S]*Their answer to "Does it change anything\?": "yes: make the weather help both gardens"/.test(p))).toBe(true)
+  expect(prompts.some(p => /Research the creative asked for during this step/.test(p))).toBe(false)
+})
+
+test('F229 review fix 4: a note the step hasn\'t read yet is read once per step run (marked used), never again on a restart; old used notes are trimmed', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 10, 11, 12) })
+  const { w, prompts } = researchWorld(on)
+  const old = Array.from({ length: 25 }, (_, i) => ({ pipeline: 'hello', step: 'other', question: `old ${i}`, out: 'o.md', found: [], answer: '', used: true }))
+  w.files['/proj/.bmuz/research.json'] = JSON.stringify({ now: null, notes: [...old, { pipeline: 'hello', step: 'ask', question: RQ, out: 'r.md', found: FOUND, answer: 'auto: none' }] })
+  await start($, false)
+  const read = () => prompts.filter(p => /Research the creative asked for during this step[\s\S]*has a co-op garden game/.test(p)).length
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't1')
+  expect(read()).toBe(1)
+  const rf = researchFile(w)
+  expect(rf.notes.filter((n: any) => n.used).length).toBe(20)
+  expect(rf.notes.find((n: any) => n.question === RQ).used).toBe(true)
+  // a restart of the same step (a new window) doesn't read it again
+  await $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: false })
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't2')
+  expect(read()).toBe(1)
+})
+
+test('F229 review fix 1: the answer for a step that has finished changes what it wrote now — that file only, this turn only, journaled, the engine\'s line naming the file; never the current step\'s own edit', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 10, 11, 12) })
+  const { w, prompts } = researchWorld(on)
+  const p = JSON.parse(w.files.PIPELINE)
+  p.steps.splice(1, 0, { id: 'ask-write', kind: 'script', needs: ['ask'], run: ['node', 'w.mjs'], writes: ['.planning/GDD.md', '.planning/project-page.html'] })
+  p.steps[2] = { ...p.steps[2], needs: ['ask-write'] }
+  p.steps.push({ id: 'later', kind: 'talk', needs: ['gate'], tools: ['Read'], craft: 'craft/name.md' })
+  w.files.PIPELINE = JSON.stringify(p)
+  w.files['/proj/.planning/GDD.md'] = '# Garden Race\n## 4. Rules\nWeather hurts the other garden.\n'
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ pipeline: 'hello', current: 'later', status: 'working', results: {}, retries: {}, finished: ['ask', 'ask-write', 'helpers', 'gate'], blocked: null, startedAt: 1 })
+  w.files['/proj/.bmuz/research.json'] = JSON.stringify({ now: { status: 'asked', question: RQ, pipeline: 'hello', step: 'ask', place: 'Hello · ask', out: 'r.md', found: FOUND, session: 'test-session' }, notes: [] })
+  await start($, true)
+  const before = record(w)
+  await $.prompt.submit({ text: 'yes: weather should help both gardens' } as any)
+  expect(prompts[prompts.length - 1]).toMatch(/The step it came from \(Hello · ask\) is finished\. What it wrote: \.planning\/GDD\.md\. If their answer asks for a change, make exactly that change now/)
+  // Edit on that file is let through (the later step's tools don't have it); anything else isn't
+  const ed: any = await $.tool.call({ tool: 'Edit', file_path: '/proj/.planning/GDD.md', old_string: 'hurts the other garden', new_string: 'helps both gardens' } as any)
+  expect(refused(ed)).toBe(false)
+  expect(refused(await $.tool.call({ tool: 'Edit', file_path: '/proj/src/x.js', old_string: 'a', new_string: 'b' } as any))).toBe(true)
+  expect(events(w).find((j: any) => j.ev === 'research.tweak')).toMatchObject({ step: 'ask', file: '.planning/GDD.md' })
+  expect(String(w.files['/proj/.bmuz/own.json'] ?? '')).not.toMatch(/GDD/)
+  const said1: any = await $.tool.call({ tool: 'mcp__bmuz__research', changed: 'weather helps both gardens', file: '.planning/GDD.md' } as any)
+  expect(said(said1).say).toBe('Changed .planning/GDD.md for your answer: weather helps both gardens.')
+  await $.turn.complete({ answer: said(said1).say, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  // the window is closed after this turn
+  expect(refused(await $.tool.call({ tool: 'Edit', file_path: '/proj/.planning/GDD.md', old_string: 'helps', new_string: 'x' } as any))).toBe(true)
+  expect(record(w)).toEqual(before)
+})
+
+test('F229 review fix 2: an Esc in the "Let me look" turn drops the launch (never "busy" forever), and the creative is told it didn\'t start', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 10, 11, 12) })
+  const { w, prompts } = researchWorld(on)
+  await start($, true)
+  await startHere($)
+  await $.tool.call({ tool: 'mcp__bmuz__research', question: RQ } as any)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: true, turnId: 't1' } as any)
+  expect(researchFile(w).now).toBe(null)
+  expect(events(w).find((j: any) => j.ev === 'research.unlaunched').why).toMatch(/stopped/)
+  // their next message carries the line; a new ask is not "busy"
+  await $.prompt.submit({ text: 'ok, ask it again' } as any)
+  expect(prompts[prompts.length - 1]).toContain(`The research on "${RQ}" didn't start. Ask again when you want it.`)
+  const again: any = await $.tool.call({ tool: 'mcp__bmuz__research', question: RQ } as any)
+  expect(said(again).say).toBe('Let me look. About 5 minutes…')
+  // not aborted: the line is said at once
+  await $.turn.complete({ answer: 'Let me look. About 5 minutes…', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' } as any)
+  expect(prompts[prompts.length - 1]).toContain(`The research on "${RQ}" didn't start.`)
+})
+
+test('F229 review fix 3: while the research waits for an answer, a message to the step\'s own open question is the step\'s; the research is asked once more after, then dropped into the notes', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 10, 11, 12) })
+  const { w, prompts } = researchWorld(on)
+  const p = JSON.parse(w.files.PIPELINE)
+  p.steps[0] = { ...p.steps[0], lines: ['ideate.idea'] }
+  w.files.PIPELINE = JSON.stringify(p)
+  w.files['/proj/.bmuz/research.json'] = JSON.stringify({ now: { status: 'asked', question: RQ, pipeline: 'hello', step: 'ask', place: 'x', out: 'r.md', found: FOUND, session: 'test-session' }, notes: [] })
+  await start($, true)
+  await startHere($)
+  await $.tool.call({ tool: SAY, line: 'ideate.idea' } as any)
+  await $.turn.complete({ answer: `Your Idea${NL}Tell me about your game in your own words.`, durationMs: 1, isAborted: false, turnId: 't0b', reason: 'answer' } as any)
+  await $.prompt.submit({ text: 'A garden race for two.' } as any)
+  expect(events(w).some((j: any) => j.ev === 'answer' && j.via === 'typed' && j.text === 'A garden race for two.')).toBe(true)
+  expect(researchFile(w).now).toMatchObject({ status: 'asked', setAside: true })
+  // the step's question answered (none open now): the research's is asked once more
+  await $.turn.complete({ answer: 'Got it.', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(prompts[prompts.length - 1]).toContain(FOUND_TEXT)
+  expect(researchFile(w).now.reasked).toBe(true)
+  // the step asks again before they answer it: that message is the step's, and the research goes into the notes
+  await $.tool.call({ tool: SAY, line: 'ideate.idea' } as any)
+  await $.prompt.submit({ text: 'Quick games on phones.' } as any)
+  expect(researchFile(w)).toMatchObject({ now: null, notes: [{ question: RQ, answer: '' }] })
+})
+
+test('F229 review fix 5: a research from another window is told to the creative plainly at the next chance', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = researchWorld(on)
+  w.files['/proj/.bmuz/research.json'] = JSON.stringify({ now: { status: 'running', question: RQ, session: 'old-window', out: '.planning/research/x.md' }, notes: [] })
+  await start($, true)
+  await $.prompt.submit({ text: 'hello again' } as any)
+  expect(prompts[prompts.length - 1]).toContain(`Your research on "${RQ}" stopped when the window closed. Ask again?`)
+  expect(researchFile(w).sayNext).toEqual([])
+})
+
+test('F229 review fix 6: a flow step waits while the creative\'s research runs, and starts when it\'s back', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 10, 11, 12) })
+  const { w, prompts } = researchWorld(on)
+  await start($, true)
+  await startHere($)
+  await $.tool.call({ tool: 'mcp__bmuz__research', question: RQ } as any)
+  await $.tool.call({ tool: 'Workflow', name: 'x', tool_use_id: 'tu-w' } as any)
+  // the talk step finishes; its next step is a flow: held back
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { priorArt: 'no' } } as any)
+  await $.turn.complete({ answer: 'Let me look. About 5 minutes…', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(events(w).map((j: any) => `${j.ev}:${j.step ?? ''}`).join(' ')).toMatch(/flow\.waits:helpers/)
+  expect(events(w).some((j: any) => j.ev === 'step.start' && j.step === 'helpers')).toBe(false)
+  // the research is back: the flow starts at that turn's end
+  await $.prompt.submit(done('tu-w') as any)
+  await $.turn.complete({ answer: FOUND_TEXT, durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' } as any)
+  expect(events(w).some((j: any) => j.ev === 'step.start' && j.step === 'helpers')).toBe(true)
+  expect(prompts.some(p => /Call the Workflow tool now with name "bmuz:hello-flow"/.test(p))).toBe(true)
+})
+
+test('F229 review item 8: a "mustIf" line is a must when the result says yes there — step_done is refused until it was said', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = researchWorld(on)
+  const p = JSON.parse(w.files.PIPELINE)
+  p.steps[0] = { ...p.steps[0], lines: ['ideate.idea', 'define.pitch.how'], mustIf: { 'define.pitch.how': '{priorArt}' } }
+  w.files.PIPELINE = JSON.stringify(p)
+  expect(E.checkPipeline(p)).toEqual([])
+  expect(E.checkPipeline({ ...p, steps: [{ ...p.steps[0], mustIf: { 'define.pitch.how': '{nope}' } }] }).join(' ')).toMatch(/"mustIf" for "define.pitch.how" must be "\{key\}"/)
+  await start($, false)
+  await startHere($)
+  // "no": the box isn't needed
+  expect(E.mustProblem(p.steps[0], { said: { step: 'ask', lines: [] } }, { priorArt: 'no' })).toBe(null)
+  const r: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { priorArt: 'yes' } } as any)
+  expect(String(r.result ?? r.text ?? '')).toMatch(/"define.pitch.how" was never said/)
+  expect(events(w).some((j: any) => j.ev === 'step.done' && j.step === 'ask')).toBe(false)
+})
+
+test('F229 review item 9: a bug reported while a step from an earlier window waits leaves it for "bmuz go" (the same words as research)', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = bugWorld(on, { current: 'name', status: 'working' })
+  await start($, true)
+  const r: any = await $.tool.call(REPORT as any)
+  expect(JSON.parse(String(r.result)).then).toMatch(/Then end your turn: step "name" picks up exactly where it was when the creative says "bmuz go"\./)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).current).toBe('name')
 })
 
 test('F229: the research question came as the answer to the step\'s box: the box is asked again after the look line', async ($, on) => {

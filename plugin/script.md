@@ -1004,6 +1004,15 @@ I'm still looking into "{question}". One question at a time: ask me this one aga
 ## research.none · say · added
 I couldn't find sources I trust on "{question}", so I have nothing to add yet. Back to {back}.
 
+## research.changed · say · added
+Changed {file} for your answer: {what}.
+
+## research.notstarted · say · added
+The research on "{question}" didn't start. Ask again when you want it.
+
+## research.lost · say · added
+Your research on "{question}" stopped {why}. Ask again?
+
 # Fixing a bug (F215: the bug pipeline)
 
 ## bug.fix.start · say · added

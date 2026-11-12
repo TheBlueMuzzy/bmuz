@@ -82,7 +82,7 @@ test('F215: the step-in reply for a bug and the 4.0 "Something broken" line are 
 })
 
 test('lines not in the approved script are marked "added" (each one has an Ask Muzzy line)', () => {
-  assert.deepEqual(Object.values(script.lines).filter(l => l.added).map(l => l.id).sort(), ['any.keep', 'bug.fix.done', 'bug.fix.reproduced', 'bug.fix.start', 'bug.none', 'bug.now', 'bug.often', 'bug.verified', 'define.feelings.eight', 'deliver.back', 'deliver.live', 'deliver.notready.box', 'design.rulebook.ok', 'design.rulebook.section', 'design.sketches.none', 'design.time.notrap', 'develop.idea', 'develop.plan.one', 'develop.setup.nologin', 'develop.waiting', 'release.none', 'release.notyet', 'release.out', 'release.walk', 'release.walk.link', 'release.walk.live.box', 'research.busy', 'research.none', 'research.wait'])
+  assert.deepEqual(Object.values(script.lines).filter(l => l.added).map(l => l.id).sort(), ['any.keep', 'bug.fix.done', 'bug.fix.reproduced', 'bug.fix.start', 'bug.none', 'bug.now', 'bug.often', 'bug.verified', 'define.feelings.eight', 'deliver.back', 'deliver.live', 'deliver.notready.box', 'design.rulebook.ok', 'design.rulebook.section', 'design.sketches.none', 'design.time.notrap', 'develop.idea', 'develop.plan.one', 'develop.setup.nologin', 'develop.waiting', 'release.none', 'release.notyet', 'release.out', 'release.walk', 'release.walk.link', 'release.walk.live.box', 'research.busy', 'research.changed', 'research.lost', 'research.none', 'research.notstarted', 'research.wait'])
 })
 
 // F229: the research reply (the spec's "Any time: when the designer steps in"), word for word, the [slot] parts and the

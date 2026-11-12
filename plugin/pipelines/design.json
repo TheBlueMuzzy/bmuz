@@ -27,6 +27,7 @@
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["design.sketches", "design.sketches.list", "design.sketches.none", "design.sketches.order"],
       "opening": ["design.sketches"],
+      "mustIf": { "design.sketches.order": "{build}" },
       "craft": "craft/design-sketches.md",
       "results": ["plan", "build"]
     },

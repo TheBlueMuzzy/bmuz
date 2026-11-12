@@ -122,11 +122,34 @@ export async function checkSources(text, { offline = false, ...fetchOpts } = {})
 
 // F229: the research flow drops dead links itself, before this check reads its report: the same test, on a list of
 // links. Returns [{ url, why }] for the ones that don't answer (offline: none are tried).
-export async function deadLinks(urls, { offline = false, ...fetchOpts } = {}) {
+// (review fix 7) At most LINK_CAP links are tried, LINK_AT_ONCE at a time (each up to 3 tries of a HEAD and a GET); the
+// rest are handed back as unchecked, never as dead.
+export const LINK_CAP = 60
+export const LINK_AT_ONCE = 6
+export async function deadLinks(urls, { offline = false, ...opts } = {}) {
   if (offline) return []
+  return (await tryLinks(urls, opts)).dead
+}
+// { dead: [{ url, why }], unchecked: [url], most: the most tried at once }
+export async function tryLinks(urls, { cap = LINK_CAP, atOnce = LINK_AT_ONCE, ...fetchOpts } = {}) {
   const list = [...new Set((Array.isArray(urls) ? urls : []).filter(u => /^https?:\/\/\S+$/i.test(String(u))))]
-  const tried = await Promise.all(list.map(async url => ({ url, why: await linkAnswers(url, fetchOpts) })))
-  return tried.filter(d => d.why)
+  const now = list.slice(0, cap)
+  const why = new Map()
+  let next = 0
+  let busy = 0
+  let most = 0
+  const worker = async () => {
+    while (next < now.length) {
+      const url = now[next++]
+      busy++
+      most = Math.max(most, busy)
+      const w = await linkAnswers(url, fetchOpts)
+      busy--
+      if (w) why.set(url, w)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(atOnce, now.length) }, worker))
+  return { dead: now.filter(u => why.has(u)).map(u => ({ url: u, why: why.get(u) })), unchecked: list.slice(cap), most }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
@@ -135,8 +158,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   if (args[0] === '--dead') {
     const offline = process.env.BMUZ_SOURCES_OFFLINE === '1'
     // (BMUZ_LINK_TIMEOUT_MS: a test's local server that never answers is given up on sooner)
-    const dead = await deadLinks(args.slice(1), { offline, timeoutMs: Number(process.env.BMUZ_LINK_TIMEOUT_MS) || 8000 })
-    console.log(JSON.stringify({ dead, ...(offline ? { offline: true } : {}) }))
+    const got = offline ? { dead: [], unchecked: [] } : await tryLinks(args.slice(1), { timeoutMs: Number(process.env.BMUZ_LINK_TIMEOUT_MS) || 8000 })
+    console.log(JSON.stringify({ dead: got.dead, unchecked: got.unchecked, ...(offline ? { offline: true } : {}) }))
     process.exit(0)
   }
   const file = args.find(x => !x.startsWith('--'))

@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as E from '../plugin/hooks/engine.js'
-import { checkReport, checkSources, deadLinks } from '../plugin/scripts/check-sources.mjs'
+import { checkReport, checkSources, deadLinks, tryLinks } from '../plugin/scripts/check-sources.mjs'
 import { found, shortLines, stub } from '../plugin/scripts/research.mjs'
 import { designTabs, researchReports, writePage } from '../plugin/scripts/gdd.mjs'
 
@@ -169,8 +169,14 @@ test('F229 task 2: the engine lets a research helper run exactly the link test �
   assert.equal(judge(st('research'), `node "${CHECKER}" --dead ${OK}`).allow, false) // unquoted: the shell would read it
   assert.equal(judge(st('research'), `node "/elsewhere/check-sources.mjs" --dead '${OK}'`).allow, false)
   assert.equal(judge(st('build'), cmd).allow, false) // another step's helper: the plugin path is outside the project
-  // the creative's own research, running beside any step (F229 task 3)
-  assert.equal(judge(st('build'), cmd, { research: { status: 'running' } }).allow, true)
+  // the creative's own research (F229 task 3), only while no flow step's helpers work (review fix 6: one crew at a time)
+  assert.equal(judge({ ...st('build'), status: 'idle', current: null, finished: ['research'] }, cmd, { research: { status: 'running' } }).allow, true)
+  assert.equal(judge(st('build'), cmd, { research: { status: 'running' } }).allow, false)
+  for (const tool of ['WebSearch', 'WebFetch']) {
+    const helper = (state, research) => E.judgeTool(p, state, { tool, agentId: 'a1', input: {} }, { dir: '/proj', root: ROOT, research })
+    assert.equal(helper({ ...st('build'), status: 'idle', current: null, finished: ['research'] }, { status: 'running' }).allow, true)
+    assert.equal(helper(st('build'), { status: 'running' }).allow, false) // the build step's helpers keep their own list
+  }
   assert.equal(E.isLinkCheck(`node "${CHECKER}" --dead 'https://a.example/x?y=1&z=2'`, ROOT), true)
   assert.equal(E.isLinkCheck(`node "${CHECKER}" --dead 'https://a.example/x' 'ftp://b'`, ROOT), false)
 })
@@ -270,4 +276,44 @@ test('F229 task 4: the project page has a Sources tab — every research report 
     assert.match(page, /<a href="#sources">Sources<\/a>/)
     assert.match(page, /<h2 id="sources">Sources<\/h2>/)
   } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+// ---- review fixes ----
+test('F229 review fix 7: the link test tries at most 60 links, 6 at a time; the rest come back unchecked, never dead', async () => {
+  const many = Array.from({ length: 70 }, (_, i) => `${OK}?n=${i}`)
+  const got = await tryLinks([...many, GONE], { timeoutMs: 300, tries: 1, waitMs: 1 })
+  assert.equal(got.unchecked.length, 11) // 71 links: 60 tried
+  assert.ok(got.unchecked.includes(GONE))
+  assert.deepEqual(got.dead, [])
+  assert.ok(got.most <= 6 && got.most >= 2, `at most 6 at once (${got.most})`)
+  const two = await tryLinks([GONE, OK], { cap: 1, timeoutMs: 300, tries: 1 })
+  assert.deepEqual([two.dead.map(d => d.url), two.unchecked], [[GONE], [OK]])
+  // the flow: a report citing more than 60 links tries 60 and says so in the report
+  const big = (prompt, opts) => {
+    const id = (opts.label || '').replace('lens: ', '')
+    if (!['mainstream', 'extremes', 'outside', 'disconfirm'].includes(id)) return answer(prompt, opts)
+    const l = lens(id)
+    // (each lens lists 18 more pages it read: 4 × 22 cited links in all)
+    l.sources.push(...Array.from({ length: 18 }, (_, i) => ({ url: `${OK}?${id}=${i}`, title: `${id} extra ${i}` })))
+    return l
+  }
+  const { commands, written } = await runFlow(QUESTION, big)
+  assert.equal([...commands[0].matchAll(/'[^']+'/g)].length, 60)
+  assert.match(written, /Links not tried before the source check: \d+ \(over the cap of 60, or not safe to pass\)/)
+})
+
+test('F229 review fixes 1 and 4: what a finished step wrote (its own and its script steps\' files, never the page or research); notes read once and trimmed', () => {
+  const p = { steps: [
+    { id: 'flow', kind: 'talk' },
+    { id: 'flow-rb', kind: 'script', needs: ['flow'], writes: ['.planning/design/RULEBOOK.md', '.planning/project-page.html'] },
+    { id: 'flow-gdd', kind: 'script', needs: ['flow'], writes: ['.planning/GDD.md', 'content/data/*.json'] },
+    { id: 'other', kind: 'talk', needs: ['flow'], writes: ['x.md'] },
+  ] }
+  assert.deepEqual(E.stepWrites(p, p.steps[0], {}), ['.planning/design/RULEBOOK.md', '.planning/GDD.md'])
+  const notes = [...Array.from({ length: 22 }, (_, i) => ({ step: 'z', question: `q${i}`, used: true })), { pipeline: 'design', step: 'flow', question: 'new', found: ['a'], answer: 'yes' }]
+  const once = E.useNotes(notes, 'flow', 'design')
+  assert.match(once.text, /"new"/)
+  assert.equal(once.notes.filter(n => n.used).length, E.KEEP_USED)
+  assert.equal(once.notes.find(n => n.question === 'new').used, true)
+  assert.equal(E.useNotes(once.notes, 'flow', 'design').text, '')
 })

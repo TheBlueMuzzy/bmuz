@@ -304,8 +304,13 @@ const linkCommand = (checker, urls) => `node "${checker}" --dead ${urls.map(quot
 const checker = typeof a.checker === 'string' && /check-sources\.mjs$/.test(a.checker) && !/["'`$\n\r]/.test(a.checker) ? a.checker : ''
 const dead = new Map() // url -> why
 const cited = [...new Set([...titles.keys(), ...Object.values(raw).flatMap(r => [...r.notes, ...r.bricks, ...r.assumptions].flatMap(n => n.urls))])]
-// (a link with a quote or a space in it can't be passed safely; it is left to the source check)
-const checkable = cited.filter(u => !/['\s\\]/.test(u))
+// (a link with a quote or a space in it can't be passed safely; it is left to the source check. Review fix 7: at most
+// LINK_CAP links are tried, the rest left to the source check, marked so in the report)
+const LINK_CAP = 60
+const passable = cited.filter(u => !/['\s\\]/.test(u))
+const checkable = passable.slice(0, LINK_CAP)
+const notChecked = cited.filter(u => !checkable.includes(u))
+if (notChecked.length && checker) log(`${notChecked.length} link${notChecked.length > 1 ? 's' : ''} not tried here (over the cap of ${LINK_CAP}, or not safe to pass): left to the source check`)
 if (!checker) log('no link checker was given: dead links are left to the source check')
 else if (checkable.length) {
   phase('Check links')
@@ -478,6 +483,7 @@ const md = [
   '',
   'Where each lens stopped (saturation or the cap):',
   ...LENSES.map(l => `${l.name}: ${raw[l.id].saturation}`),
+  ...(checker && notChecked.length ? [`Links not tried before the source check: ${notChecked.length} (over the cap of ${LINK_CAP}, or not safe to pass)`] : []),
   '',
   '## Question',
   `- Research: ${topic.name} — ${topic.task}`,

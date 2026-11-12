@@ -70,6 +70,8 @@ let talkStartedHere = ''
 let research: any = { now: null, notes: [] }
 // (the flow was handed over in this turn: a turn that ends with it still "launching" never started it)
 let researchHanded = false
+// (review fix 6) a flow step held back while the creative's research runs: it starts when the research is done
+let flowWaitsResearch = false
 
 const SAFE_DENY = 'BMUZ engine hit an error in its own code, so it refused this action to be safe. Run /bmuz-doctor.'
 
@@ -632,8 +634,8 @@ async function registerAll($: any) {
   })
   await $.tool.register({
     name: 'research',
-    description: 'BMUZ engine (any stage, any step): the creative asked for research — "what\'s the research say about this?", "has this been done?", a creative block, a rule that doesn\'t work, a risk to test. Give their question in their words, and what it\'s about from the step: {"question": "...", "about": "..."}. The sourced research flow runs in the background while the step carries on where it was. Returns the line to say word for word and what to do next.',
-    inputSchema: { type: 'object', properties: { question: { type: 'string' }, about: { type: 'string' } }, required: ['question'] },
+    description: 'BMUZ engine (any stage, any step): the creative asked for research — "what\'s the research say about this?", "has this been done?", a creative block, a rule that doesn\'t work, a risk to test. Give their question in their words, and what it\'s about from the step: {"question": "...", "about": "..."}. The sourced research flow runs in the background while the step carries on where it was. Returns the line to say word for word and what to do next. (After a change made for the creative\'s answer, when the engine asks: {"changed": "what changed", "file": "<the file>"}.)',
+    inputSchema: { type: 'object', properties: { question: { type: 'string' }, about: { type: 'string' }, changed: { type: 'string' }, file: { type: 'string' } } },
     isDeferred: false,
   })
   await $.tool.register({
@@ -945,8 +947,13 @@ async function startTalk($: any, step: any, why: string) {
   talkStartedHere = `${step.id}#${ctx.state.retries[step.id] || 0}`
   hiddenNotes = E.talkPrompt(step, craft, why, ctx.auto, decided, { recap, wrap: wrapWords(step), answers, intro: !!intro, given, script: ctx.script, opened: ctx.state.opened === step.id, back })
   // (F229: the research the creative asked for during this step, with their answer to "Does it change anything?")
-  const researched = E.researchNotesFor(research.notes, step.id, ctx.pipeline.id)
-  if (researched) hiddenNotes += `\n${researched}`
+  // (review fix 4: read once per step run — marked used, old used notes trimmed)
+  const researched = E.useNotes(research.notes, step.id, ctx.pipeline.id)
+  if (researched.text) {
+    hiddenNotes += `\n${researched.text}`
+    research.notes = researched.notes
+    await saveResearch($)
+  }
   // (F216: in Develop a new idea is noted, never built now)
   if (['develop', 'feature'].includes(ctx.pipeline.id)) hiddenNotes += `\n${E.IDEA_RULE}`
   // A resume (a new window, "bmuz go") while a free question is open: Claude says the same question again.
@@ -1138,6 +1145,13 @@ async function advance($: any, resume: boolean, opts: { timer?: boolean, go?: bo
       await save($)
       continue
     }
+    // F229 review fix 6: one crew of helpers at a time — a flow step waits while the creative's research runs (whose
+    // helper is calling can't be told apart); it starts when the research is back, or dropped
+    if (step.kind === 'flow' && (await researchBusy($))) {
+      if (!flowWaitsResearch) await journal($, { ev: 'flow.waits', step: step.id, question: research.now.question })
+      flowWaitsResearch = true
+      return
+    }
     if (isRestart && resume) await journal($, { ev: 'resume', step: step.id, status: s.status })
     ctx.state = E.begin(ctx.state, step, await $.clock.now())
     // The checkpoint comes before the step.start line: a crash between them then retakes it (the files
@@ -1269,7 +1283,7 @@ async function stepDone($: any, e: any) {
   // Every key in the step's "results" list must come back (a slug that names a file must be a slug).
   const missing = E.resultProblems(ctx.pipeline, step, result)
   // The lines the step always says ("must") were all handed out, live or auto (a wrap-up is the creative's choice).
-  const unsaid = wrap === true ? null : E.mustProblem(step, ctx.state)
+  const unsaid = wrap === true ? null : E.mustProblem(step, ctx.state, result)
   const firstVerdict = unsaid ? { ok: false, why: unsaid } : !cardVerdict.ok ? cardVerdict : missing ? { ok: false, why: missing } : null
   const verdict = firstVerdict ?? E.doneCheck(step, checkVars(step, result), await look($, step, result))
   const next = await settle($, step, verdict, result)
@@ -1478,11 +1492,11 @@ async function bugTool($: any, e: any) {
   if (now) {
     pendingFix = { id: ran.id, sweep: [] }
     then += ' Then end your turn: the engine starts the fix itself, and comes back to this step after it.'
-  } else if (talkOpen) {
-    // (the report came as the answer to a question box, or to an open free question: that question is asked again)
-    const again = askedThisTurn || askClosedThisTurn
-    then += ` Then carry on with step "${step.id}" exactly where it was${again ? ': the bug came in place of an answer, so ask the step\'s open question again, the way you asked it (a script line through say)' : ''}.`
-  } else then += ' Then end your turn.'
+  } else {
+    // (the report came as the answer to a question box, or to an open free question: that question is asked again; a step
+    // this window never started is left for "bmuz go" — F229 review item 9, the research step-in's fix, shared)
+    then += ` Then ${carryOnWords('the bug')}`
+  }
   return { result: JSON.stringify({ say: line.text, id: ran.id, then }) }
 }
 
@@ -1514,16 +1528,39 @@ async function ideaTool($: any, e: any) {
 async function loadResearch($: any) {
   let j: any = null
   try { j = JSON.parse((await readText($, `${ctx.dir}/.bmuz/research.json`)) ?? 'null') } catch (err) { j = null }
-  research = j && typeof j === 'object' ? { now: j.now ?? null, notes: Array.isArray(j.notes) ? j.notes : [] } : { now: null, notes: [] }
-  // (a research started in another window can't report back here: its helpers belonged to that session)
+  research = j && typeof j === 'object' ? { now: j.now ?? null, notes: Array.isArray(j.notes) ? j.notes : [], sayNext: Array.isArray(j.sayNext) ? j.sayNext : [] } : { now: null, notes: [], sayNext: [] }
+  // (a research started in another window — or an auto run that has ended — can't report back here: its helpers belonged
+  // to that session. Review fix 5: the creative is told so plainly at the next chance, not only the journal.)
   const n = research.now
   if (n && n.session !== ctx.sessionId && ['waiting', 'launching', 'running'].includes(n.status)) {
     await journal($, { ev: 'research.lost', question: n.question, status: n.status, why: 'it was started in another window' })
     research.now = null
+    research.sayNext = [...research.sayNext, { line: 'research.lost', slots: { question: n.question, why: 'when the window closed' } }]
     await saveResearch($)
   }
 }
+// Lines the creative is still owed about their research (it didn't start; it stopped when a window closed), said at the
+// next chance: the words for Claude, or null. Journaled and checked word for word at that turn's end.
+async function sayNextNote($: any) {
+  const owed = Array.isArray(research.sayNext) ? research.sayNext : []
+  if (!owed.length) return null
+  research.sayNext = []
+  await saveResearch($)
+  const texts: string[] = []
+  for (const o of owed) {
+    const line = await stepInLine($, o.line, o.slots || {})
+    if (!line.error) texts.push(line.text)
+    else await journal($, { ev: 'deviation', step: ctx.state.current ?? null, tool: null, agentId: null, why: `a research line owed to the creative couldn't be said: ${line.error}` })
+  }
+  return texts.length ? `BMUZ engine: before anything else, write this to the creative word for word, as its own paragraph:\n\n${texts.join('\n\n')}\n\n` : null
+}
 async function saveResearch($: any) {
+  // (review fix 4: only the newest used notes are kept)
+  const used = research.notes.filter((n: any) => n && n.used)
+  if (used.length > E.KEEP_USED) {
+    const drop = new Set(used.slice(0, used.length - E.KEEP_USED))
+    research.notes = research.notes.filter((n: any) => !drop.has(n))
+  }
   await $.fs.write(`${ctx.dir}/.bmuz/research.json`, JSON.stringify(research, null, 2))
 }
 async function runResearch($: any, args: string[]) {
@@ -1545,20 +1582,42 @@ async function stepInLine($: any, id: string, slots: any) {
   turnSaid.lines = [...turnSaid.lines.filter(l => l.id !== line.id), { id: line.id, text: line.text }]
   return line
 }
+// (review fix 6) Is the creative's research in hand (launching or running)? One running past RESEARCH_STALE_MS never
+// reported back: it is dropped (journaled, the creative told), so nothing waits on it forever.
+async function researchBusy($: any) {
+  const n = research.now
+  if (!n || !['launching', 'running'].includes(n.status)) return false
+  if (n.status === 'running' && n.at && (await $.clock.now()) - n.at > E.RESEARCH_STALE_MS) {
+    await journal($, { ev: 'research.lost', question: n.question, status: n.status, why: 'it never reported back' })
+    research.now = null
+    research.sayNext = [...(research.sayNext || []), { line: 'research.lost', slots: { question: n.question, why: 'without reporting back' } }]
+    await saveResearch($)
+    researchEnded()
+    return false
+  }
+  return true
+}
+// (review fix 6) The research is done or dropped: a flow step held back for it starts at this turn's end
+function researchEnded() {
+  if (!flowWaitsResearch) return
+  flowWaitsResearch = false
+  if (!pending) pending = 'resume'
+}
 // The step whose own helpers are working now, or null
 function flowWorking() {
   const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
   return step && step.kind === 'flow' && ctx.state.status === 'working' ? step : null
 }
-// After a step-in: back to where the step was
-function carryOnWords() {
+// After a step-in (research, a bug — review item 9 shares it): back to where the step was. what = what came in place of
+// the step's answer.
+function carryOnWords(what = 'the research question') {
   const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
   if (step && step.kind === 'talk' && ctx.state.status === 'working') {
     // (a step this window never started — one waiting from an earlier session — stays as it is until "bmuz go":
     // headless run 22:49, told to carry on, an auto run did the step and ran on through Design)
     if (talkStartedHere !== `${step.id}#${ctx.state.retries[step.id] || 0}`) return `end your turn: step "${step.id}" picks up exactly where it was when the creative says "bmuz go".`
     const again = askedThisTurn || askClosedThisTurn
-    return `carry on with step "${step.id}" exactly where it was${again ? ': the research question came in place of an answer, so ask the step\'s open question again, the way you asked it (a script line through say)' : ''}.`
+    return `carry on with step "${step.id}" exactly where it was${again ? `: ${what} came in place of an answer, so ask the step's open question again, the way you asked it (a script line through say)` : ''}.`
   }
   if (step && ctx.state.status === 'waiting') return `end your turn: the gate "${step.id}" is still open and waits for the creative's answer.`
   return 'end your turn.'
@@ -1568,6 +1627,7 @@ function launchWords() {
 }
 
 async function researchTool($: any, e: any) {
+  if (e.changed !== undefined) return researchChanged($, e)
   const question = String(e.question ?? '').replace(/\s+/g, ' ').trim().slice(0, 400)
   if (!question) return { deny: 'BMUZ engine: give the creative\'s question in their words: {"question": "...", "about": "what it\'s about, from the step"}' }
   stepInTurn = true
@@ -1605,7 +1665,7 @@ async function researchTool($: any, e: any) {
   }
   // (a test run's stand-in for the flow: the report is copied in, and comes back at this turn's end)
   const st = await runResearch($, ['stub', out, question, day, place])
-  research.now = { ...base, status: st.stub ? 'running' : 'launching', stub: !!st.stub }
+  research.now = { ...base, status: st.stub ? 'running' : 'launching', stub: !!st.stub, ...(st.stub ? { at: await $.clock.now() } : {}) }
   await saveResearch($)
   await journal($, { ev: 'research.asked', question, out, step: base.step, stub: !!st.stub })
   const line = await stepInLine($, 'research.look', { time: E.RESEARCH_TIME })
@@ -1619,6 +1679,7 @@ async function researchTool($: any, e: any) {
 async function researchDone($: any, status: string) {
   const now = research.now
   const r = status === 'completed' ? await runResearch($, ['found', now.out]) : { ok: false, why: `the research flow ended ${status}` }
+  researchEnded()
   stepInTurn = true
   await markActive($)
   const step = now.step && now.pipeline === ctx.pipeline.id ? E.stepById(ctx.pipeline, now.step) : null
@@ -1658,10 +1719,41 @@ async function researchAnswer($: any, text: string) {
   await journal($, { ev: 'research.answer', step: now.step, question: now.question, text: text.slice(0, 2000) })
   const here = now.pipeline === ctx.pipeline.id && now.step && now.step === ctx.state.current
   const step = here ? E.stepById(ctx.pipeline, now.step) : null
-  const back = step && step.kind === 'talk' && ctx.state.status === 'working'
-    ? `Take it into step "${step.id}" and carry on exactly where it was: if it changes something, change that (nothing the creative didn't ask for); if its question was open, ask it again the way you asked it.`
-    : `It's noted for ${now.place}, which reads it when it runs again. Answer in one plain line, then ${carryOnWords()}`
-  return `BMUZ engine: this message is the creative's answer to the research's "Does it change anything?" (on "${now.question}": ${note.found.join(' · ')}). ${back} Never offer a menu.`
+  const head = `BMUZ engine: this message is the creative's answer to the research's "Does it change anything?" (on "${now.question}": ${note.found.join(' · ')}).`
+  if (step && step.kind === 'talk' && ctx.state.status === 'working') {
+    // (taken into the step there and then: the note is used)
+    note.used = true
+    await saveResearch($)
+    return `${head} Take it into step "${step.id}" and carry on exactly where it was: if it changes something, change that (nothing the creative didn't ask for); if its question was open, ask it again the way you asked it. Never offer a menu.`
+  }
+  // (review fix 1) The step it came from is finished — the usual case, research takes minutes — so a note it would
+  // read only if it ran again would lose the change. What that step wrote (its files, and those of the steps that write
+  // its results down) may be changed now, this turn only, journaled; the engine's line names the file that changed.
+  const from = now.pipeline === ctx.pipeline.id && now.step ? E.stepById(ctx.pipeline, now.step) : null
+  const files = from ? E.stepWrites(ctx.pipeline, from, vars()) : []
+  note.used = true
+  if (!files.length) {
+    await saveResearch($)
+    return `${head} The step it came from (${now.place}) is finished and wrote no file to change, so it's noted. Answer in one plain line, then ${carryOnWords()} Never offer a menu.`
+  }
+  research.tweak = { step: from.id, files, question: now.question, edited: [] }
+  await saveResearch($)
+  await journal($, { ev: 'research.tweak.open', step: from.id, files })
+  return `${head} The step it came from (${now.place}) is finished. What it wrote: ${files.join(', ')}. If their answer asks for a change, make exactly that change now in those files (Edit; the engine lets you, this turn only), then call ${E.RESEARCH_TOOL} {"changed": "what changed, in a few words", "file": "<the file>"} and write the line it returns word for word. If it changes nothing, say so in one plain line. Never offer a menu. Then ${carryOnWords()}`
+}
+
+// (review fix 1) The research tool's {"changed", "file"}: a change made to a finished step's file for the creative's answer
+async function researchChanged($: any, e: any) {
+  const t = research.tweak
+  const file = String(e.file ?? '').replace(/\\/g, '/').replace(/^\/+/, '')
+  const rel = E.projectPath(ctx.dir, file) ?? file
+  if (!t || !t.edited.includes(rel)) return { deny: `BMUZ engine: no change for the research's answer was made to ${file || 'that file'} this turn${t ? ` (the files: ${t.files.join(', ')})` : ''}.` }
+  const line = await stepInLine($, 'research.changed', { file: rel, what: String(e.changed).replace(/\s+/g, ' ').trim().replace(/[.\s]+$/, '') })
+  if (line.error) return { deny: `BMUZ engine: ${line.error}` }
+  await journal($, { ev: 'research.changed', step: t.step, file: rel, what: String(e.changed).slice(0, 300) })
+  research.tweak = null
+  await saveResearch($)
+  return { result: JSON.stringify({ say: line.text, then: `Write exactly the "say" text now, as text in your reply. Then ${carryOnWords()}` }) }
 }
 
 // F216 review fix 2a: the run tool. Only run.mjs's fixed list, in the project folder; the files a run changed (a
@@ -1707,7 +1799,7 @@ async function watchdog($: any) {
     const now = await $.clock.now()
     // The helper finished; its result is on the way. If it hasn't come in 5 minutes, it was lost: a stall after all.
     if (ctx.state.flow?.late && now - ctx.state.flow.late < 300000) return
-    if (!E.isStalled(ctx.pipeline, ctx.state, now, limit, { askOpen: asksOpen > 0 || research.now?.status === 'asked' })) return
+    if (!E.isStalled(ctx.pipeline, ctx.state, now, limit, { askOpen: asksOpen > 0 })) return
     const step = E.stepById(ctx.pipeline, ctx.state.current)
     // A talk step's turn still running: a restart sent now would queue behind it and arrive whenever it ends (live
     // run: two hours later, after the creative had answered). Held, and judged again at that turn's end.
@@ -1777,7 +1869,7 @@ async function judgeHeldStall($: any) {
   const now = await $.clock.now()
   const step = E.stepById(ctx.pipeline, ctx.state.current)
   const same = step && step.id === h.step && ctx.state.status === 'working'
-  if (!same || !E.isStalled(ctx.pipeline, ctx.state, now, limit, { askOpen: asksOpen > 0 || research.now?.status === 'asked' })) {
+  if (!same || !E.isStalled(ctx.pipeline, ctx.state, now, limit, { askOpen: asksOpen > 0 })) {
     await journal($, { ev: 'watchdog.dropped', step: h.step, why: !same ? 'the step moved on' : 'the creative answered (or the ask is open)' })
     return false
   }
@@ -1811,6 +1903,7 @@ export const register: Register = on => {
     stepIns = { key: '', n: 0 }
     research = { now: null, notes: [] }
     researchHanded = false
+    flowWaitsResearch = false
     const ok = await startEngine($)
     if (!ctx) return r
     // Commands and timers exist even when the start failed, so /bmuz-doctor is there to get it going.
@@ -1849,7 +1942,7 @@ export const register: Register = on => {
     if (await $.fs.exists(`${ctx.dir}/.bmuz/test-fault`)) throw new Error('injected fault (test)')
     if (ctx.broken) return { deny: `BMUZ engine: ${ctx.broken}` }
     const call = { tool: String(e.tool), agentId: (e as any).agentId, input: e }
-    const verdict = E.judgeTool(ctx.pipeline, ctx.state, call, { auto: ctx.auto, dir: ctx.dir, root: ctx.root, research: research.now })
+    const verdict = E.judgeTool(ctx.pipeline, ctx.state, call, { auto: ctx.auto, dir: ctx.dir, root: ctx.root, research: research.now, tweak: research.tweak })
     if (!verdict.allow) {
       await journal($, { ev: 'deviation', step: ctx.state.current, tool: call.tool, agentId: call.agentId ?? null, why: verdict.why })
       return { deny: verdict.why }
@@ -1890,13 +1983,26 @@ export const register: Register = on => {
       const ran: any = await next({ ...(e as any), name: E.RESEARCH_FLOW, args: want, script: undefined, scriptPath: undefined })
       const res = ran.result || {}
       const failed = !!(ran.deny || ran.isError)
-      research.now = failed ? null : { ...research.now, status: 'running', toolUseId: (e as any).tool_use_id, taskId: res.taskId ?? null }
+      research.now = failed ? null : { ...research.now, status: 'running', toolUseId: (e as any).tool_use_id, taskId: res.taskId ?? null, at: await $.clock.now() }
       await saveResearch($)
+      if (failed) researchEnded()
       await journal($, { ev: failed ? 'research.refused' : 'research.launched', workflow: E.RESEARCH_FLOW, args: want, taskId: res.taskId ?? null, runId: res.runId ?? null, deny: ran.deny ?? null })
       return ran
     }
     // (its helper's Write of its own report: not the step's own edit, so the step's undo never takes it)
     if (call.agentId && call.tool === 'Write' && research.now && research.now.status === 'running' && E.projectPath(ctx.dir, (e as any).file_path) === research.now.out) return next(e)
+    // (review fix 1: a change to a finished step's file for the creative's answer: journaled as that, never the current
+    // step's own edit, so the current step's undo never takes it)
+    if (verdict.researchTweak && research.tweak) {
+      const rel = E.projectPath(ctx.dir, (e as any).file_path)
+      const res: any = await next(e)
+      if (!res?.deny && !res?.isError) {
+        research.tweak = { ...research.tweak, edited: [...new Set([...research.tweak.edited, rel])] }
+        await saveResearch($)
+        await journal($, { ev: 'research.tweak', step: research.tweak.step, file: rel, tool: call.tool })
+      }
+      return res
+    }
     if (call.tool === 'AskUserQuestion' && !ctx.auto) {
       // A background session lists the question tool but refuses it (headless check 15): then nobody
       // can answer, so from here this session is an auto run and the turn-end rule keeps it moving.
@@ -2069,7 +2175,9 @@ export const register: Register = on => {
     if (kind === 'plugin' && (e as any).origin?.name === 'bmuz' && hiddenNotes && E.isTalkHeadline(text)) {
       const notes = hiddenNotes
       hiddenNotes = null
-      return next({ ...(e as any), context: [...((e as any).context ?? []), notes] })
+      // (F229 review fixes 2 and 5: a line the creative is still owed about their research comes first)
+      const owed = await sayNextNote($)
+      return next({ ...(e as any), context: [...((e as any).context ?? []), ...(owed ? [owed] : []), notes] })
     }
     if (kind === 'plugin' || kind === 'peer') return next(e)
     quietTurn = false
@@ -2077,9 +2185,27 @@ export const register: Register = on => {
     if (!ctx.broken && ctx.state.status === 'working') await markActive($)
     // F229: the creative's next message after the research's line answers "Does it change anything?": it is noted for the
     // step the research came from, and that step carries on (its open question, if any, stays open and is asked again).
+    // (F229 review fixes 2 and 5: a line the creative is still owed about their research rides on their next message)
+    const owed = !ctx.broken && !/^\s*bmuz\b/i.test(text) ? await sayNextNote($) : null
+    if (owed) e = { ...(e as any), context: [...((e as any).context ?? []), owed] } as any
     if (!ctx.broken && research.now && research.now.status === 'asked' && !/^\s*bmuz\b/i.test(text)) {
-      const note = await researchAnswer($, text)
-      return next({ ...(e as any), context: [...((e as any).context ?? []), note] })
+      // (review fix 3) the step's own open question takes this message: the research's question is set aside and asked
+      // once more when the step's question is answered; set aside a second time, it goes into the notes unanswered
+      if (E.askOpen(ctx.state)) {
+        const rn = research.now
+        if (rn.setAside) {
+          research.notes.push({ pipeline: rn.pipeline, step: rn.step, question: rn.question, out: rn.out, found: rn.found || [], answer: '' })
+          research.now = null
+          await journal($, { ev: 'research.dropped', question: rn.question, why: 'the step\'s own question took the creative\'s message again' })
+        } else {
+          research.now = { ...rn, setAside: true }
+          await journal($, { ev: 'research.aside', question: rn.question, step: ctx.state.current })
+        }
+        await saveResearch($)
+      } else {
+        const note = await researchAnswer($, text)
+        return next({ ...(e as any), context: [...((e as any).context ?? []), note] })
+      }
     }
     // The creative's message while a free question is open is its answer (their words, journaled for the scripts'
     // quote checks); the question closes and Claude is told, beside it, what it answers ("never mind" = no material).
@@ -2291,12 +2417,32 @@ export const register: Register = on => {
         return r
       }
     }
-    // F229: the creative's research, at this turn's end. A launch handed over in this turn and never made is dropped (said
-    // in the journal); a test's stand-in comes back now; one that waited on a step's helpers starts once none are working.
-    if (research.now && research.now.status === 'launching' && researchHanded && !(e as any).isAborted) {
-      await journal($, { ev: 'research.unlaunched', question: research.now.question, why: 'the turn ended without the Workflow call' })
-      research.now = null
+    // (review fix 1) a change to a finished step's file for the research's answer is open for one turn only
+    if (research.tweak) {
+      if (!research.tweak.edited.length) await journal($, { ev: 'research.tweak.closed', step: research.tweak.step, why: 'nothing changed' })
+      research.tweak = null
       await saveResearch($)
+    }
+    // F229: the creative's research, at this turn's end. A launch handed over and never made is dropped, an Esc'd turn
+    // included (review fix 2: "launching" left standing made every later ask "busy"), and the creative is told it didn't
+    // start; a test's stand-in comes back now; one that waited on a step's helpers starts once none are working.
+    if (research.now && research.now.status === 'launching') {
+      const q = research.now.question
+      await journal($, { ev: 'research.unlaunched', question: q, why: (e as any).isAborted ? 'the turn was stopped before the Workflow call' : 'the turn ended without the Workflow call' })
+      research.now = null
+      research.sayNext = [...(research.sayNext || []), { line: 'research.notstarted', slots: { question: q } }]
+      await saveResearch($)
+      researchEnded()
+      if (!(e as any).isAborted && !pending && !pendingFix) {
+        const note = await sayNextNote($)
+        if (note) {
+          researchHanded = false
+          await $.prompt.submit({ text: `${note} Then ${carryOnWords()}` })
+          quietTurn = false
+          creativeTurn = false
+          return r
+        }
+      }
     }
     researchHanded = false
     if (!pending && !pendingFix && research.now && !(e as any).isAborted) {
@@ -2314,6 +2460,17 @@ export const register: Register = on => {
         const line = await stepInLine($, 'research.look', { time: E.RESEARCH_TIME })
         researchHanded = true
         await $.prompt.submit({ text: `BMUZ engine: the research the creative asked for while the helpers worked ("${rn.question}") starts now. Write exactly this line, then ${launchWords()}, then ${carryOnWords()}\n\n${line.text ?? ''}` })
+        quietTurn = false
+        creativeTurn = false
+        return r
+      }
+      // (review fix 3) set aside for the step's own question, now answered: asked once more
+      if (rn.status === 'asked' && rn.setAside && !rn.reasked && !E.askOpen(ctx.state)) {
+        research.now = { ...rn, reasked: true }
+        await saveResearch($)
+        await journal($, { ev: 'research.reask', question: rn.question })
+        const line = await stepInLine($, 'research.found', { found: rn.found || [] })
+        await $.prompt.submit({ text: `BMUZ engine: the step's question is answered; the research the creative asked for ("${rn.question}") still waits for theirs. Write exactly this as your whole reply, then end your turn: their next message answers "Does it change anything?" (never offer options).\n\n${line.text ?? ''}` })
         quietTurn = false
         creativeTurn = false
         return r
