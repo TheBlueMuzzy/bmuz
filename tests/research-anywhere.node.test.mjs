@@ -6,13 +6,14 @@ import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createServer } from 'node:http'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as E from '../plugin/hooks/engine.js'
 import { checkReport, checkSources, deadLinks } from '../plugin/scripts/check-sources.mjs'
 import { found, shortLines, stub } from '../plugin/scripts/research.mjs'
+import { designTabs, researchReports, writePage } from '../plugin/scripts/gdd.mjs'
 
 const run = promisify(execFile)
 const here = fileURLToPath(new URL('.', import.meta.url))
@@ -235,4 +236,38 @@ test('F229 task 3: every talk step is told research is a step-in (an auto run on
   assert.match(E.researchNotesFor(notes, 'rules-ask', 'design'), /"q" \(o\.md\): found a · b\. Their answer to "Does it change anything\?": "no change"/)
   assert.doesNotMatch(E.researchNotesFor(notes, 'rules-ask', 'design'), /other/)
   assert.equal(E.researchNotesFor(notes, 'flow', 'design'), '')
+})
+
+// ---- task 4: the Sources tab on the project page ----
+test('F229 task 4: the project page has a Sources tab — every research report with its question, its date and its sources as links, newest first', async () => {
+  const dir = project()
+  try {
+    const { written } = await runFlow(QUESTION, answer)
+    writeFileSync(join(dir, OUT), written)
+    // a stage's own research (Define's prior art), dated by its file; a report with no Sources list is not research
+    const prior = ['# Discover (prior art): a garden race', '', '## Findings by question', '- x [1] (one source)', '', '## Sources', '1. BoardGameGeek: Cascadia — https://boardgamegeek.com/boardgame/295947', '']
+    const priorPath = join(dir, '.planning', 'research', 'define-prior-art.md')
+    writeFileSync(priorPath, prior.join(String.fromCharCode(10)))
+    utimesSync(priorPath, new Date('2026-11-12T10:00:00Z'), new Date('2026-11-12T10:00:00Z')) // (dated by its file: the day after)
+    writeFileSync(join(dir, '.planning', 'research', 'define-lock.md'), '**Concept Lock**')
+    const reports = researchReports(dir)
+    assert.deepEqual(reports.map(r => [r.file, r.question, r.date]), [
+      ['define-prior-art.md', 'Discover (prior art): a garden race', '2026-11-12'],
+      [OUT.split('/').pop(), QUESTION.brief, '2026-11-11'],
+    ])
+    assert.equal(reports.find(r => r.file === 'define-prior-art.md').sources[0].url, 'https://boardgamegeek.com/boardgame/295947')
+    const mine = reports.find(r => r.file === OUT.split('/').pop())
+    assert.equal(mine.date, '2026-11-11')
+    assert.deepEqual(mine.sources.map(s => s.url).sort(), [OK, OK2].sort())
+    const tab = designTabs(dir).find(t => t.id === 'sources')
+    assert.equal(tab.title, 'Sources')
+    assert.match(tab.html, /<h3>has a co-op garden game where weather helps you been done\?<\/h3><p class="holds">2026-11-11 · <a href="research\/research-2026-11-11-weather\.md">/)
+    assert.ok(tab.html.includes(`<a href="${OK}" target="_blank" rel="noopener">`))
+    assert.ok(!tab.html.includes('define-lock'))
+    writeFileSync(join(dir, '.planning', 'GDD.md'), '# Garden Race\n')
+    writePage(dir)
+    const page = readFileSync(join(dir, '.planning', 'project-page.html'), 'utf8')
+    assert.match(page, /<a href="#sources">Sources<\/a>/)
+    assert.match(page, /<h2 id="sources">Sources<\/h2>/)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })

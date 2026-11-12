@@ -16,7 +16,7 @@
 // already there (same words) isn't added twice. Every write is logged under "Changes".
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -370,7 +370,29 @@ export function designTabs(dir) {
   // (F216) the sprint being built, as .planning/SPRINT.md has it (sprint.mjs writes it): each feature's plan card and tasks
   const sprint = read('.planning/SPRINT.md')
   if (sprint) tabs.push({ id: 'sprint', title: 'Sprint', html: `<section class="list">${mdHtml(unmark(sprint).replace(/^- \[x\] /gm, '- ✔ ').replace(/^- \[ \] /gm, '- ☐ '))}</section>` })
+  // (F229) every research report, newest first: its question, its date and its sources as links
+  const reports = researchReports(dir)
+  if (reports.length) tabs.push({ id: 'sources', title: 'Sources', html: reports.map(r => `<section class="list"><h3>${esc(r.question)}</h3><p class="holds">${esc(r.date)} · <a href="research/${encodeURIComponent(r.file)}">${esc(r.file)}</a></p><ul>${r.sources.map(s => `<li><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a></li>`).join('')}</ul></section>`).join('\n') })
   return tabs
+}
+
+// (F229) The research reports in .planning/research/ (any with a "## Sources" list): { file, question, date, sources:
+// [{ title, url }] }, newest first. The question is the report's title ("# Research: …", or a stage's "# Discover (prior
+// art): …"); the date is its "Asked on …" line, else one in its name, else the file's own.
+export function researchReports(dir) {
+  const at = join(dir, '.planning', 'research')
+  if (!existsSync(at)) return []
+  const out = []
+  for (const file of readdirSync(at).filter(f => /\.md$/.test(f))) {
+    const text = nl(readFileSync(join(at, file), 'utf8'))
+    const part = text.split(/^## Sources\s*$/m)[1]
+    if (part === undefined) continue
+    const sources = part.split(/^## /m)[0].split('\n').map(l => l.trim().match(/^\d+[.)]\s+(.*?)\s+—\s+(https?:\/\/\S+)$/)).filter(Boolean).map(m => ({ title: m[1] || m[2], url: m[2] }))
+    const title = (text.match(/^# (.+)$/m) || [])[1] || file
+    const date = (text.match(/^Asked on (\d{4}-\d\d-\d\d)/m) || file.match(/(\d{4}-\d\d-\d\d)/) || [])[1] || statSync(join(at, file)).mtime.toISOString().slice(0, 10)
+    out.push({ file, question: title.replace(/^Research:\s*/, ''), date, sources })
+  }
+  return out.sort((a, b) => (a.date === b.date ? a.file.localeCompare(b.file) : a.date < b.date ? 1 : -1))
 }
 
 export function pageHtml(text, when = '', tabs = [], roadmap = '') {
