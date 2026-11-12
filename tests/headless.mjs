@@ -614,6 +614,48 @@ const scenarios = {
     check('F215 (step-in): "bmuz go" goes back to the same step and it finishes on its first try', !!resumed && !!done && !js.some(j => j.ev === 'retry' && j.step === 'flow') && js.filter(j => j.ev === 'step.start').every(j => j.step !== 'flow' || j.attempt === 1), trailOf(js.slice(-12)))
   },
 
+  // F229: research, callable anywhere. Design is at The Rulebook's Flow (a talk step) from an earlier session; the creative
+  // asks a research question. Run 1 (claude -p: an auto run): the research tool, the research itself (the test's stand-in
+  // for the flow, BMUZ_RESEARCH_STUB: no web is searched), the script's reply word for word in its two halves, the Sources
+  // tab listing the report, what it found in the questions file (nobody is there to answer "Does it change anything?"),
+  // and the step's record untouched. Run 2: "bmuz go" goes back to the same step, which finishes on its first try.
+  async 'research-stepin'() {
+    const dir = gardenScratch('bmuz-garden-research')
+    mkdirSync(join(dir, '.planning'), { recursive: true })
+    writeFileSync(join(dir, '.planning/GDD.md'), readFileSync(join(here, 'fixtures', 'garden-defined', 'GDD.md'), 'utf8'))
+    const design = JSON.parse(readFileSync(join(plugin, 'pipelines', 'design.json'), 'utf8'))
+    const entered = E.enterAt(design, E.freshState('design'), 'flow', {}).state
+    mkdirSync(join(dir, '.bmuz'), { recursive: true })
+    writeFileSync(join(dir, '.bmuz/state.json'), JSON.stringify({ ...entered, current: 'flow', status: 'working', startedAt: Date.now() }, null, 2))
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'design', testAnswers: GARDEN_DESIGN }, null, 2))
+    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
+    const extra = { BMUZ_RESEARCH_STUB: join(here, 'fixtures', 'research-stub'), BMUZ_SOURCES_OFFLINE: '1' }
+    const tools = `${TOOLS} Edit ToolSearch mcp__bmuz__say mcp__bmuz__bug mcp__bmuz__research`
+    const before = JSON.parse(read('.bmuz/state.json'))
+    const out = await runCollect(dir, "what's the research say about this? Has a garden race where the weather can help both gardens been done before?", tools, () => false, 900_000, extra)
+    writeFileSync(join(dir, 'run-output.txt'), out)
+    let js = journalOf(dir)
+    const asked = js.find(j => j.ev === 'research.asked')
+    const look = js.find(j => j.ev === 'line' && j.line === 'research.look')
+    const found = js.find(j => j.ev === 'line' && j.line === 'research.found')
+    check('F229 (research): mid-Design the creative\'s question started the research from the step it was asked at (The Rulebook\'s Flow), and it came back', !!asked && asked.step === 'flow' && asked.stub === true && js.some(j => j.ev === 'research.done'), trailOf(js))
+    check('F229 (research): the script\'s reply word for word: "Let me look. …", then "Here\'s what I found: [3 short lines] Sources are on your project page. Does it change anything?"', !!look && !!found && look.text === 'Let me look. About 5 minutes…' && /^Here's what I found:\n· .+\n· .+\n· .+\nSources are on your project page\. Does it change anything\?$/.test(found.text) && plain(out).includes(plain(look.text)) && plain(out).includes(plain(found.text)), `${look && look.text} | ${found && found.text} | ${out.slice(-600)}`)
+    const report = asked ? read(asked.out) : null
+    const page = read('.planning/project-page.html') || ''
+    const sources = (page.split('<h2 id="sources">Sources</h2>')[1] || '')
+    check('F229 (research): the report is in .planning/research/ and the project page\'s Sources tab lists it — its question, its date, its sources as links', !!report && /^# Research: /.test(report) && /<a href="#sources">Sources<\/a>/.test(page) && sources.includes(String(asked.out).split('/').pop()) && sources.includes('href="https://example.com/shared-weather"') && sources.includes((String(asked.out).match(/\d{4}-\d\d-\d\d/) || ['?'])[0]), sources.slice(0, 600))
+    const st = JSON.parse(read('.bmuz/state.json') || '{}')
+    check('F229 (research): the step keeps its record: still The Rulebook\'s Flow, working, no failed try, nothing finished or dropped', st.current === 'flow' && st.status === 'working' && JSON.stringify(st.retries) === JSON.stringify(before.retries) && JSON.stringify(st.finished) === JSON.stringify(before.finished) && !js.some(j => j.ev === 'retry' || j.ev === 'blocked'), JSON.stringify({ current: st.current, status: st.status, retries: st.retries }))
+    const rs = JSON.parse(read('.bmuz/research.json') || '{"notes":[]}')
+    check('F229 (research): an auto run waits for no answer: what it found is in the questions file and noted for the step', /Research while you were away: ".+" \(\.planning\/research\/research-.+\.md\) found: .+ Does it change anything\?/.test(read('.bmuz/questions.md') || '') && rs.now === null && rs.notes.some(n => n.step === 'flow' && n.found.length === 3), `${(read('.bmuz/questions.md') || '').slice(-400)} | ${JSON.stringify(rs)}`)
+    // "bmuz go": the same step resumes (reading the research noted for it) and finishes on its first try
+    await runUntil(dir, 'bmuz go', tools, () => journalOf(dir).some(j => j.ev === 'step.done' && j.step === 'flow'), 900_000)
+    js = journalOf(dir)
+    const resumed = js.find(j => j.ev === 'resume' && j.step === 'flow')
+    const done = js.find(j => j.ev === 'step.done' && j.step === 'flow')
+    check('F229 (research): "bmuz go" goes back to the same step and it finishes on its first try', !!resumed && !!done && !js.some(j => j.ev === 'retry' && j.step === 'flow') && js.filter(j => j.ev === 'step.start').every(j => j.step !== 'flow' || j.attempt === 1), trailOf(js.slice(-12)))
+  },
+
   // F216: Develop from Design's end on the garden race (tests/fixtures/garden-designed: the blueprint + a tiny game).
   // Run 1, an auto run with no one to approve: Design hands over to Develop, which runs 4.0–4.4 (the gates carried, the
   // plan card written), builds and proves each feature with a fresh builder and a separate reviewer, shows it ready, and
@@ -894,9 +936,10 @@ const scenarios = {
 }
 
 const pick = process.argv.slice(2)
-// Run only when named: `discover` (Discover is no longer a stage since 2026-11-10 — Ideate replaced it; its research
-// flow comes back as F229 — Research, callable anywhere, which must drop dead sources inside the flow first: the
-// full run of 2026-11-10 blocked on cited pages that 404 or have expired certificates, three tries running).
+// Run only when named: `discover` (Discover is no longer a stage since 2026-11-10 — Ideate replaced it — and it searches
+// the real web. The full run of 2026-11-10 blocked on cited pages that 404 or have expired certificates, three tries
+// running; since F229 the research flow drops dead links itself before the source check — check-sources.mjs --dead,
+// proven offline in tests/research-anywhere.node.test.mjs — so that block can't recur).
 const NAMED_ONLY = new Set(['discover'])
 for (const [name, run] of Object.entries(scenarios)) {
   if (pick.length ? !pick.includes(name) : NAMED_ONLY.has(name)) continue

@@ -410,7 +410,7 @@ export function talkPrompt(step, craft, why, auto, decided = [], more = {}) {
   else lines.push(step.lines ? SCRIPT_RULE : ASK_RULE)
   lines.push(STEP_IN_RULE)
   // F229: research, any time (an auto run only when the step's craft note asks for it; it lands in the questions file)
-  lines.push(auto ? `${RESEARCH_RULE} Auto run: research only where this step's craft note asks for it; what it finds is noted in the questions file for the creative.` : RESEARCH_RULE)
+  lines.push(auto ? `${RESEARCH_RULE} Auto run: never start research on your own unless this step's craft note asks for it (a message from the creative asking for it always counts); what it finds is noted in the questions file for the creative.` : RESEARCH_RULE)
   // F232: the step's script lines, and the ones it opens with (said before anything else).
   if (step.lines && more.script) {
     lines.push(`This step's script lines (say them through ${SAY_TOOL}, filling the slots from the game so far and the creative's own words):\n${linesList(more.script, step.lines)}`)

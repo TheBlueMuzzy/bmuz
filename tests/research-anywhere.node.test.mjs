@@ -226,7 +226,7 @@ test('F229 task 3: the test stand-in is honoured only with BMUZ_TEST=1: copied i
 test('F229 task 3: every talk step is told research is a step-in (an auto run only where its craft note asks); a typed ask carries the hint', () => {
   const step = { id: 's', kind: 'talk', tools: ['Read'], craft: 'craft/x.md' }
   assert.match(E.talkPrompt(step, 'craft', '', false), /Research, any time: .*mcp__bmuz__research \{"question"/)
-  assert.match(E.talkPrompt(step, 'craft', '', true), /Auto run: research only where this step's craft note asks for it/)
+  assert.match(E.talkPrompt(step, 'craft', '', true), /Auto run: never start research on your own unless this step's craft note asks for it \(a message from the creative asking for it always counts\)/)
   assert.equal(E.soundsLikeResearch("what's the research say about this?"), true)
   assert.equal(E.soundsLikeResearch('has this been done before?'), true)
   assert.equal(E.soundsLikeResearch('make it blue'), false)
