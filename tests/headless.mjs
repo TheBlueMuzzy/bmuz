@@ -792,6 +792,7 @@ const scenarios = {
     const steamLink = `http://127.0.0.1:${port}/steam/garden-race/`
     const server = spawn(process.execPath, [join(here, 'fixtures', 'fake-host.mjs'), host, String(port)], { stdio: 'ignore' })
     const log = `${dir}-release.log`
+    rmSync(log, { force: true }) // (an earlier run's calls are not this run's)
     const extra = { BMUZ_RELEASE_TOOLS: join(here, 'fixtures', 'fake-release', 'scripts'), BMUZ_BUTLER: join(here, 'fixtures', 'fake-butler.mjs'), BMUZ_FAKE_RELEASE_LOG: log, BMUZ_SOURCES_OFFLINE: '1', BMUZ_RECIPES: join(here, 'fixtures', 'no-recipes') }
     const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
     const json = f => { try { return JSON.parse(read(f) || 'null') } catch (e) { return null } }
