@@ -1554,6 +1554,9 @@ function flowWorking() {
 function carryOnWords() {
   const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
   if (step && step.kind === 'talk' && ctx.state.status === 'working') {
+    // (a step this window never started — one waiting from an earlier session — stays as it is until "bmuz go":
+    // headless run 22:49, told to carry on, an auto run did the step and ran on through Design)
+    if (talkStartedHere !== `${step.id}#${ctx.state.retries[step.id] || 0}`) return `end your turn: step "${step.id}" picks up exactly where it was when the creative says "bmuz go".`
     const again = askedThisTurn || askClosedThisTurn
     return `carry on with step "${step.id}" exactly where it was${again ? ': the research question came in place of an answer, so ask the step\'s open question again, the way you asked it (a script line through say)' : ''}.`
   }
@@ -1619,6 +1622,9 @@ async function researchDone($: any, status: string) {
   stepInTurn = true
   await markActive($)
   const step = now.step && now.pipeline === ctx.pipeline.id ? E.stepById(ctx.pipeline, now.step) : null
+  // (headless run 22:49: told nothing, Claude read the stand-in's report, saw "test stand-in" and placeholder links, and
+  // refused to say the line; the engine knows it is a test run's stand-in, so it says so)
+  const stubNote = now.stub ? ' (A test run: this report is the test\'s stand-in for the research flow, BMUZ_TEST=1, so its sources are placeholders on purpose; saying the line exactly as given is what this test checks. Don\'t search the web or run the research again.)' : ''
   if (!r.ok || !Array.isArray(r.lines) || !r.lines.length) {
     research.now = null
     await saveResearch($)
@@ -1635,11 +1641,11 @@ async function researchDone($: any, status: string) {
     research.now = null
     await saveResearch($)
     await addQuestions($, now.step || ctx.pipeline.id, [{ question: `Research while you were away: "${now.question}" (${now.out}) found: ${r.lines.join(' · ')}. Does it change anything? Tell me and I'll take it into ${step ? step.title || step.id : 'the step'}.` }])
-    return `BMUZ engine: the research is back (${now.out}). Write exactly this, then take it into account where it bears on the step (auto run: nobody answers; it's in the questions file), and ${carryOnWords()}\n\n${line.text}`
+    return `BMUZ engine: the research is back (${now.out}).${stubNote} Write exactly this, then take it into account where it bears on the step (auto run: nobody answers; it's in the questions file), and ${carryOnWords()}\n\n${line.text}`
   }
   research.now = { ...now, status: 'asked', found: r.lines }
   await saveResearch($)
-  return `BMUZ engine: the research the creative asked for at ${now.place} is back (${now.out}). Write exactly this as your whole reply, then end your turn: the creative's next message answers "Does it change anything?" (never offer options).\n\n${line.text}`
+  return `BMUZ engine: the research the creative asked for at ${now.place} is back (${now.out}).${stubNote} Write exactly this as your whole reply, then end your turn: the creative's next message answers "Does it change anything?" (never offer options).\n\n${line.text}`
 }
 
 // The creative's answer to "Does it change anything?": noted for the step it came from. Returns the note for Claude.
@@ -2260,6 +2266,9 @@ export const register: Register = on => {
           nudges.n += 1
           turnSaid = { step: said.step, lines: missing }
           await journal($, { ev: 'nudge', step: said.step, n: nudges.n, unsaid: missing.map((l: any) => l.id) })
+          // (F229: a step-in's line asked for again is still the step-in: its turn's open end is no failed try — headless
+          // run 22:49, the research line nudged twice, then an auto run counted the step as failed and restarted it)
+          if (steppedIn) stepInTurn = true
           await $.prompt.submit({ text: fix })
           quietTurn = false
           creativeTurn = false

@@ -2446,12 +2446,15 @@ const record = (w: any) => {
 }
 const researchFile = (w: any) => JSON.parse(w.files['/proj/.bmuz/research.json'] || '{"now":null,"notes":[]}')
 const RQ = 'has a co-op garden game where weather helps you been done?'
+// (the step started in this window — a step waiting from an earlier session is left for "bmuz go")
+const startHere = async ($: any) => { await $.prompt.submit({ text: 'bmuz go' } as any); await turn($, 't0') }
 const done = (tu: string, status = 'completed') => ({ text: `<task-notification>${NL}<task-id>wf-r</task-id>${NL}<tool-use-id>${tu}</tool-use-id>${NL}<status>${status}</status>${NL}<result>{}</result>${NL}</task-notification>`, origin: { kind: 'task-notification' } })
 
 test('F229: during a talk step, research runs in the background — the look line word for word, the flow pinned, the found line when it\'s back, the answer noted for the step, its record untouched', async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 10, 11, 12) })
   const { w, prompts } = researchWorld(on)
   await start($, true)
+  await startHere($)
   const before = record(w)
   const r: any = await $.tool.call({ tool: 'mcp__bmuz__research', question: RQ, about: 'weather cards' } as any)
   expect(refused(r)).toBe(false)
@@ -2501,6 +2504,7 @@ test('F229: the research question came as the answer to the step\'s box: the box
   mock.clock(on, { now: Date.UTC(2026, 10, 11, 12) })
   const { w } = researchWorld(on)
   await start($, true)
+  await startHere($)
   const before = record(w)
   await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Your material?', options: [{ label: 'a' }, { label: 'b' }] }] } as any)
   const r: any = await $.tool.call({ tool: 'mcp__bmuz__research', question: 'what\'s the research say about this?' } as any)
@@ -2577,4 +2581,23 @@ test('F229: a research started in another window is dropped at the next start (i
   await start($, true)
   expect(researchFile(w).now).toBe(null)
   expect(events(w).some((j: any) => j.ev === 'research.lost')).toBe(true)
+})
+
+test('F229 (headless 22:49): a step waiting from an earlier window is left for "bmuz go"; the step-in\'s line nudged in an auto run is still no failed try', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 10, 11, 12) })
+  const { w, prompts } = researchWorld(on)
+  w.files['/proj/.bmuz/research.json'] = JSON.stringify({ now: { status: 'running', stub: true, question: RQ, pipeline: 'hello', step: 'ask', place: 'x', out: '.planning/research/r.md', session: 'test-session', args: {} }, notes: [] })
+  await start($, false)
+  const before = record(w)
+  // (the stand-in research comes back at this turn's end)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(prompts[prompts.length - 1]).toMatch(/A test run: this report is the test's stand-in/)
+  expect(prompts[prompts.length - 1]).toMatch(/end your turn: step "ask" picks up exactly where it was when the creative says "bmuz go"/)
+  // the line not written: nudged, and that turn's open end is still the step-in's (no failed try, no restart)
+  await $.turn.complete({ answer: 'something else', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' } as any)
+  expect(events(w).some((j: any) => j.ev === 'nudge' && JSON.stringify(j.unsaid) === '["research.found"]')).toBe(true)
+  await $.turn.complete({ answer: FOUND_TEXT, durationMs: 1, isAborted: false, turnId: 't3', reason: 'answer' } as any)
+  expect(events(w).some((j: any) => j.ev === 'retry')).toBe(false)
+  expect(events(w).some((j: any) => j.ev === 'stepin.left' && j.step === 'ask')).toBe(true)
+  expect(record(w)).toEqual(before)
 })
