@@ -409,3 +409,41 @@ test('review fix 4: nothing went out (every platform "Not yet") → no First Rea
   assert.deepEqual(L.more(dir, script), { last: 'yes', onward: 'later', at: 'first' })
   assert.equal(read(dir, L.SAY.more), '')
 })
+
+test('review fix 5: Release\'s own outside check fails after the live check → the web is rolled back (v0.3.0), said plainly, never reported live; a platform already out at 1.0 is named and the creative asked; a later one waits on the web\'s own state', async () => {
+  const dir = garden()
+  picked(dir, ['itch.io', 'The web'])
+  // itch.io goes out first, at 1.0
+  L.next(dir, NOW)
+  await L.store(dir, script, NOW)
+  answered(dir, 'Release it')
+  await releaseTest(() => L.launch(dir, script, NOW))
+  assert.equal(L.readRecord(dir).per.itch.status, 'live')
+  // the web: the live check passes, but from outside the page isn't there (a 404)
+  wentLive(dir, 'itch')
+  state(dir, {})
+  L.next(dir, NOW)
+  await L.store(dir, script, NOW)
+  answered(dir, 'Release it')
+  writeFileSync(join(dir, '.planning/STATE.md'), read(dir, '.planning/STATE.md').replace(/Live: (\S+)garden-race\//, 'Live: $1nowhere/'))
+  spawnSync('git', ['commit', '-qam', 'the Live link'], { cwd: dir })
+  const failed = await releaseTest(() => L.launch(dir, script, NOW)).then(() => null, e => e.message)
+  assert.match(failed, /The new build \(v1\.0\.0\) failed its check from outside \(.*answers 404.*\), so I put v0\.3\.0 back on the web; that's what's live there now\./)
+  assert.match(failed, /itch\.io already has v1\.0\.0\. Tell me what you want there: leave it as it is, or take it down until 1\.0 is fixed\./)
+  assert.ok(calls(dir).some(c => /^rollback v0\.3\.0/.test(c)), 'rolled back')
+  const web = L.readRecord(dir).per.web
+  assert.deepEqual([web.status, web.rolledBack], ['to do', 'v0.3.0'])
+  assert.equal(read(dir, L.SAY.live).includes('the web') || /nowhere/.test(read(dir, L.SAY.live)), false, 'the web is never reported live')
+  assert.ok(!/Live on the web/.test(read(dir, '.planning/STATE.md')))
+  // a later try of the web says the same, and never reports it live
+  await assert.rejects(releaseTest(() => L.launch(dir, script, NOW)), /so I put v0\.3\.0 back/)
+  // Steam after it: its own refusal, about the code here (v0.3.0's again), not the web's words
+  const rec = L.readRecord(dir)
+  rec.platforms.push('steam'); rec.per.steam = { status: 'to do' }; rec.per.web.status = 'waiting'
+  writeFileSync(join(dir, L.RECORD), JSON.stringify(rec))
+  state(dir, {})
+  assert.equal(L.next(dir, NOW).platform, 'Steam')
+  await L.store(dir, script, NOW)
+  answered(dir, 'Release it')
+  await assert.rejects(releaseTest(() => L.launch(dir, script, NOW)), /Steam waits: the web's 1\.0 \(v1\.0\.0\) didn't check out and v0\.3\.0 was put back, so the code here is v0\.3\.0's again/)
+})

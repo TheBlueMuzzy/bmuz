@@ -618,6 +618,8 @@ function withBmuzHidden(dir, fn) {
 // "Release it" at its gate (Deliver's "Share it" isn't asked at 1.0); opts.deploy = false for a platform with its own
 // upload (itch.io) or none of BMUZ's (Steam, the phone stores): merged, versioned, tagged and pushed, then it stops
 // before the web deploy and its live check.
+// opts.rollback = why (F230 review fix 5): the web's new build failed Release's own check from outside — the last good
+// version is put back, pushed and deployed again, as when the live check fails. → { rolledBack: tag }
 export function publish(dir, script = loadScript(), now = new Date(), opts = {}) {
   return withBmuzHidden(dir, () => publishNow(dir, script, now, opts))
 }
@@ -636,7 +638,8 @@ function publishNow(dir, script, now, opts = {}) {
   // (review fix 1: once the new build failed its live check and the last good version was put back, this run never
   // says the new build is live — a later live check would only find the old version, live again)
   const rolledBackLine = () => `The new build (${p.tag}) failed its live check, so I put ${p.rolledBack} back; that's what's live now.`
-  if (p.rolledBack) throw new Error(`${rolledBackLine()} Fix what the check found in Develop, then deliver again.`)
+  // (F230 review fix 5: the web's rollback is the web's: a deploy-less platform asks launch.mjs, which says it its own way)
+  if (p.rolledBack && !opts.rollback) throw new Error(opts.deploy === false ? `the web's ${p.tag} was put back to ${p.rolledBack}, so the code here is ${p.rolledBack}'s again` : `${rolledBackLine()} Fix what the check found in Develop, then deliver again.`)
   const step = (name, r) => { if (!r.ok) { saveRecord(dir, rec); throw new Error(`${name}: ${r.out.slice(-900)}`) } return r }
   const scripts = (readJson(dir, 'package.json') || {}).scripts || {}
   // (review fix 5: release.mjs commits every changed .planning/ and .md file with the release, so a change the creative
@@ -732,6 +735,26 @@ function publishNow(dir, script, now, opts = {}) {
   // (F230 review fix 1: a platform with its own upload — itch.io, Steam, the phone stores — gets the 1.0 build made here
   // from the local tag, and nothing goes to origin: a host that builds from main (GitHub Pages) would make it public
   // without the web's own "Release it". Only the web pushes and deploys.)
+  // The last good version put back, pushed and deployed again: rollback.mjs to the newest earlier tag. → the tag, or null
+  // (the first release: nothing to put back). Throws when the rollback itself fails.
+  const rollBack = why => {
+    const good = tags(dir).filter(t => t !== p.tag).sort((a, b) => cmpVersion(b, a))[0]
+    if (!good) return null
+    const rb = runTool(dir, 'rollback', [good, why])
+    if (rb.ok) { pushIt(); deployIt() }
+    p.rolledBack = rb.ok ? good : null
+    p.live = false
+    saveRecord(dir, rec)
+    if (!rb.ok) throw new Error(`${why}. Rolling back to ${good} failed too: ${rb.out.slice(-300)}`)
+    return good
+  }
+  // (F230 review fix 5: Release's own check from outside failed after the live check passed: the web goes back too)
+  if (opts.rollback) {
+    if (p.rolledBack) return { rolledBack: p.rolledBack }
+    const good = rollBack(`${p.tag} failed its check from outside: ${opts.rollback}`)
+    if (!good) throw new Error(`${p.tag} failed its check from outside (${opts.rollback}). This is the first release, so there is no earlier version to put back`)
+    return { rolledBack: good }
+  }
   if (opts.deploy === false) { buildAndScan(); return { tag: p.tag, version: p.version } }
   if (!p.pushed) { buildAndScan(); pushIt(); p.pushed = true; saveRecord(dir, rec) }
   if (!p.deployed) { deployIt(); p.deployed = true; saveRecord(dir, rec) }
@@ -739,15 +762,8 @@ function publishNow(dir, script, now, opts = {}) {
   if (!p.live) {
     const lc = runTool(dir, 'live-check')
     if (!lc.ok) {
-      const good = tags(dir).filter(t => t !== p.tag).sort((a, b) => cmpVersion(b, a))[0]
-      if (good) {
-        const rb = runTool(dir, 'rollback', [good, `the live check of ${p.tag} failed`])
-        if (rb.ok) { pushIt(); deployIt() }
-        p.rolledBack = rb.ok ? good : null
-        saveRecord(dir, rec)
-        if (rb.ok) throw new Error(`${rolledBackLine()} What the check found: ${lc.out.slice(-500)}`)
-        throw new Error(`the live check failed for ${p.tag}: ${lc.out.slice(-500)}. Rolling back to ${good} failed too: ${rb.out.slice(-300)}`)
-      }
+      const good = rollBack(`the live check failed for ${p.tag}: ${lc.out.slice(-500)}`)
+      if (good) throw new Error(`${rolledBackLine()} What the check found: ${lc.out.slice(-500)}`)
       saveRecord(dir, rec)
       throw new Error(`the live check failed for ${p.tag}: ${lc.out.slice(-600)}. This is the first release, so there is no earlier version to put back`)
     }

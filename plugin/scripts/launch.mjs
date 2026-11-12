@@ -391,13 +391,27 @@ export async function launch(dir, script = loadScript(), now = new Date()) {
   const per = rec.per[p.key]
   if (p.key === 'web') {
     // the web: Deliver's release for 1.0 — merged, versioned, tagged, pushed, deployed, live-checked (rolled back if not)
-    const r = D.publish(dir, script, now, { approved: true })
+    // (review fix 5) a platform already out at 1.0 is named when the web goes back, and the creative is asked
+    const out = rec.platforms.filter(k => k !== 'web' && rec.per[k] && rec.per[k].status === 'live').map(k => `${platformOf(k).name} already has v${rec.per[k].version}.`)
+    const ask = out.length ? ` ${out.join(' ')} Tell me what you want there: leave it as it is, or take it down until 1.0 is fixed.` : ''
+    const rolled = () => { const d = (D.readRecord(dir) || {}).publish || {}; if (d.rolledBack) { per.rolledBack = d.rolledBack; saveRecord(dir, rec) } }
+    let r
+    try { r = D.publish(dir, script, now, { approved: true }) } catch (e) { rolled(); throw new Error(`${e.message}${(D.readRecord(dir).publish || {}).rolledBack ? ask : ''}`) }
+    // checked from outside; when it fails, the web goes back to the last good version, as a failed live check does
     const why = await linkCheck(r.link, [rec.game])
-    if (why) throw new Error(`the live check passed, but from outside: ${why}`)
+    if (why) {
+      let good
+      try { good = D.publish(dir, script, now, { approved: true, rollback: why }).rolledBack } catch (e) { rolled(); throw new Error(`${e.message}${ask}`) }
+      rolled()
+      throw new Error(`The new build (v${D.readRecord(dir).publish.version}) failed its check from outside (${why}), so I put ${good} back on the web; that's what's live there now.${ask}`)
+    }
     per.link = r.link
     per.version = D.readRecord(dir).publish.version
   } else {
     // the 1.0 release itself (once, by the first platform): merged, versioned, tagged, pushed — no web deploy here
+    // (review fix 5: the web's rollback stays the web's; here it means the code is the old version's again)
+    const d = (D.readRecord(dir) || {}).publish || {}
+    if (d.rolledBack) throw new Error(`${p.name} waits: the web's 1.0 (${d.tag}) didn't check out and ${d.rolledBack} was put back, so the code here is ${d.rolledBack}'s again. Fix it in Develop and deliver 1.0 again, then release ${p.name}.`)
     const r = D.publish(dir, script, now, { approved: true, deploy: false })
     per.version = r.version
     if (p.key === 'itch') {
