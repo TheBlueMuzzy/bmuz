@@ -105,7 +105,7 @@
       "title": "The Rulebook",
       "description": "The closest games' rulebooks: how they explain similar rules (only when you asked)",
       "workflow": "bmuz:research-flow",
-      "args": {
+      "args": { "checker": "{plugin}/scripts/check-sources.mjs",
         "topic": "prior-art",
         "brief": "{brief}",
         "youAre": "",

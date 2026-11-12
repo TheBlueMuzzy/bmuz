@@ -83,7 +83,7 @@
       "title": "The Pitch",
       "description": "The closest games: what players love and miss in them, and what's new here (only when you asked)",
       "workflow": "bmuz:research-flow",
-      "args": {
+      "args": { "checker": "{plugin}/scripts/check-sources.mjs",
         "topic": "prior-art",
         "brief": "{brief}",
         "youAre": "",

@@ -120,8 +120,25 @@ export async function checkSources(text, { offline = false, ...fetchOpts } = {})
   return problems
 }
 
+// F229: the research flow drops dead links itself, before this check reads its report: the same test, on a list of
+// links. Returns [{ url, why }] for the ones that don't answer (offline: none are tried).
+export async function deadLinks(urls, { offline = false, ...fetchOpts } = {}) {
+  if (offline) return []
+  const list = [...new Set((Array.isArray(urls) ? urls : []).filter(u => /^https?:\/\/\S+$/i.test(String(u))))]
+  const tried = await Promise.all(list.map(async url => ({ url, why: await linkAnswers(url, fetchOpts) })))
+  return tried.filter(d => d.why)
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const args = process.argv.slice(2)
+  // node check-sources.mjs --dead <url> <url> …   → one line of JSON: {"dead":[{"url","why"}]}
+  if (args[0] === '--dead') {
+    const offline = process.env.BMUZ_SOURCES_OFFLINE === '1'
+    // (BMUZ_LINK_TIMEOUT_MS: a test's local server that never answers is given up on sooner)
+    const dead = await deadLinks(args.slice(1), { offline, timeoutMs: Number(process.env.BMUZ_LINK_TIMEOUT_MS) || 8000 })
+    console.log(JSON.stringify({ dead, ...(offline ? { offline: true } : {}) }))
+    process.exit(0)
+  }
   const file = args.find(x => !x.startsWith('--'))
   const offline = args.includes('--offline') || process.env.BMUZ_SOURCES_OFFLINE === '1'
   if (!file) {

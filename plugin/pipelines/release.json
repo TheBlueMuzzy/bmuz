@@ -27,7 +27,7 @@
       "id": "research", "kind": "flow", "needs": ["platform"], "when": "{fresh}", "no": "6.1", "title": "Store & Launch",
       "description": "What this platform needs today, from its own current docs, every requirement sourced, every Release run (a test run's stand-in research skips it)",
       "workflow": "bmuz:research-flow",
-      "args": { "topic": "release", "brief": "{topic}", "youAre": "", "out": ".planning/research/release-now.md" },
+      "args": { "checker": "{plugin}/scripts/check-sources.mjs", "topic": "release", "brief": "{topic}", "youAre": "", "out": ".planning/research/release-now.md" },
       "agentTools": ["ToolSearch", "WebSearch", "WebFetch", "StructuredOutput", "Write"],
       "writes": [".planning/research/release-now.md"],
       "timeoutMs": 1800000,

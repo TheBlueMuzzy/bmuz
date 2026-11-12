@@ -1671,7 +1671,7 @@ export const register: Register = on => {
     if (await $.fs.exists(`${ctx.dir}/.bmuz/test-fault`)) throw new Error('injected fault (test)')
     if (ctx.broken) return { deny: `BMUZ engine: ${ctx.broken}` }
     const call = { tool: String(e.tool), agentId: (e as any).agentId, input: e }
-    const verdict = E.judgeTool(ctx.pipeline, ctx.state, call, { auto: ctx.auto, dir: ctx.dir })
+    const verdict = E.judgeTool(ctx.pipeline, ctx.state, call, { auto: ctx.auto, dir: ctx.dir, root: ctx.root })
     if (!verdict.allow) {
       await journal($, { ev: 'deviation', step: ctx.state.current, tool: call.tool, agentId: call.agentId ?? null, why: verdict.why })
       return { deny: verdict.why }

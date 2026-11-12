@@ -4,6 +4,7 @@ export const meta = {
   whenToUse: 'Started by the BMUZ engine in a discover pipeline; args { topic, brief, youAre, collected, fears, onIce, constraints, questions, out }',
   phases: [
     { title: 'Diverge', detail: 'Mainstream · Extremes & failures · Outside the field · Disconfirm, each alone' },
+    { title: 'Check links', detail: 'every cited link tried; a dead one is dropped with what rested only on it' },
     { title: 'Converge-lite', detail: 'themes, bricks for the shelves, strength, contradictions, fears scoreboard, surprises, probes' },
     { title: 'Write', detail: 'the report file, with its Sources list' },
   ],
@@ -40,6 +41,7 @@ const SHELF_FORMS = {
   'Hooks & anchors': '"Hook: …" (the part players have never seen) or "Anchor: …" (the familiar part they recognise); candidates only',
   'Twists': 'one twist: something taken away, an odd mashup, an extreme, a constraint that sounds fun',
   'Requirements': '"<what the platform needs> · <the details: sizes, limits, fees, how long it takes>", one requirement each, as the platform\'s own current docs say it',
+  'Examples': '"<game, product or case> · what it does about the question · how it went"',
 }
 
 // BoardGameGeek's mechanics list is not a catalogue (Muzzy, 2026-11-09): not all entries are mechanics, some are
@@ -110,6 +112,25 @@ const TOPICS = {
       disconfirm: 'guides that are out of date: rules the platform changed recently, and claims its own current docs contradict',
     },
   },
+  // F229: research callable anywhere — the creative's own question, asked at any step of any stage ("what's the research
+  // say about this?", a creative block, "has this been done?", a rule that doesn't work, a risk to test). The brief is
+  // their question in their words; "game" is the game so far, for context.
+  question: {
+    name: 'Research question',
+    task: 'what is known about the creative\'s question: how games, and the world outside games, have dealt with it, what worked and what went wrong, with examples',
+    shelves: ['Examples'],
+    questions: [
+      `${brief.replace(/[?.!\s]+$/, '')}?`,
+      'Which games or designers have dealt with this, and how did it go?',
+      'What goes wrong when games try this?',
+    ],
+    where: {
+      mainstream: 'designers\' own writing, postmortems, talks and breakdowns of the games closest to the question',
+      extremes: 'the most extreme or unusual answers to the question, and the games where it failed',
+      outside: 'the same question outside games: other media, real-world systems, research',
+      disconfirm: 'evidence against the obvious answer, and against the assumptions behind the question',
+    },
+  },
 }
 const topicId = text(a.topic).toLowerCase()
 const topic = TOPICS[topicId]
@@ -144,7 +165,13 @@ if (!questions.length) questions = topic.questions || [`What is already known ab
 // The report stays inside the project: relative, forward slashes, no "..", a .md file, not in .bmuz.
 // (The engine checks the same at its end; a bad path here falls back to the default rather than writing elsewhere.)
 const slug = brief.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'idea'
-const DEFAULT_OUT = `.planning/research/discover-${slug}-${topicId}.md`
+const isQuestion = topicId === 'question'
+const DEFAULT_OUT = isQuestion ? `.planning/research/research-${slug}.md` : `.planning/research/discover-${slug}-${topicId}.md`
+// (F229) the game so far, for a question's context; when and where it was asked (the workflow has no clock: the engine
+// passes the day)
+const game = text(a.game).slice(0, 1500)
+const askedOn = /^\d{4}-\d\d-\d\d$/.test(text(a.date)) ? text(a.date) : ''
+const askedAt = text(a.place).slice(0, 160)
 const safeOut = p => typeof p === 'string' && /\.md$/.test(p) && !/^[\/\\]|^[A-Za-z]:|\\/.test(p) &&
   p.split('/').every(x => x && x !== '..' && x !== '.') && p.split('/')[0].toLowerCase() !== '.bmuz'
 let out = a.out
@@ -198,8 +225,11 @@ const NOTES = {
 
 const numbered = xs => xs.map((x, i) => `${i + 1}. ${x}`).join('\n')
 const frame = [
-  'A creative (a game designer, not an engineer) is in the Discover stage of a new game: collecting the building blocks ("bricks") of the game before anyone chooses which to build with. Choosing is the next stage, Define, and it is theirs.',
-  `The idea, in their words: "${brief}"`,
+  isQuestion
+    ? 'A creative (a game designer, not an engineer) is making a game, and in the middle of a step they asked a research question. Find what is known, from sources. What to do with it is theirs to decide.'
+    : 'A creative (a game designer, not an engineer) is in the Discover stage of a new game: collecting the building blocks ("bricks") of the game before anyone chooses which to build with. Choosing is the next stage, Define, and it is theirs.',
+  isQuestion ? `Their question, in their words: "${brief}"` : `The idea, in their words: "${brief}"`,
+  game ? `The game so far: ${game}` : '',
   youAre ? `Who the player is: "${youAre}"` : '',
   collectedLines.length ? `Bricks collected so far in this run (the creative's and Claude's, from the talk steps):\n${collectedLines.join('\n')}` : '',
   constraints.length ? `It must fit / off the table: ${constraints.join('; ')}.` : '',
@@ -263,6 +293,47 @@ LENSES.forEach((lens, i) => {
     saturation: text(r.saturation) || (found[i] ? 'not said' : 'no answer from this helper'),
   }
 })
+// ---- F229: dead sources are dropped here, before the report's source check ----
+// (The headless discover run of 2026-11-10 BLOCKED: the helpers cited a page that answered 404 and one with an expired
+// certificate, and re-cited them on every retry.) The workflow has no network, so one helper runs the source check's
+// own link test (check-sources.mjs --dead: the same rules, so what's left passes it) on every cited link. A dead link is
+// removed with its [n]; a note, brick or piece of evidence left with no source is dropped and listed as "couldn't
+// source". The engine lets a helper run exactly that command, nothing else.
+const quote = u => `'${u}'`
+const linkCommand = (checker, urls) => `node "${checker}" --dead ${urls.map(quote).join(' ')}`
+const checker = typeof a.checker === 'string' && /check-sources\.mjs$/.test(a.checker) && !/["'`$\n\r]/.test(a.checker) ? a.checker : ''
+const dead = new Map() // url -> why
+const cited = [...new Set([...titles.keys(), ...Object.values(raw).flatMap(r => [...r.notes, ...r.bricks, ...r.assumptions].flatMap(n => n.urls))])]
+// (a link with a quote or a space in it can't be passed safely; it is left to the source check)
+const checkable = cited.filter(u => !/['\s\\]/.test(u))
+if (!checker) log('no link checker was given: dead links are left to the source check')
+else if (checkable.length) {
+  phase('Check links')
+  const ran = await agent([
+    'Run exactly this one command with the Bash tool (timeout 120000), changing nothing in it:',
+    linkCommand(checker, checkable),
+    'Then give its output, unchanged, as "output". Run nothing else.',
+  ].join('\n'), { label: 'check links', phase: 'Check links', model: 'haiku', schema: { type: 'object', properties: { output: { type: 'string' } }, required: ['output'] } })
+  const line = String((ran && ran.output) || '').split(/\r?\n/).map(l => l.trim()).reverse().find(l => /^\{"dead"/.test(l))
+  let answer = null
+  try { answer = JSON.parse(line).dead } catch (e) { answer = null }
+  if (!Array.isArray(answer)) log('the link check gave no answer: dead links are left to the source check')
+  else for (const d of answer) if (d && checkable.includes(d.url)) dead.set(d.url, text(d.why) || 'dead')
+}
+const unsourced = [] // what rested only on dead links
+if (dead.size) {
+  log(`dropped ${dead.size} dead link${dead.size > 1 ? 's' : ''}: ${[...dead.keys()].join(', ')}`)
+  for (const r of Object.values(raw)) {
+    for (const key of ['notes', 'bricks', 'assumptions']) {
+      r[key] = r[key].map(x => ({ ...x, urls: x.urls.filter(u => !dead.has(u)) })).filter(x => {
+        if (x.urls.length) return true
+        unsourced.push(x.says || x.text)
+        return false
+      })
+    }
+  }
+  for (const u of dead.keys()) titles.delete(u)
+}
 const helpersFailed = LENSES.filter((_, i) => !found[i]).map(x => x.id)
 if (helpersFailed.length) log(`no answer from: ${helpersFailed.join(', ')}`)
 if (capped) log(`left out ${capped} note${capped > 1 ? 's' : ''} or bricks with no source (or past the ${MAX_SOURCES}-source cap)`)
@@ -400,9 +471,10 @@ const cite = us => us.map(u => {
 const bare = s => s.replace(/\s*\[\d+\]/g, '')
 const none = '- none found'
 const md = [
-  `# Discover (${topic.name.toLowerCase()}): ${brief}`,
+  isQuestion ? `# Research: ${brief}` : `# Discover (${topic.name.toLowerCase()}): ${brief}`,
   '',
-  `Made by the BMUZ research flow: four lenses (Mainstream, Extremes & failures, Outside the field, Disconfirm), each working alone, merged after. Strength: (several sources) = two or more different sites agree · (one source) · (interpretation only) = a helper's reading. Nothing here is a decision: choosing is /define's. The bricks below join the project's .planning/DISCOVER.md.`,
+  ...(isQuestion && (askedOn || askedAt) ? [`Asked${askedOn ? ` on ${askedOn}` : ''}${askedAt ? ` at ${askedAt}` : ''}.`, ''] : []),
+  `Made by the BMUZ research flow: four lenses (Mainstream, Extremes & failures, Outside the field, Disconfirm), each working alone, merged after. Strength: (several sources) = two or more different sites agree · (one source) · (interpretation only) = a helper's reading. ${isQuestion ? 'Nothing here is a decision: what to do with it is the creative\'s.' : 'Nothing here is a decision: choosing is /define\'s. The bricks below join the project\'s .planning/DISCOVER.md.'}`,
   '',
   'Where each lens stopped (saturation or the cap):',
   ...LENSES.map(l => `${l.name}: ${raw[l.id].saturation}`),
@@ -445,8 +517,13 @@ md.push('', '## Surprises', ...(surprises.length ? surprises.map(s => `- ${bare(
 // Each probe answers one question in a timebox (H26): a sketch for feel, a proto for numbers, a spike for tech.
 md.push('', '## Open questions → probes', ...(probes.size ? [...probes.values()].map(o => `- ${o.question} → ${o.probe}${o.timebox ? ` (timebox: ${o.timebox})` : ''}`) : [none]))
 md.push('', '## On ice', ...(onIce.length ? onIce.map(x => `- ${x}`) : ['- none']))
-md.push('', '## So what (draft for Define)', ...(soWhats.length ? soWhats.map(t => `- ${bare(t.theme)}: ${bare(t.soWhat.text)} ${cite(t.soWhat.urls)}`) : ['- none drafted']))
+md.push('', isQuestion ? '## So what' : '## So what (draft for Define)', ...(soWhats.length ? soWhats.map(t => `- ${bare(t.theme)}: ${bare(t.soWhat.text)} ${cite(t.soWhat.urls)}`) : ['- none drafted']))
 if (hmw.length) md.push('', ...hmw.map(h => `Draft for Define: ${h}`))
+// (F229) what the dead links took with them: no [n], so the source check holds nothing here to a source
+if (dead.size) {
+  md.push('', '## Couldn\'t source', 'Dead links, dropped: ' + [...dead.entries()].map(([u, why]) => `${u} (${why})`).join(' · '))
+  md.push(...(unsourced.length ? [...new Set(unsourced.map(bare))].map(x => `- ${x} (its only sources were dead links)`) : ['- nothing else rested only on them']))
+}
 md.push('', '## Sources', ...[...numbers.entries()].map(([u, n]) => `${n}. ${(titles.get(u) || host(u)).replace(/[\[\]]/g, '')} — ${u}`), '')
 const report = md.join('\n')
 
@@ -461,7 +538,7 @@ const said = await agent([
 
 const findings = themes.reduce((n, t) => n + t.claims.length, 0)
 return {
-  wrote: out, topic: topicId, brief, findings, bricks: bricks.length, sources: numbers.size, dropped, capped,
+  wrote: out, topic: topicId, brief, findings, bricks: bricks.length, sources: numbers.size, dropped, capped, deadLinks: dead.size, unsourced: unsourced.length,
   scoreboard: { supported: count('supported'), contradicted: count('contradicted'), noEvidence: count('no evidence'), contradictedNames: scoreboard.filter(s => s.verdict === 'contradicted').map(s => s.assumption) },
   surprises: surprises.length, probes: probes.size, helpersFailed, said,
 }

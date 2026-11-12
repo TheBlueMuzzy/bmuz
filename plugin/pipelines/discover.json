@@ -44,7 +44,7 @@
       "always": true,
       "description": "Theme dig: research the subject itself, in and outside games (always runs: Discover always researches)",
       "workflow": "bmuz:research-flow",
-      "args": {
+      "args": { "checker": "{plugin}/scripts/check-sources.mjs",
         "topic": "theme",
         "brief": "{brief}",
         "youAre": "{youAre}",
@@ -87,7 +87,7 @@
       "needs": ["simulation"],
       "description": "Mechanisms: research candidate mechanisms for each outcome verb, from designer-written sources",
       "workflow": "bmuz:research-flow",
-      "args": {
+      "args": { "checker": "{plugin}/scripts/check-sources.mjs",
         "topic": "mechanisms",
         "brief": "{brief}",
         "youAre": "{youAre}",
@@ -127,7 +127,7 @@
       "needs": ["mechanism-shelf"],
       "description": "Prior art: research the games closest to this idea, what players praise and miss, hooks, anchors and twists",
       "workflow": "bmuz:research-flow",
-      "args": {
+      "args": { "checker": "{plugin}/scripts/check-sources.mjs",
         "topic": "prior-art",
         "brief": "{brief}",
         "youAre": "{youAre}",

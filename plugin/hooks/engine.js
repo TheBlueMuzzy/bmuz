@@ -1056,6 +1056,14 @@ export function judgeTool(p, state, call, opts = {}) {
   if (call.tool === BUG_TOOL && !call.agentId) return { allow: true }
   // F216: so may a new idea, noted on the roadmap's Ideas (Develop)
   if (call.tool === IDEA_TOOL && !call.agentId) return { allow: true }
+  // F229: a research flow's helper may run the source check's own link test (check-sources.mjs --dead '<url>' …), the
+  // one command it needs before its report is checked; the plugin's path is outside the project, so it is let through
+  // here, exactly that command, only while research runs (a research step, or the creative's own research).
+  if (call.agentId && call.tool === 'Bash' && isLinkCheck((call.input || {}).command, opts.root)) {
+    const cur = stepById(p, state.current)
+    const stepResearch = state.status === 'working' && cur && cur.kind === 'flow' && cur.workflow === RESEARCH_FLOW
+    if (stepResearch || (opts.research && opts.research.status === 'running')) return { allow: true }
+  }
   // step_done only closes an open talk step; called between steps, it has nothing to finish.
   if (call.tool === ENGINE_TOOL && !call.agentId && !(state.status === 'working' && (stepById(p, state.current) || {}).kind === 'talk')) {
     return { allow: false, why: 'BMUZ engine: no talk step is open, so there is nothing to finish. End your turn; the engine starts the next step itself.' }
@@ -1792,6 +1800,17 @@ export function loopAnswer(stdout) {
   if (j && Array.isArray(j.wait)) return { wait: j.wait.map(String), features: Array.isArray(j.features) ? j.features.map(String) : j.wait.map(String) }
   if (j && j.done === true) return { done: true }
   return { error: `the loop script's answer isn't start, wait or done: ${last.slice(0, 160)}` }
+}
+
+// F229: the research flow's link test, exactly: node "<plugin>/scripts/check-sources.mjs" --dead 'https://…' …
+// (each link in single quotes, where the shell reads nothing; no quote, space or backslash inside one)
+export const RESEARCH_FLOW = 'bmuz:research-flow'
+export function isLinkCheck(command, root) {
+  const m = String(command || '').trim().match(/^node "([^"]+)" --dead((?: '[^'\s\\]+')+)$/)
+  if (!m || !root) return false
+  const norm = s => String(s).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  if (norm(m[1]) !== norm(`${root}/scripts/check-sources.mjs`)) return false
+  return [...m[2].matchAll(/'([^']+)'/g)].every(x => /^https?:\/\/\S+$/i.test(x[1]))
 }
 
 // F216: while a pipeline runs, a Bash command (the builder helper's, or a setup step's) stays inside the project: no
