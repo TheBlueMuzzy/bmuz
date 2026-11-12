@@ -276,3 +276,18 @@ test('6.3 Look Back: for this game → STATE\'s Key facts, for BMUZ → .plannin
   assert.equal(read(dir, L.SAY.end), 'Back to Develop to build Update 1.1.\n')
   assert.equal((read(dir, '.planning/STATE.md').match(/- Lesson: Weather/g) || []).length, 1, 'a lesson is kept once')
 })
+
+test('task 3: the web\'s live check fails → the last good version (v0.3.0) is put back, and the web is never reported live', async () => {
+  const dir = garden()
+  picked(dir, ['The web'])
+  L.next(dir, NOW)
+  await L.store(dir, script, NOW)
+  answered(dir, 'Release it')
+  await assert.rejects(withEnv({ FAKE_LIVE_CHECK: 'fail' }, () => releaseTest(() => L.launch(dir, script, NOW))), /The new build \(v1\.0\.0\) failed its live check, so I put v0\.3\.0 back; that's what's live now\./)
+  assert.ok(calls(dir).some(c => /^rollback v0\.3\.0/.test(c)), 'rolled back')
+  assert.equal(L.readRecord(dir).per.web.status, 'to do')
+  assert.equal(read(dir, L.SAY.live), null)
+  assert.ok(!/Live on the web/.test(read(dir, '.planning/STATE.md')))
+  // a later try never says it's live either
+  await assert.rejects(releaseTest(() => L.launch(dir, script, NOW)), /failed its live check, so I put v0\.3\.0 back/)
+})

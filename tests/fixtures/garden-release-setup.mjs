@@ -101,6 +101,9 @@ export function setupReleaseGarden(dir, { port = 0, research = ['web', 'itch', '
   git(dir, ['add', '-A'])
   git(dir, ['commit', '-q', '-m', 'Plan: 1.0 is approved, ready to deliver'])
   git(dir, ['tag', 'v0.3.0'])
+  // (1.0's own work after the Beta: the title screen)
+  writeFileSync(join(dir, 'src', 'garden.js'), `${readFileSync(join(dir, 'src', 'garden.js'), 'utf8')}// F05: Title screen, approved\n`)
+  git(dir, ['commit', '-q', '-am', 'F05: done — Title screen'])
   git(dir, ['push', '-q', 'origin', 'dev/vertical-slice'])
   // Deliver's record: the 1.0 build made (5.4's card), every check before it passed
   mkdirSync(join(dir, '.bmuz', 'deliver'), { recursive: true })
