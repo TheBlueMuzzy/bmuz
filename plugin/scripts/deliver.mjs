@@ -46,12 +46,15 @@ export const STAGES = [
   { key: 'alpha', name: 'Alpha', kind: 'stage' },
   { key: 'beta', name: 'Beta', kind: 'stage' },
   { key: '1.0', name: '1.0', kind: 'major' },
+  // (F230: an update after 1.0 — Release's First Reactions put the fixes in an "Update 1.1" milestone. It is versioned
+  // as a milestone, 1.0.0 → 1.1.0, and checked like 1.0: it goes to the public too.)
+  { key: 'update', name: 'Update', kind: 'milestone', rank: 3 },
 ]
 // (review fix 9: a stage BMUZ doesn't know, or none, is null — never guessed; prep refuses it with the heading to fix)
 export const stageOf = word => {
   const w = String(word || '').toLowerCase().trim()
   const i = STAGES.findIndex(s => s.key === w)
-  return i < 0 ? null : { ...STAGES[i], rank: i }
+  return i < 0 ? null : { ...STAGES[i], rank: STAGES[i].rank ?? i }
 }
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -171,7 +174,9 @@ export function markReleased(text, name, tag, when = day()) {
   const m = rm.milestones[i]
   lines[m.line] = lines[m.line].replace(/\s{2}←\s*current/, '').replace(/\s+✅[^\n]*$/u, '') + `  ✅ released ${when} (${tag})`
   const next = rm.milestones.slice(i + 1).find(x => x.stage)
-  if (rm.target >= 0 && next) lines[rm.target] = lines[rm.target].replace(/^Release target:\s*\S+/, `Release target: ${next.stage}`)
+  // (F230: the last stage — 1.0 — has no next one; the target says "released", or release.mjs's "Release target still
+  // says 1.0" check would refuse the 1.0 release)
+  if (rm.target >= 0) lines[rm.target] = lines[rm.target].replace(/^Release target:\s*\S+/, `Release target: ${next ? next.stage : 'released'}`)
   return M.refreshMarks(before, lines.join('\n'))
 }
 
@@ -453,7 +458,8 @@ export async function safety(dir, script = loadScript()) {
     // Beta and 1.0: the privacy page, the store's age and data forms and a full security review are lines of the stage's
     // release checklist (release-check.mjs), each ticked by the creative
     const rc = await loadTool('release-check')
-    const list = rc.readChecklist(readIn(dir, rc.checkFile(stage.key)) || '')
+    // (F230: an update's privacy page and store forms are the ones 1.0 went out with)
+    const list = rc.readChecklist(readIn(dir, rc.checkFile(stage.key === 'update' ? '1.0' : stage.key)) || '')
     for (const [what, re] of [['a privacy page', /privacy/i], ['the store age and data forms', /age|data|rating/i], ['a full security review', /security/i]]) {
       const l = list.find(x => re.test(x.label))
       const ok = l && l.ticked && l.filled
@@ -608,16 +614,20 @@ function withBmuzHidden(dir, fn) {
 // 5.4 "Share it": merge the work branch (merge.mjs), the records, version + tag (release.mjs), the smoke pass, push,
 // the platform's deploy, the live check (live-check.mjs; rollback.mjs to the last good tag when it fails). Each phase is
 // recorded, so a try after a failure carries on where the last one stopped.
-export function publish(dir, script = loadScript(), now = new Date()) {
-  return withBmuzHidden(dir, () => publishNow(dir, script, now))
+// (F230) Release uses the same release for 1.0: opts.approved = true only when launch.mjs has checked the creative's own
+// "Release it" at its gate (Deliver's "Share it" isn't asked at 1.0); opts.deploy = false for a platform with its own
+// upload (itch.io) or none of BMUZ's (Steam, the phone stores): merged, versioned, tagged and pushed, then it stops
+// before the web deploy and its live check.
+export function publish(dir, script = loadScript(), now = new Date(), opts = {}) {
+  return withBmuzHidden(dir, () => publishNow(dir, script, now, opts))
 }
-function publishNow(dir, script, now) {
+function publishNow(dir, script, now, opts = {}) {
   const rec = recordOf(dir)
-  const answer = shareAnswer(dir)
+  const answer = opts.approved === true ? 'Share it' : shareAnswer(dir)
   if (answer !== 'Share it') throw new Error(`nothing is shared without the creative's own "Share it" at Build & Share (${answer ? `they answered "${answer}"` : 'no answer in this run'})`)
   if (!B.isGitRepo(dir)) throw new Error('the project isn\'t a git repository, so there is nothing to merge, version or push')
   const host = hostOf(dir)
-  if (host.none || !host.live) throw new Error(`there is no place to share it yet: .planning/STATE.md needs a "Release: <platform>" line and a "Live: https://…" link (the platform's release recipe sets them up the first time)`)
+  if (opts.deploy !== false && (host.none || !host.live)) throw new Error(`there is no place to share it yet: .planning/STATE.md needs a "Release: <platform>" line and a "Live: https://…" link (the platform's release recipe sets them up the first time)`)
   const remote = gitOut(dir, ['remote', 'get-url', 'origin'])
   if (process.env.BMUZ_TEST === '1' && remote && !isLocalRemote(remote)) throw new Error(`a test run pushes only to a folder on this machine, and origin is ${remote}`)
   const stage = stageOf(rec.stage)
@@ -720,6 +730,7 @@ function publishNow(dir, script, now) {
   }
   const deployIt = () => { if (scripts.deploy) step('the deploy', (({ exitCode, out }) => ({ ok: exitCode === 0, out }))(B.runIn(dir, ['npm', 'run', 'deploy'], 540000))) }
   if (!p.pushed) { buildAndScan(); pushIt(); p.pushed = true; saveRecord(dir, rec) }
+  if (opts.deploy === false) return { tag: p.tag, version: p.version }
   if (!p.deployed) { deployIt(); p.deployed = true; saveRecord(dir, rec) }
   // 7. is it really live? A failed check puts the last good version back (rollback.mjs), live again, and says so.
   if (!p.live) {

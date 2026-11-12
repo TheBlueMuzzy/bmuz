@@ -39,6 +39,7 @@ const SHELF_FORMS = {
   'Prior art': '"<game> · shares: <which bricks> · praised for: … · complaints / missed: … · hook / anchor: …"',
   'Hooks & anchors': '"Hook: …" (the part players have never seen) or "Anchor: …" (the familiar part they recognise); candidates only',
   'Twists': 'one twist: something taken away, an odd mashup, an extreme, a constraint that sounds fun',
+  'Requirements': '"<what the platform needs> · <the details: sizes, limits, fees, how long it takes>", one requirement each, as the platform\'s own current docs say it',
 }
 
 // BoardGameGeek's mechanics list is not a catalogue (Muzzy, 2026-11-09): not all entries are mechanics, some are
@@ -89,6 +90,24 @@ const TOPICS = {
       extremes: 'game jam entries (itch.io), postmortems, the oddest and most extreme takes on the idea',
       outside: 'non-game products, toys and media with the same hook',
       disconfirm: '"this already exists and players say it isn\'t fun" evidence: complaints, refunds, abandoned projects',
+    },
+  },
+  // F230: Release's Store & Launch — what one platform needs today before a game goes out there (the brief names the
+  // platform). Stores change their rules, so it is researched fresh at release time, from the platform's own docs first.
+  release: {
+    name: 'Release requirements',
+    task: `what ${brief} needs today before a game can be released there: accounts and fees, the store page and its parts (text, images and their sizes, a trailer), the build (formats, limits, the upload), the platform's review and how long it takes, age ratings and data or privacy forms, and the release date`,
+    shelves: ['Requirements'],
+    questions: [
+      `What does ${brief} require today before a game can be released there?`,
+      `What does a game's page on ${brief} need: its text, images (with sizes), a trailer?`,
+      `What does ${brief}'s review check, how long does it take, and what gets a game refused?`,
+    ],
+    where: {
+      mainstream: `${brief}'s own current documentation and developer help pages`,
+      extremes: 'developers\' accounts of rejections, delays and surprises on this platform, the most recent first',
+      outside: 'the bodies behind its forms: age ratings, privacy and data rules',
+      disconfirm: 'guides that are out of date: rules the platform changed recently, and claims its own current docs contradict',
     },
   },
 }
