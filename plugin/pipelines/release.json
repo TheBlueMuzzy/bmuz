@@ -90,7 +90,8 @@
     {
       "id": "more", "kind": "script", "needs": ["walk-done"], "no": "6.1", "title": "Store & Launch",
       "description": "Another place to go? (then Release again from the next one)",
-      "run": ["node", "{plugin}/scripts/launch.mjs", "more"], "results": ["last", "onward", "at"]
+      "run": ["node", "{plugin}/scripts/launch.mjs", "more"], "results": ["last", "onward", "at"],
+      "show": ".bmuz/release/say-more.md"
     },
     {
       "id": "reactions", "kind": "talk", "needs": ["more"], "when": "{last}", "no": "6.2", "title": "First Reactions",

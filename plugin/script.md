@@ -947,6 +947,9 @@ What did {game} teach us for the next game? Here's my list; change anything:
 · For this game: {forgame}
 · For BMUZ itself: {forbmuz} (sent to Muzzy as suggestions)
 
+## release.none · say · added
+Nothing has gone out yet: {waiting}. Nothing is public. Back to "Where should it go?": pick again when it's ready, or say "stop" to leave it here.
+
 ## release.out · say · added
 {game} is out. To start an update, tell me what to fix (it goes on the roadmap as an Update milestone), then say "bmuz stage develop plan".
 

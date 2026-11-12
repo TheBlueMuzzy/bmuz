@@ -44,7 +44,7 @@ import { checkSources } from './check-sources.mjs'
 export const DIR = '.bmuz/release'
 export const RECORD = `${DIR}/run.json`
 export const PAGE_NOW = `${DIR}/page.md`
-export const SAY = { welcome: `${DIR}/say-welcome.md`, store: `${DIR}/say-store.md`, notyet: `${DIR}/say-notyet.md`, live: `${DIR}/say-live.md`, reactions: `${DIR}/say-reactions.md`, end: `${DIR}/say-end.md` }
+export const SAY = { more: `${DIR}/say-more.md`, welcome: `${DIR}/say-welcome.md`, store: `${DIR}/say-store.md`, notyet: `${DIR}/say-notyet.md`, live: `${DIR}/say-live.md`, reactions: `${DIR}/say-reactions.md`, end: `${DIR}/say-end.md` }
 export const RESEARCH_NOW = '.planning/research/release-now.md'
 export const SUGGESTIONS = '.planning/bmuz-suggestions.md'
 const ROADMAP = S.ROADMAP
@@ -472,12 +472,22 @@ export function markedLive(dir, link, script = loadScript(), now = new Date()) {
 
 // Another platform to go? → Release again from "platform" (each platform its own kept run, like Develop's sprints),
 // else on to First Reactions.
-export function more(dir) {
+// (review fix 4) First Reactions and Look Back run only when something actually went out: when every platform waits,
+// that is said plainly and it's back to "Where should it go?" (the creative may pick again, or say "stop").
+export const anyLive = rec => rec.platforms.some(k => rec.per[k] && rec.per[k].status === 'live') || Object.values(rec.per || {}).some(x => x && x.status === 'live')
+export function more(dir, script = loadScript()) {
   const rec = recordOf(dir)
+  write(dir, SAY.more, '')
   const left = rec.platforms.filter(k => rec.per[k].status === 'to do' && k !== rec.current)
   if (left.length) return { last: 'no', onward: 'release', at: 'platform' }
+  if (!anyLive(rec)) {
+    const waiting = rec.platforms.filter(k => rec.per[k].status === 'waiting').map(k => `${platformOf(k).name} waits${rec.per[k].what ? ` (${rec.per[k].what})` : ''}`)
+    write(dir, SAY.more, line('release.none', { waiting: waiting.length ? waiting.join('; ') : rec.platforms.map(k => platformOf(k).name).join(', ') }, script) + '\n')
+    return { last: 'no', onward: 'release', at: 'where' }
+  }
   return { last: 'yes', onward: 'later', at: 'first' }
 }
+const refuseNothingOut = rec => { if (!anyLive(rec)) throw new Error('nothing has gone out yet (no platform is live): First Reactions and Look Back come after a release') }
 
 // ---- 6.2 First Reactions ----
 // Each feeling of GDD chapter 1 checked against what players say (as Deliver's playtest notes are), the fixes worth an
@@ -508,6 +518,7 @@ export function updateMilestone(text, version) {
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 export function reactionsWrite(dir, script = loadScript(), now = new Date()) {
   const rec = recordOf(dir)
+  refuseNothingOut(rec)
   const r = resultOf(dir, 'reactions').reactions
   const why = reactionsProblem(dir, r)
   if (why) throw new Error(why)
@@ -541,6 +552,7 @@ export function lookbackProblem(l) {
 }
 export function lookbackWrite(dir, script = loadScript(), now = new Date()) {
   const rec = recordOf(dir)
+  refuseNothingOut(rec)
   const l = resultOf(dir, 'lookback').lessons
   const why = lookbackProblem(l)
   if (why) throw new Error(why)

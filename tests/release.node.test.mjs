@@ -70,6 +70,8 @@ function picked(dir, labels) {
   state(dir, { where: { platforms: labels } })
 }
 // This platform's Store & Launch card done, then the creative's own answer at its gate.
+// (a platform already live, as launch leaves it: First Reactions and Look Back come only after a release)
+const wentLive = (dir, key) => { const rec = L.readRecord(dir); rec.per[key] = { ...rec.per[key], status: 'live' }; writeFileSync(join(dir, L.RECORD), JSON.stringify(rec)) }
 const answered = (dir, answer) => journal(dir, [{ ev: 'step.done', step: 'store' }, { ev: 'gate.answer', step: 'gate', answer }])
 const releaseTest = fn => withEnv({ BMUZ_TEST: '1', BMUZ_BUTLER: join(here, 'fixtures', 'fake-butler.mjs') }, fn)
 
@@ -273,6 +275,7 @@ test('6.2 First Reactions: each feeling checked; the fixes into an "Update 1.1" 
   const dir = garden()
   picked(dir, ['The web'])
   L.next(dir, NOW)
+  wentLive(dir, 'web')
   assert.match(L.reactionsProblem(dir, { feelings: [] }), /missing: "The thrill of a close race/)
   const reactions = { feelings: [{ feeling: 'The thrill of a close race that you win right at the end.', seen: 'seen ✓', why: '"came down to the last card" in 5 reviews' }], fixes: ['Hail is too strong late in the game'], bugs: [{ title: 'Rain text cut off on small phones', level: 'P2', steps: ['open a rain card on a small phone'], expected: 'the whole text', actual: 'cut off' }] }
   assert.equal(L.reactionsProblem(dir, reactions), null)
@@ -292,6 +295,7 @@ test('6.3 Look Back: for this game → STATE\'s Key facts, for BMUZ → .plannin
   const dir = garden()
   picked(dir, ['The web'])
   L.next(dir, NOW)
+  wentLive(dir, 'web')
   assert.match(L.lookbackProblem({ forgame: ['x'], forbmuz: [] }), /"forbmuz" needs at least one lesson/)
   const lessons = { forgame: ['Weather that hits both players kept games close'], forbmuz: ['Ask for the capsule art at Design, not at Release'] }
   state(dir, { lookback: { lessons } })
@@ -381,4 +385,27 @@ test('review fix 1: itch.io or Steam alone never pushes to origin or deploys the
     assert.equal(git(origin, ['tag', '--sort=v:refname']).split('\n').pop(), 'v1.0.0', `${label}: the web pushed it`)
     assert.match(read(`${dir}-host`, 'garden-race/index.html'), /version 1\.0\.0/)
   }
+})
+
+test('review fix 4: nothing went out (every platform "Not yet") → no First Reactions, no Look Back, no "is out", no Update milestone: said plainly, back to "Where should it go?"', async () => {
+  const dir = garden()
+  picked(dir, ['Steam'])
+  L.next(dir, NOW)
+  await L.store(dir, script, NOW)
+  L.notYet(dir, 'The capsule art isn\'t drawn yet.', script, NOW)
+  assert.deepEqual(L.more(dir, script), { last: 'no', onward: 'release', at: 'where' })
+  assert.equal(read(dir, L.SAY.more), 'Nothing has gone out yet: Steam waits (The capsule art isn\'t drawn yet). Nothing is public. Back to "Where should it go?": pick again when it\'s ready, or say "stop" to leave it here.\n')
+  // and the writes refuse on their own, whatever runs them
+  state(dir, { reactions: { reactions: { feelings: [{ feeling: 'The thrill of a close race that you win right at the end.', seen: 'not seen', why: 'nothing out' }], fixes: ['x'] } }, lookback: { lessons: { forgame: ['a'], forbmuz: ['b'] } } })
+  const roadmap = read(dir, S.ROADMAP)
+  assert.throws(() => L.reactionsWrite(dir, script, NOW), /nothing has gone out yet/)
+  assert.throws(() => L.lookbackWrite(dir, script, NOW), /nothing has gone out yet/)
+  assert.equal(read(dir, S.ROADMAP), roadmap, 'no Update milestone')
+  assert.equal(read(dir, L.SAY.end), null, 'no "is out"')
+  // one platform live: on to First Reactions, nothing said here
+  const rec = L.readRecord(dir)
+  rec.per.steam.status = 'live'
+  writeFileSync(join(dir, L.RECORD), JSON.stringify(rec))
+  assert.deepEqual(L.more(dir, script), { last: 'yes', onward: 'later', at: 'first' })
+  assert.equal(read(dir, L.SAY.more), '')
 })
