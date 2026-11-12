@@ -2,7 +2,7 @@
 
 Every fixed line BMUZ says lives here, and only here (F232). The engine sends them: Claude asks for a line by its id,
 the engine fills its slots and hands back the exact words, and checks they were said unchanged. The wording is the
-approved script's (framework .planning/research/bmuz-vision/bmuz-design-doc.html, Stages 1–5); a test compares every
+approved script's (framework .planning/research/bmuz-vision/bmuz-design-doc.html, Stages 1–6); a test compares every
 fixed part of the script with this file.
 
 How an entry reads:
@@ -884,6 +884,65 @@ Against the feelings you chose:
 
 ## deliver.notes.added · say
 From your notes I've added {added} to the roadmap. Back to Develop.
+
+# Stage 6 · Release
+
+## release.welcome · say
+**Welcome to Release**
+1.0 is ready. Now it goes public. What that takes depends on where it's going: a web link is one step; Steam and the phone stores need store pages, artwork, forms and a review that can take days. I'll check each platform's current rules first.
+Nothing goes public without your clear OK.
+
+## release.where · box
+? Where should it go? (pick any)
+header: Where
+many: yes
+- The web
+- itch.io
+- Steam
+- Phone app stores
+
+## release.store · say
+**Store & Launch** · {platform}
+Here's what {platform} needs today: {needs}.
+Done: {done} · Needs you: {you}.
+
+## release.page · free
+The store page, written from your pitch: {draft}. Change anything?
+
+## release.gate.box · box
+? Release {game} on {platform}?
+header: Release
+- Not yet — next, tell me what's missing
+- Release it — it goes public
+
+## release.live · say
+{game} is live: {link}. I checked it from outside, and it loads and plays.
+
+## release.notyet · say · added
+{platform} waits until this is done: {what}. It's on the roadmap. When it's ready, say "bmuz stage release platform" and we'll pick {platform} up again.
+
+## release.walk · free · added
+**{platform}, step {n} of {all}:** {step}
+Say "done" when it's done, or ask me anything about it.
+
+## release.walk.link · free · added
+When {platform} shows {game} live, paste its link here. I'll check it from outside before I mark it released.
+
+## release.reactions · free
+**First Reactions**
+Share what players are saying: reviews, comments, messages. Paste links or text.
+
+## release.reactions.read · say
+Against your feelings: {feelings}. Worth fixing in an update: {fixes}.[[ Added to the roadmap as {update}.]]
+
+## release.lookback · free
+**Look Back**
+What did {game} teach us for the next game? Here's my list; change anything:
+· For this game: {forgame}
+· For BMUZ itself: {forbmuz} (sent to Muzzy as suggestions)
+
+## release.out · say · added
+{game} is out. To start an update, tell me what to fix (it goes on the roadmap as an Update milestone), then say "bmuz stage develop plan".
 
 # Any stage
 

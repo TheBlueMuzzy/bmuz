@@ -21,7 +21,7 @@ export function specFragments(html) {
   const out = []
   for (const m of html.matchAll(/<article class="step[^"]*">([\s\S]*?)<\/article>/g)) {
     const num = (m[1].match(/class="num">([^<]+)/) || [])[1]
-    if (!num || !/^[12345]\./.test(num)) continue
+    if (!num || !/^[123456]\./.test(num)) continue
     const parts = []
     // (slots out first: a slot's own </span> would end an inline message early)
     // (F216: Stage 4's example numbers written without a slot mark are slots here: "(feature 1 of 3)", "Step 1 of [3]")
@@ -50,14 +50,14 @@ test('the script file reads: no problems, every box 2–4 options with a short h
   }
 })
 
-test('every fixed part of the approved script (Stages 1–5) is in script.md word for word', { skip: !existsSync(SPEC) && 'the framework repo is not beside this one' }, () => {
+test('every fixed part of the approved script (Stages 1–6) is in script.md word for word', { skip: !existsSync(SPEC) && 'the framework repo is not beside this one' }, () => {
   const frags = specFragments(readFileSync(SPEC, 'utf8'))
   assert.ok(frags.length > 150, `${frags.length} fragments`)
   const mine = E.plainWords(scriptText.split('# Stage 1 · Ideate')[1])
   const missing = frags.filter(f => !mine.includes(f.words))
   assert.deepEqual(missing.map(f => `${f.num}: ${f.words.slice(0, 90)}`), [])
   // every step of the spec's Stages 1–2 is covered (1.0 – 1.7, 2.0 – 2.8)
-  assert.deepEqual([...new Set(frags.map(f => f.num))], ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '2.0', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '2.8', '3.0', '3.1', '3.2', '3.3', '3.4', '3.5', '3.6', '3.7', '3.8', '3.9', '3.10', '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7', '4.8', '5.0', '5.1', '5.2', '5.3', '5.4', '5.5'])
+  assert.deepEqual([...new Set(frags.map(f => f.num))], ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '2.0', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '2.8', '3.0', '3.1', '3.2', '3.3', '3.4', '3.5', '3.6', '3.7', '3.8', '3.9', '3.10', '4.0', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7', '4.8', '5.0', '5.1', '5.2', '5.3', '5.4', '5.5', '6.0', '6.1', '6.2', '6.3'])
 })
 
 // F215: the step-in reply for something broken (the spec's "Any time: when the designer steps in") and Develop's welcome
@@ -82,7 +82,7 @@ test('F215: the step-in reply for a bug and the 4.0 "Something broken" line are 
 })
 
 test('lines not in the approved script are marked "added" (each one has an Ask Muzzy line)', () => {
-  assert.deepEqual(Object.values(script.lines).filter(l => l.added).map(l => l.id).sort(), ['any.keep', 'bug.fix.done', 'bug.fix.reproduced', 'bug.fix.start', 'bug.none', 'bug.now', 'bug.often', 'bug.verified', 'define.feelings.eight', 'deliver.back', 'deliver.live', 'deliver.notready.box', 'design.rulebook.ok', 'design.rulebook.section', 'design.sketches.none', 'design.time.notrap', 'develop.idea', 'develop.plan.one', 'develop.setup.nologin', 'develop.waiting'])
+  assert.deepEqual(Object.values(script.lines).filter(l => l.added).map(l => l.id).sort(), ['any.keep', 'bug.fix.done', 'bug.fix.reproduced', 'bug.fix.start', 'bug.none', 'bug.now', 'bug.often', 'bug.verified', 'define.feelings.eight', 'deliver.back', 'deliver.live', 'deliver.notready.box', 'design.rulebook.ok', 'design.rulebook.section', 'design.sketches.none', 'design.time.notrap', 'develop.idea', 'develop.plan.one', 'develop.setup.nologin', 'develop.waiting', 'release.notyet', 'release.out', 'release.walk', 'release.walk.link'])
 })
 
 test('filling a line: slots, lists as · lines, numbered lists, [[ … ]] only when filled, numbered questions left out and renumbered, another line inside', () => {
@@ -209,4 +209,21 @@ test('a gate that sends the creative back tells that step what they answered; an
   // the journal rebuild keeps it
   const rebuilt = E.rebuildFromJournal('define', [JSON.stringify({ ev: 'step.done', step: 'scope' }), JSON.stringify({ ev: 'step.done', step: 'change' }), JSON.stringify({ ev: 'gate.back', step: 'lock', dropped: ['change'], back: out.state.back })])
   assert.deepEqual(rebuilt.back, out.state.back)
+})
+
+// F230 task 1: Stage 6 (Release) — the welcome, the where box, the Store & Launch card, the gate, the live line, First
+// Reactions and Look Back, filled from the plan files' words.
+test('F230: Stage 6 lines fill: the welcome ends "Nothing goes public without your clear OK.", the gate box puts "Not yet" first', () => {
+  assert.match(E.renderLine(script, 'release.welcome', {}).text, /I'll check each platform's current rules first\.\nNothing goes public without your clear OK\.$/)
+  const where = E.renderLine(script, 'release.where', {})
+  assert.equal(where.box.multiSelect, true)
+  assert.deepEqual(where.box.options.map(o => o.label), ['The web', 'itch.io', 'Steam', 'Phone app stores'])
+  assert.equal(E.renderLine(script, 'release.store', { platform: 'Steam', needs: 'a store page, capsule art, a trailer', done: 'the store page', you: 'capsule art · a trailer' }).text, "**Store & Launch** · Steam\nHere's what Steam needs today: a store page, capsule art, a trailer.\nDone: the store page · Needs you: capsule art · a trailer.")
+  const gate = E.renderLine(script, 'release.gate.box', { game: 'Garden Race', platform: 'Steam' })
+  assert.equal(gate.box.question, 'Release Garden Race on Steam?')
+  assert.deepEqual(gate.box.options.map(o => o.label), ['Not yet', 'Release it'])
+  assert.equal(E.renderLine(script, 'release.live', { game: 'Garden Race', link: 'https://x.example/' }).text, 'Garden Race is live: https://x.example/. I checked it from outside, and it loads and plays.')
+  assert.equal(E.renderLine(script, 'release.reactions.read', { feelings: 'a close race: seen ✓', fixes: 'nothing' }).text, 'Against your feelings: a close race: seen ✓. Worth fixing in an update: nothing.')
+  assert.match(E.renderLine(script, 'release.reactions.read', { feelings: 'x', fixes: 'hail', update: 'Update 1.1' }).text, /\. Added to the roadmap as Update 1\.1\.$/)
+  assert.match(E.renderLine(script, 'release.lookback', { game: 'Garden Race', forgame: 'a', forbmuz: 'b' }).text, /^\*\*Look Back\*\*\nWhat did Garden Race teach us for the next game\? Here's my list; change anything:\n· For this game: a\n· For BMUZ itself: b \(sent to Muzzy as suggestions\)$/)
 })
