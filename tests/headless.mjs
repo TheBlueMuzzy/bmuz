@@ -639,6 +639,14 @@ const scenarios = {
       }
       return [...out, ...journalOf(dir)]
     }
+    // (F230 item 9b) Sprint 2 planned: the develop stage run that Develop started for it (its journal opens with
+    // stage.enter from develop) has plan-write done. Read wherever that journal is — .bmuz/parked/ while a feature run
+    // of sprint 2 has already started — never from the state at one moment (run 19:45 stopped inside F03's run).
+    const sprint2Planned = () => {
+      const parked = join(dir, '.bmuz', 'parked', 'journal.jsonl')
+      const jj = existsSync(parked) ? readFileSync(parked, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l) } catch (e) { return {} } }) : journalOf(dir)
+      return !!jj[0] && jj[0].ev === 'stage.enter' && jj[0].from === 'develop' && jj[0].to === 'develop' && jj.some(j => j.ev === 'step.done' && j.step === 'plan-write') && /^# Sprint 02 — /m.test(read('.planning/SPRINT.md') || '')
+    }
     const tuningBefore = json('content/tuning/game.json')
     // run 1: the auto run
     // (review fix 9: run 1 allows only what auto-run.json pre-approves, as a real overnight run does)
@@ -673,10 +681,7 @@ const scenarios = {
     check('F216 (develop): every Stage 4 fixed line of the auto run (handed out, or a shown file) is in Claude\'s words word for word', lines1.length > 0 && shows1.length > 0 && unsaid1.length === 0 && unshown1.length === 0, `${unsaid1.map(j => `${j.line}: ${plain(j.text).slice(0, 100)}`).join(' | ')} ${unshown1.map(j => j.step).join(',')}`)
     // run 2: the creative's answers (the project moved on, so bmuz.json says develop now)
     writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ ...(json('bmuz.json') || {}), pipeline: 'develop', testAnswers: GARDEN_DEVELOP }, null, 2))
-    await runUntil(dir, 'bmuz go', tools, () => {
-      const st = json('.bmuz/state.json')
-      return !!st && /^# Sprint 02 — /m.test(read('.planning/SPRINT.md') || '') && (st.finished || []).includes('plan-write')
-    }, 3_000_000)
+    await runUntil(dir, 'bmuz go', tools, sprint2Planned, 3_000_000)
     js = allJournals()
     const tuningAfter = json('content/tuning/game.json') || {}
     // (the tune's own change, as the engine recorded its Edit: the builds may add settings of their own to the same file)
@@ -688,7 +693,7 @@ const scenarios = {
     check('F216 (develop): only the creative\'s answers approved: every feature of sprint 1 ✅ in the roadmap after run 2', cards.every(id => new RegExp(`^- ✅ ${id} `, 'm').test(read('.planning/ROADMAP.md') || '')), (read('.planning/ROADMAP.md') || '').slice(0, 700))
     check('F216 (develop): the look-back wrote the retro (three lines), archived the sprint and said 4.7\'s lines', /\nRetro:\n- went well: .+\n- went wrong: .+\n- change: .+\n/.test(arch) && js.some(j => j.ev === 'line' && j.line === 'develop.lookback') && js.some(j => j.ev === 'show' && j.step === 'lookback-write'), arch.slice(-400))
     const st2 = json('.bmuz/state.json') || {}
-    check('F216 (develop): the loop reached sprint 2 (Develop again from Plan the Sprint, the next ready feature on its plan card)', st2.pipeline === 'develop' && /^# Sprint 02 — /m.test(read('.planning/SPRINT.md') || '') && (json('.bmuz/stages.json') || []).filter(s => s.pipeline === 'develop').length >= 1, `${JSON.stringify({ p: st2.pipeline, cur: st2.current, fin: st2.finished })} | ${(read('.planning/SPRINT.md') || '').slice(0, 200)}`)
+    check('F216 (develop): the loop reached sprint 2 (Develop again from Plan the Sprint, the next ready feature on its plan card)', sprint2Planned() && (json('.bmuz/stages.json') || []).filter(s => s.pipeline === 'develop').length >= 1, `${JSON.stringify({ p: st2.pipeline, cur: st2.current, fin: st2.finished })} | ${(read('.planning/SPRINT.md') || '').slice(0, 200)}`)
     const log = spawnSync('git', ['log', '--format=%s'], { cwd: dir, encoding: 'utf8' }).stdout
     check('F216 (develop): committed on a work branch: "F01: built …", "F01: done …", "Sprint 01 done"', /^F01: built — /m.test(log) && /^F01: done — /m.test(log) && /^Sprint 01 done$/m.test(log) && /^dev\//.test(spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir, encoding: 'utf8' }).stdout), log)
     const ids = new Set(allJournals().filter(j => j.ev === 'line').map(j => j.line))
