@@ -925,6 +925,12 @@ header: Release
 **{platform}, step {n} of {all}:** {step}
 Say "done" when it's done, or ask me anything about it.
 
+## release.walk.live.box · box · added
+? Is {game} live on {platform}?
+header: Live?
+- Not yet — it isn't showing there yet
+- Yes, it's live — next, I'll paste its link
+
 ## release.walk.link · free · added
 When {platform} shows {game} live, paste its link here. I'll check it from outside before I mark it released.
 

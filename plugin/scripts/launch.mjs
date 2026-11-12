@@ -423,18 +423,26 @@ export async function launch(dir, script = loadScript(), now = new Date()) {
   return { walk: 'no', link: per.link }
 }
 
-// The walk-through's end: the creative's own words carry the link (their answer in this step, journaled), and the link
-// answers from outside, naming the game. An auto run never marks a store live.
+// The walk-through's end: marked live only when all three hold (review fix 2) — (1) the creative picked "Yes, it's
+// live" in this try's box "Is <game> live on <platform>?" (the label exactly, as the approve box is read); (2) the link
+// is in their own typed answer to the link question (their message, never a question's words); (3) the link answers
+// from outside, naming the game. An auto run never marks a store live.
+export const LIVE_LABELS = ["Yes, it's live", 'Not yet']
 export async function liveLinkProblem(dir, link, mode) {
   const rec = recordOf(dir)
   const url = clean(link)
   if (mode === 'auto' && !testAnswered(dir, 'walk')) return 'only the creative can say it is live on the store: an auto run never marks it released'
   if (mode !== 'auto') {
+    const asked = `"Is ${rec.game} live on ${current(rec).name}?"`
+    const picked = D.boxPick(dir, 'walk', 'release.walk.live.box', LIVE_LABELS)
+    if (!picked) return `there is no answer to ${asked} in this try: ask its box (release.walk.live.box) once the steps are done`
+    if (picked !== LIVE_LABELS[0]) return `they picked "${picked}" at ${asked}: it isn't marked live`
     const js = journalOf(dir)
     let from = -1
     js.forEach((j, i) => { if (j.ev === 'step.start' && j.step === 'walk') from = i })
-    const said = js.slice(Math.max(from, 0)).filter(j => j.ev === 'answer' && j.step === 'walk').map(j => String(j.text || '')).join('\n')
-    if (from < 0 || !said.includes(url)) return `the link must be the creative's own, as they pasted it in this step (${url} isn't in their answers)`
+    const typed = js.slice(Math.max(from, 0)).filter(j => j.ev === 'answer' && j.step === 'walk' && j.via === 'typed' && j.line === 'release.walk.link').map(j => String(j.text || ''))
+    const words = typed.join(' ').split(/\s+/).map(w => w.replace(/^[(<["']+/, '').replace(/[)>\]"'.,;!?]+$/, ''))
+    if (from < 0 || !words.includes(url)) return `the link must be the creative's own: ${url} isn't in what the creative typed when asked for its link`
   } else {
     const ta = JSON.stringify((readJson(dir, 'bmuz.json') || {}).testAnswers?.walk || '')
     if (!ta.includes(url)) return `the link must be the one the test's answers give, not ${url}`

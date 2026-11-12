@@ -204,11 +204,26 @@ test('Steam: "Release it" releases 1.0 (once) and starts the walk-through; it is
   const steam = link(dir, 'steam/garden-race/')
   mkdirSync(join(`${dir}-host`, 'steam', 'garden-race'), { recursive: true })
   writeFileSync(join(`${dir}-host`, 'steam', 'garden-race', 'index.html'), '<title>Garden Race on Steam (a stand-in page)</title>')
-  journal(dir, [{ ev: 'step.start', step: 'walk' }, { ev: 'answer', step: 'walk', text: `It's live! ${steam}` }])
+  // (review fix 2) live only when all three hold: "Yes, it's live" picked in this try's box, the link in the creative's own
+  // typed answer to the link question (never the question's words), and the link checks out from outside
+  const box = { ev: 'line', step: 'walk', line: 'release.walk.live.box', box: { question: 'Is Garden Race live on Steam?' } }
+  const yes = { ev: 'answer', step: 'walk', text: 'User has answered your questions: "Is Garden Race live on Steam?"="Yes, it\'s live".' }
+  const typed = url => ({ ev: 'answer', step: 'walk', line: 'release.walk.link', via: 'typed', text: `Here: ${url}` })
+  journal(dir, [{ ev: 'step.start', step: 'walk' }, box, yes, typed(steam)])
   assert.match(await releaseTest(() => L.liveLinkProblem(dir, steam, 'auto')), /only the creative can say it is live/)
-  assert.match(await releaseTest(() => L.liveLinkProblem(dir, link(dir, 'steam/other/'), 'live')), /must be the creative's own, as they pasted it/)
   assert.equal(await releaseTest(() => L.liveLinkProblem(dir, steam, 'live')), null)
-  journal(dir, [{ ev: 'step.start', step: 'walk' }, { ev: 'answer', step: 'walk', text: `https://store.steampowered.com/app/1/` }])
+  assert.match(await releaseTest(() => L.liveLinkProblem(dir, link(dir, 'steam/other/'), 'live')), /isn't in what the creative typed/)
+  // no box answer, or "Not yet", or the box from an earlier try: refused
+  journal(dir, [{ ev: 'step.start', step: 'walk' }, box, typed(steam)])
+  assert.match(await releaseTest(() => L.liveLinkProblem(dir, steam, 'live')), /"Is Garden Race live on Steam\?"/)
+  journal(dir, [{ ev: 'step.start', step: 'walk' }, box, { ...yes, text: yes.text.replace("Yes, it's live", 'Not yet') }, typed(steam)])
+  assert.match(await releaseTest(() => L.liveLinkProblem(dir, steam, 'live')), /they picked "Not yet"/)
+  journal(dir, [box, yes, { ev: 'step.start', step: 'walk' }, typed(steam)])
+  assert.match(await releaseTest(() => L.liveLinkProblem(dir, steam, 'live')), /"Is Garden Race live on Steam\?"/)
+  // the link only in the question's words (the spoof): refused — the creative's typed answer is what counts
+  journal(dir, [{ ev: 'step.start', step: 'walk' }, box, { ...yes, text: `${yes.text} Paste it like ${steam}` }, typed('nothing yet')])
+  assert.match(await releaseTest(() => L.liveLinkProblem(dir, steam, 'live')), /isn't in what the creative typed/)
+  journal(dir, [{ ev: 'step.start', step: 'walk' }, box, yes, typed('https://store.steampowered.com/app/1/')])
   assert.match(await releaseTest(() => L.liveLinkProblem(dir, 'https://store.steampowered.com/app/1/', 'live')), /checks only pages on this machine/)
   L.markedLive(dir, steam, script, NOW)
   assert.equal(L.readRecord(dir).per.steam.status, 'live')

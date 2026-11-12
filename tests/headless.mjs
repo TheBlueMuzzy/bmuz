@@ -814,7 +814,7 @@ const scenarios = {
       testAnswers: {
         where: { 'Where should it go? (pick any)': ['The web', 'itch.io', 'Steam'] },
         page: { 'The store page, written from your pitch (change anything?)': 'Looks good, keep it as it is.' },
-        walk: { 'Each step of the Steam walk-through': 'done', 'When Steam shows Garden Race live, paste its link here.': steamLink },
+        walk: { 'Each step of the Steam walk-through': 'done', 'Is Garden Race live on Steam?': "Yes, it's live", 'When Steam shows Garden Race live, paste its link here.': steamLink },
         reactions: { 'First Reactions (what players are saying)': 'Reviews so far: five of them say games came down to the last card and they played again straight away. Two say hail is too strong late in the game. One says the rain card text is cut off on a small phone.' },
         lookback: { 'Look Back (change anything?)': 'Keep your two lists as they are.' },
       },

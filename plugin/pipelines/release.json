@@ -77,7 +77,7 @@
     {
       "id": "walk", "kind": "talk", "needs": ["launch"], "when": "{walk}", "no": "6.1", "title": "Store & Launch",
       "description": "The store, step by step with you; its link when it's live",
-      "tools": ["Read", "Glob", "Grep"], "lines": ["release.walk", "release.walk.link"], "must": ["release.walk", "release.walk.link"],
+      "tools": ["Read", "Glob", "Grep"], "lines": ["release.walk", "release.walk.live.box", "release.walk.link"], "must": ["release.walk", "release.walk.live.box", "release.walk.link"],
       "craft": "craft/release-walk.md", "results": ["link"],
       "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/launch.mjs", "live-link", "{link}", "{auto}"] }
     },
