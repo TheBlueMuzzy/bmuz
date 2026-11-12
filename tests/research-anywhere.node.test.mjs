@@ -6,11 +6,13 @@ import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createServer } from 'node:http'
-import { readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as E from '../plugin/hooks/engine.js'
 import { checkReport, checkSources, deadLinks } from '../plugin/scripts/check-sources.mjs'
+import { found, shortLines, stub } from '../plugin/scripts/research.mjs'
 
 const run = promisify(execFile)
 const here = fileURLToPath(new URL('.', import.meta.url))
@@ -170,4 +172,67 @@ test('F229 task 2: the engine lets a research helper run exactly the link test �
   assert.equal(judge(st('build'), cmd, { research: { status: 'running' } }).allow, true)
   assert.equal(E.isLinkCheck(`node "${CHECKER}" --dead 'https://a.example/x?y=1&z=2'`, ROOT), true)
   assert.equal(E.isLinkCheck(`node "${CHECKER}" --dead 'https://a.example/x' 'ftp://b'`, ROOT), false)
+})
+
+// ---- task 3: what the engine runs around the flow (plugin/scripts/research.mjs) ----
+const OUT = '.planning/research/research-2026-11-11-weather.md'
+function project() {
+  const dir = mkdtempSync(join(tmpdir(), 'bmuz-f229-'))
+  mkdirSync(join(dir, '.planning', 'research'), { recursive: true })
+  return dir
+}
+
+test('F229 task 3: the 3 short lines are the first finding of each question in turn, without their [n] and strength marks', async () => {
+  const { written } = await runFlow(QUESTION, answer)
+  const lines = shortLines(written)
+  assert.equal(lines.length, 1) // this report has one finding
+  assert.equal(lines[0], 'Weather helping both players appears in a few co-op games')
+  const many = '## Findings by question\n### 1. a?\n**T**\n- A one [1] (one source)\n- A two [2] (one source)\n### 2. b?\n- none found: see Open questions\n### 3. c?\n- C one [1][2] (several sources)\n## Bricks\n- not a finding [1] (one source)\n'
+  assert.deepEqual(shortLines(many), ['A one', 'C one', 'A two'])
+})
+
+test('F229 task 3: found — a report that passes the source check gives its lines (and the page is rebuilt); none, or an unsourced one, is refused plainly', async () => {
+  const dir = project()
+  try {
+    assert.match((await found(dir, OUT, { offline: true })).why, /wrote no report/)
+    assert.match((await found(dir, '../x.md', { offline: true })).why, /isn't a research report path/)
+    const { written } = await runFlow(QUESTION, answer)
+    writeFileSync(join(dir, OUT), written)
+    writeFileSync(join(dir, '.planning', 'GDD.md'), '# Garden Race\n')
+    const ok = await found(dir, OUT, { offline: true })
+    assert.deepEqual(ok, { ok: true, lines: ['Weather helping both players appears in a few co-op games'], out: OUT })
+    assert.ok(existsSync(join(dir, '.planning', 'project-page.html')))
+    writeFileSync(join(dir, OUT), written.replace(/ \[\d+\](\[\d+\])* \((one source|several sources)\)/, ''))
+    assert.match((await found(dir, OUT, { offline: true })).why, /didn't pass the source check/)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('F229 task 3: the test stand-in is honoured only with BMUZ_TEST=1: copied in as this question\'s report, titled with it', () => {
+  const dir = project()
+  const stubs = mkdtempSync(join(tmpdir(), 'bmuz-f229-stub-'))
+  try {
+    writeFileSync(join(stubs, 'question.md'), '# Research: stand-in\n\nAsked on 2000-01-01.\n\nMade by the BMUZ research flow.\n')
+    assert.deepEqual(stub(dir, OUT, 'q?', '2026-11-11', 'Design · The Rulebook', { BMUZ_RESEARCH_STUB: stubs }), { ok: true, stub: false })
+    const was = process.env.BMUZ_TEST
+    process.env.BMUZ_TEST = '1'
+    try {
+      assert.deepEqual(stub(dir, OUT, 'q?', '2026-11-11', 'Design · The Rulebook', { BMUZ_RESEARCH_STUB: stubs }), { ok: true, stub: true })
+    } finally { if (was === undefined) delete process.env.BMUZ_TEST; else process.env.BMUZ_TEST = was }
+    assert.equal(readFileSync(join(dir, OUT), 'utf8'), '# Research: q?\n\nAsked on 2026-11-11 at Design · The Rulebook.\n\nMade by the BMUZ research flow.\n')
+  } finally { rmSync(dir, { recursive: true, force: true }); rmSync(stubs, { recursive: true, force: true }) }
+})
+
+test('F229 task 3: every talk step is told research is a step-in (an auto run only where its craft note asks); a typed ask carries the hint', () => {
+  const step = { id: 's', kind: 'talk', tools: ['Read'], craft: 'craft/x.md' }
+  assert.match(E.talkPrompt(step, 'craft', '', false), /Research, any time: .*mcp__bmuz__research \{"question"/)
+  assert.match(E.talkPrompt(step, 'craft', '', true), /Auto run: research only where this step's craft note asks for it/)
+  assert.equal(E.soundsLikeResearch("what's the research say about this?"), true)
+  assert.equal(E.soundsLikeResearch('has this been done before?'), true)
+  assert.equal(E.soundsLikeResearch('make it blue'), false)
+  assert.equal(E.soundsLikeResearch('bmuz go'), false)
+  assert.equal(E.researchOut('What about Weather?!', '2026-11-11'), '.planning/research/research-2026-11-11-what-about-weather.md')
+  const notes = [{ pipeline: 'design', step: 'rules-ask', question: 'q', out: 'o.md', found: ['a', 'b'], answer: 'no change' }, { pipeline: 'define', step: 'rules-ask', question: 'other', out: 'p.md', found: [], answer: '' }]
+  assert.match(E.researchNotesFor(notes, 'rules-ask', 'design'), /"q" \(o\.md\): found a · b\. Their answer to "Does it change anything\?": "no change"/)
+  assert.doesNotMatch(E.researchNotesFor(notes, 'rules-ask', 'design'), /other/)
+  assert.equal(E.researchNotesFor(notes, 'flow', 'design'), '')
 })

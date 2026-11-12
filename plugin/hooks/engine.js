@@ -409,6 +409,8 @@ export function talkPrompt(step, craft, why, auto, decided = [], more = {}) {
   if (auto) lines.push(`Auto run: the creative is away. Never ask and never wait for an answer, with AskUserQuestion or in plain text. Where you would ask, pick the sensible default, list it in the result's "asks" as {"question": "...", "picked": "..."}, and carry on.${step.lines ? ` Every script line this step would say is still said: call ${SAY_TOOL} for it and write its words, exactly where a live run would say it (a free question or a box included), then take the answer and carry on.` : ''}`)
   else lines.push(step.lines ? SCRIPT_RULE : ASK_RULE)
   lines.push(STEP_IN_RULE)
+  // F229: research, any time (an auto run only when the step's craft note asks for it; it lands in the questions file)
+  lines.push(auto ? `${RESEARCH_RULE} Auto run: research only where this step's craft note asks for it; what it finds is noted in the questions file for the creative.` : RESEARCH_RULE)
   // F232: the step's script lines, and the ones it opens with (said before anything else).
   if (step.lines && more.script) {
     lines.push(`This step's script lines (say them through ${SAY_TOOL}, filling the slots from the game so far and the creative's own words):\n${linesList(more.script, step.lines)}`)
@@ -980,6 +982,7 @@ export function toolRowLabel(tool, output, isErrored) {
   if (tool === ENGINE_TOOL) return /^\s*"?Not done/.test(typeof output === 'string' ? output : JSON.stringify(output ?? '')) ? 'BMUZ · step not done yet' : 'BMUZ · step recorded'
   if (tool === SAY_TOOL) return 'BMUZ · script line'
   if (tool === BUG_TOOL) return 'BMUZ · bug logged'
+  if (tool === RESEARCH_TOOL) return 'BMUZ · research'
   return null
 }
 
@@ -1063,6 +1066,21 @@ export function judgeTool(p, state, call, opts = {}) {
     const cur = stepById(p, state.current)
     const stepResearch = state.status === 'working' && cur && cur.kind === 'flow' && cur.workflow === RESEARCH_FLOW
     if (stepResearch || (opts.research && opts.research.status === 'running')) return { allow: true }
+  }
+  // F229: research, callable anywhere. The creative's ask goes through the research tool at any moment (a talk step, an
+  // open gate, between steps, while helpers work); its one Workflow call is the research flow (the motor pins its name and
+  // args), and while it runs its helpers may search, read the web and write its own report. The step's record is
+  // never touched. (A flow step whose own launch is still to come keeps its Workflow call.)
+  if (call.tool === RESEARCH_TOOL && !call.agentId) return { allow: true }
+  const r = opts.research
+  if (r && r.status === 'launching' && call.tool === 'Workflow' && !call.agentId) {
+    const cur = stepById(p, state.current)
+    const stepLaunch = state.status === 'working' && cur && cur.kind === 'flow' && !(state.flow && state.flow.toolUseId)
+    if (!stepLaunch) return { allow: true, rewriteResearch: true }
+  }
+  if (r && r.status === 'running' && call.agentId) {
+    if (RESEARCH_HELPER_TOOLS.includes(call.tool)) return { allow: true }
+    if (call.tool === 'Write' && opts.dir && projectPath(opts.dir, (call.input || {}).file_path) === r.out) return { allow: true }
   }
   // step_done only closes an open talk step; called between steps, it has nothing to finish.
   if (call.tool === ENGINE_TOOL && !call.agentId && !(state.status === 'working' && (stepById(p, state.current) || {}).kind === 'talk')) {
@@ -1685,6 +1703,44 @@ export function stepPlace(p, step) {
   const name = stage ? stage.name : p.id
   if (/\.0$/.test(s.no)) return `${name} · ${s.title}`
   return `${name} · ${numbered.indexOf(s.no) + 1} of ${numbered.length} · ${s.title}`
+}
+
+// ---- Research, callable anywhere (F229) ----
+// The approved script's "Any time: when the designer steps in": "what's the research say about this?" → "Let me look.
+// [about 3 minutes] … Here's what I found: [3 short lines]. Sources are on your project page. Does it change anything?"
+// Like an idea, never a side trip: the research flow runs in the background, the step carries on where it was (its record
+// untouched), and the creative's answer to "Does it change anything?" goes back into that step as a note it reads.
+export const RESEARCH_TOOL = 'mcp__bmuz__research'
+// What a research helper may use while the creative's research runs (and Write, only its own report)
+export const RESEARCH_HELPER_TOOLS = ['ToolSearch', 'WebSearch', 'WebFetch', 'StructuredOutput']
+// The [about 3 minutes] slot: four lenses, a link check and a merge take about this long
+export const RESEARCH_TIME = 'About 5 minutes'
+export const RESEARCH_RULE = `Research, any time: if the creative asks what the research says, whether something has been done, or for research on a creative block, a rule that doesn't work or a risk to test ("what's the research say about this?"), that is a step-in, not an answer to this step. Call ${RESEARCH_TOOL} {"question": "their question, in their words", "about": "what it's about, from this step, in a few words"}, write the line it returns word for word and do what it says: the research runs in the background while this step carries on exactly where it was. Never offer research as a menu.`
+
+// A plain message that may ask for research (a hint only: Claude judges whether it does).
+export function soundsLikeResearch(text) {
+  const t = String(text || '')
+  if (/^\s*bmuz\b/i.test(t)) return false
+  return /\b(research|been done (before|already)|has (this|that|it|anyone) (been done|done this|done that)|look (it|this|that) up|what do (other )?games do|any (other )?games (that|which|like|with))\b/i.test(t)
+}
+export function researchNote() {
+  return `BMUZ engine: if this message asks for research, it is a step-in, not an answer to the step: call ${RESEARCH_TOOL} {"question": "their question, in their words", "about": "what it's about, from the step"}, write the line it returns word for word, then carry on where you were.`
+}
+
+// The research's day-stamped report path: .planning/research/research-2026-11-11-<slug>.md
+export function researchOut(question, day) {
+  const slug = String(question || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'question'
+  return `.planning/research/research-${day}-${slug}.md`
+}
+
+// What a step reads of the research asked during it (its notes: { step, question, out, found, answer }), or ''.
+export function researchNotesFor(notes, stepId, pipeline) {
+  const mine = (Array.isArray(notes) ? notes : []).filter(n => n && n.step === stepId && (!n.pipeline || n.pipeline === pipeline))
+  if (!mine.length) return ''
+  return [
+    'Research the creative asked for during this step (take it into the step; it is theirs, never a menu, and not to be asked again):',
+    ...mine.map(n => `- "${n.question}" (${n.out}): found ${(n.found || []).join(' · ') || 'nothing sourced'}. Their answer to "Does it change anything?": ${n.answer ? `"${n.answer}"` : '(none: an auto run)'}`),
+  ].join('\n')
 }
 
 // ---- Stepping in (F215): something broken, said at any step, is logged as a bug on a side trip ----
