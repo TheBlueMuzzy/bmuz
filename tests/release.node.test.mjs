@@ -262,7 +262,6 @@ test('"Not yet": what\'s missing on the roadmap in the creative\'s words, the pl
   assert.deepEqual(L.more(dir), { last: 'no', onward: 'release', at: 'platform' })
   state(dir, {})
   assert.equal(L.next(dir, NOW).platform, 'itch.io')
-  L.readRecord(dir)
   const rec = L.readRecord(dir)
   rec.per.itch.status = 'live'
   writeFileSync(join(dir, L.RECORD), JSON.stringify(rec))
@@ -320,7 +319,7 @@ test('task 3: the web\'s live check fails → the last good version (v0.3.0) is 
   await assert.rejects(withEnv({ FAKE_LIVE_CHECK: 'fail' }, () => releaseTest(() => L.launch(dir, script, NOW))), /The new build \(v1\.0\.0\) failed its live check, so I put v0\.3\.0 back; that's what's live now\./)
   assert.ok(calls(dir).some(c => /^rollback v0\.3\.0/.test(c)), 'rolled back')
   assert.equal(L.readRecord(dir).per.web.status, 'to do')
-  assert.equal(read(dir, L.SAY.live), null)
+  assert.equal(read(dir, L.SAY.live), '', 'no "is live" line')
   assert.ok(!/Live on the web/.test(read(dir, '.planning/STATE.md')))
   // a later try never says it's live either
   await assert.rejects(releaseTest(() => L.launch(dir, script, NOW)), /failed its live check, so I put v0\.3\.0 back/)
@@ -433,7 +432,7 @@ test('review fix 5: Release\'s own outside check fails after the live check → 
   assert.ok(calls(dir).some(c => /^rollback v0\.3\.0/.test(c)), 'rolled back')
   const web = L.readRecord(dir).per.web
   assert.deepEqual([web.status, web.rolledBack], ['to do', 'v0.3.0'])
-  assert.equal(read(dir, L.SAY.live).includes('the web') || /nowhere/.test(read(dir, L.SAY.live)), false, 'the web is never reported live')
+  assert.equal(read(dir, L.SAY.live), '', 'the web is never reported live (the line is emptied before every launch, and not written again)')
   assert.ok(!/Live on the web/.test(read(dir, '.planning/STATE.md')))
   // a later try of the web says the same, and never reports it live
   await assert.rejects(releaseTest(() => L.launch(dir, script, NOW)), /so I put v0\.3\.0 back/)

@@ -387,6 +387,8 @@ function butler(dir, args) {
 export async function launch(dir, script = loadScript(), now = new Date()) {
   const rec = recordOf(dir)
   const p = current(rec)
+  // (nothing says "is live" until this platform really is: an earlier platform's line never stands for it)
+  write(dir, SAY.live, '')
   const answer = releaseAnswer(dir)
   if (answer !== 'Release it') throw new Error(`nothing goes public without the creative's own "Release it" at "Release ${rec.game} on ${p.name}?" (${answer ? `they answered "${answer}"` : 'no answer in this run'})`)
   readyFor(dir)
