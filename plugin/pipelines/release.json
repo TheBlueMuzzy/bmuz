@@ -1,0 +1,118 @@
+{
+  "id": "release",
+  "version": 1,
+  "description": "Release (F230, the approved script's Stage 6): 1.0 goes public — the welcome and \"Where should it go?\" (pick any) → for each place picked, one run each: its requirements researched fresh with sources → Store & Launch (done / needs you, the store page from your pitch) → \"Release <game> on <platform>?\" (nothing goes public without your own \"Release it\"; an auto run stops there) → live and checked from outside (Steam and the phone stores: you, step by step; marked live on your word and a link that checks out) → First Reactions (fixes into an Update milestone) → Look Back → Develop for the update, or the game is out",
+  "watchdogMs": 1200000,
+  "next": { "pipeline": "{onward}", "at": "{at}", "ask": false },
+  "steps": [
+    {
+      "id": "where", "kind": "talk", "needs": [], "no": "6.0", "title": "Welcome to Release",
+      "description": "1.0 goes public: where should it go? (pick any)",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read"], "lines": ["release.welcome", "release.where"], "opening": ["release.welcome", "release.where"], "must": ["release.where"],
+      "craft": "craft/release-where.md", "results": ["platforms"],
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/launch.mjs", "where", "{platforms}", "{auto}"] }
+    },
+    {
+      "id": "platform", "kind": "script", "needs": ["where"], "no": "6.1", "title": "Store & Launch",
+      "description": "The next place it goes (each one its own run)",
+      "run": ["node", "{plugin}/scripts/launch.mjs", "next"], "results": ["platform", "game", "topic", "fresh", "haspage"]
+    },
+    {
+      "id": "research", "kind": "flow", "needs": ["platform"], "when": "{fresh}", "no": "6.1", "title": "Store & Launch",
+      "description": "What this platform needs today, from its own current docs, every requirement sourced (not when it was researched today)",
+      "workflow": "bmuz:research-flow",
+      "args": { "topic": "release", "brief": "{topic}", "youAre": "", "out": ".planning/research/release-now.md" },
+      "agentTools": ["ToolSearch", "WebSearch", "WebFetch", "StructuredOutput", "Write"],
+      "writes": [".planning/research/release-now.md"],
+      "timeoutMs": 1800000,
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/check-sources.mjs", ".planning/research/release-now.md"] }
+    },
+    {
+      "id": "store", "kind": "script", "needs": ["research"], "no": "6.1", "title": "Store & Launch",
+      "description": "What it needs today: done / needs you; the store page drafted from your pitch",
+      "run": ["node", "{plugin}/scripts/launch.mjs", "store"], "results": ["go", "haspage"], "timeoutMs": 300000,
+      "show": ".bmuz/release/say-store.md"
+    },
+    {
+      "id": "page", "kind": "talk", "needs": ["store"], "when": "{haspage}", "no": "6.1", "title": "Store & Launch",
+      "description": "The store page, written from your pitch: change anything?",
+      "tools": ["Read"], "lines": ["release.page"], "opening": ["release.page"],
+      "craft": "craft/release-page.md", "results": ["page"],
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/launch.mjs", "page-check", "{page}"] }
+    },
+    {
+      "id": "page-save", "kind": "script", "needs": ["page"], "when": "{haspage}", "no": "6.1", "title": "Store & Launch",
+      "description": "The store page, as you want it",
+      "run": ["node", "{plugin}/scripts/launch.mjs", "page-save"]
+    },
+    {
+      "id": "notyet", "kind": "talk", "needs": ["page-save"], "onBack": true, "no": "6.1", "title": "Store & Launch",
+      "description": "Not yet: what's missing",
+      "tools": ["Read"], "lines": ["release.gate.box"], "craft": "craft/release-notyet.md", "results": ["lacks"]
+    },
+    {
+      "id": "notyet-do", "kind": "script", "needs": ["notyet"], "no": "6.1", "title": "Store & Launch",
+      "description": "What's missing on the roadmap; this place waits, the next one goes on",
+      "run": ["node", "{plugin}/scripts/launch.mjs", "not-yet", "{lacks}"], "results": ["go"],
+      "writes": [".planning/ROADMAP.md"],
+      "show": ".bmuz/release/say-notyet.md"
+    },
+    {
+      "id": "gate", "kind": "gate", "needs": ["notyet-do"], "when": "{go}", "no": "6.1", "title": "Store & Launch",
+      "description": "Release it on this platform? Nothing goes public without your own yes",
+      "line": "release.gate.box", "approve": "Release it", "backTo": "notyet"
+    },
+    {
+      "id": "launch", "kind": "script", "needs": ["gate"], "when": "{go}", "no": "6.1", "title": "Store & Launch",
+      "description": "Live and checked from outside (only after your \"Release it\"); Steam and the phone stores: your walk-through next",
+      "run": ["node", "{plugin}/scripts/launch.mjs", "launch"], "results": ["walk"], "retries": 0, "timeoutMs": 600000,
+      "show": ".bmuz/release/say-live.md"
+    },
+    {
+      "id": "walk", "kind": "talk", "needs": ["launch"], "when": "{walk}", "no": "6.1", "title": "Store & Launch",
+      "description": "The store, step by step with you; its link when it's live",
+      "tools": ["Read", "Glob", "Grep"], "lines": ["release.walk", "release.walk.link"], "must": ["release.walk.link"],
+      "craft": "craft/release-walk.md", "results": ["link"],
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/launch.mjs", "live-link", "{link}", "{auto}"] }
+    },
+    {
+      "id": "walk-done", "kind": "script", "needs": ["walk"], "when": "{walk}", "no": "6.1", "title": "Store & Launch",
+      "description": "Marked live, on your word and a link that checks out",
+      "run": ["node", "{plugin}/scripts/launch.mjs", "marked-live"],
+      "show": ".bmuz/release/say-live.md"
+    },
+    {
+      "id": "more", "kind": "script", "needs": ["walk-done"], "no": "6.1", "title": "Store & Launch",
+      "description": "Another place to go? (then Release again from the next one)",
+      "run": ["node", "{plugin}/scripts/launch.mjs", "more"], "results": ["last", "onward", "at"]
+    },
+    {
+      "id": "reactions", "kind": "talk", "needs": ["more"], "when": "{last}", "no": "6.2", "title": "First Reactions",
+      "description": "What players are saying, against your feelings",
+      "tools": ["Read", "Glob", "Grep", "WebFetch", "ToolSearch"], "lines": ["release.reactions"], "opening": ["release.reactions"],
+      "craft": "craft/release-reactions.md", "results": ["reactions"],
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/launch.mjs", "reactions-check", "{reactions}"] }
+    },
+    {
+      "id": "reactions-write", "kind": "script", "needs": ["reactions"], "when": "{last}", "no": "6.2", "title": "First Reactions",
+      "description": "The fixes in an Update milestone, the bugs in BUGS.md",
+      "run": ["node", "{plugin}/scripts/launch.mjs", "reactions-write"],
+      "writes": [".planning/ROADMAP.md", ".planning/BUGS.md", ".planning/project-page.html"],
+      "show": ".bmuz/release/say-reactions.md"
+    },
+    {
+      "id": "lookback", "kind": "talk", "needs": ["reactions-write"], "when": "{last}", "no": "6.3", "title": "Look Back",
+      "description": "What this game taught us: for it, and for BMUZ",
+      "tools": ["Read", "Glob", "Grep"], "lines": ["release.lookback"], "opening": ["release.lookback"],
+      "craft": "craft/release-lookback.md", "results": ["lessons"],
+      "done": { "type": "script-ok", "run": ["node", "{plugin}/scripts/launch.mjs", "lookback-check", "{lessons}"] }
+    },
+    {
+      "id": "lookback-write", "kind": "script", "needs": ["lookback"], "when": "{last}", "no": "6.3", "title": "Look Back",
+      "description": "The lessons kept; on to the update, or the game is out",
+      "run": ["node", "{plugin}/scripts/launch.mjs", "lookback-write"], "results": ["onward", "at"],
+      "writes": [".planning/STATE.md", ".planning/bmuz-suggestions.md"],
+      "show": ".bmuz/release/say-end.md"
+    }
+  ]
+}

@@ -87,7 +87,7 @@ test('the loop: the next platform in the order picked; today\'s research isn\'t 
   const dir = garden({ research: ['web'] })
   picked(dir, ['The web', 'itch.io'])
   const r = L.next(dir, NOW)
-  assert.deepEqual(r, { platform: 'the web', game: 'Garden Race', topic: TOPICS.web, fresh: 'no', page: 'no' })
+  assert.deepEqual(r, { platform: 'the web', game: 'Garden Race', topic: TOPICS.web, fresh: 'no', haspage: 'no' })
   assert.deepEqual(L.readRecord(dir).platforms, ['web', 'itch'])
   // (a report from before today is researched again: stores change their rules)
   const old = new Date(Date.now() - 3 * 86400000)
@@ -102,7 +102,7 @@ test('6.1 Store & Launch: the requirements from today\'s sourced research, split
   picked(dir, ['Steam'])
   L.next(dir, NOW)
   const r = await L.store(dir, script, NOW)
-  assert.deepEqual(r, { go: 'yes', page: 'yes' })
+  assert.deepEqual(r, { go: 'yes', haspage: 'yes' })
   const per = L.readRecord(dir).per.steam
   // (the upload through Steamworks is the creative's: BMUZ never submits to a store)
   assert.deepEqual(per.done, ['A store page · the short description and About This Game'])
@@ -290,4 +290,38 @@ test('task 3: the web\'s live check fails → the last good version (v0.3.0) is 
   assert.ok(!/Live on the web/.test(read(dir, '.planning/STATE.md')))
   // a later try never says it's live either
   await assert.rejects(releaseTest(() => L.launch(dir, script, NOW)), /failed its live check, so I put v0\.3\.0 back/)
+})
+
+test('release.json is the script\'s Stage 6 in order; a platform\'s launch runs only after its own gate, whose yes is never first and never carried; each platform is its own run; Deliver\'s 1.0 build hands over', () => {
+  const p = JSON.parse(readFileSync(join(here, '..', 'plugin', 'pipelines', 'release.json'), 'utf8'))
+  assert.deepEqual(E.checkPipeline(p), [])
+  assert.deepEqual(E.checkLines(p, script), [])
+  assert.deepEqual([...new Set(p.steps.map(s => s.no))], ['6.0', '6.1', '6.2', '6.3'])
+  assert.deepEqual(p.steps.map(s => s.id), ['where', 'platform', 'research', 'store', 'page', 'page-save', 'notyet', 'notyet-do', 'gate', 'launch', 'walk', 'walk-done', 'more', 'reactions', 'reactions-write', 'lookback', 'lookback-write'])
+  const gate = p.steps.find(s => s.id === 'gate')
+  assert.equal(gate.kind, 'gate')
+  assert.ok(!gate.auto, 'an auto run stops at "Release it?" (never "carry")')
+  assert.deepEqual(E.gateWords(gate, script, { game: 'Garden Race', platform: 'Steam' }), { question: 'Release Garden Race on Steam?', options: ['Not yet', 'Release it'] })
+  const launch = p.steps.find(s => s.id === 'launch')
+  assert.deepEqual([launch.needs, launch.when, launch.retries, launch.writes], [['gate'], '{go}', 0, undefined], 'launch runs only after the gate, never again by itself, and the engine never puts files back over a release')
+  // the research: the research flow, fresh, its sources checked, never from memory
+  const research = p.steps.find(s => s.id === 'research')
+  assert.deepEqual([research.kind, research.workflow, research.when, research.args.topic, research.done.run.slice(1)], ['flow', 'bmuz:research-flow', '{fresh}', 'release', ['{plugin}/scripts/check-sources.mjs', '.planning/research/release-now.md']])
+  assert.match(readFileSync(join(here, '..', 'plugin', 'workflows', 'research-flow.js'), 'utf8'), /^ {2}release: \{\n {4}name: 'Release requirements',/m)
+  // each platform its own run: Release hands to itself at "platform", or on to Develop / nowhere after Look Back
+  assert.deepEqual(p.next, { pipeline: '{onward}', at: '{at}', ask: false })
+  assert.deepEqual(p.steps.find(s => s.id === 'more').results, ['last', 'onward', 'at'])
+  for (const s of p.steps.filter(x => x.show)) assert.ok(E.isShowPath(s.show), s.show)
+  const auto = JSON.parse(readFileSync(join(here, '..', 'plugin', 'settings', 'auto-run.json'), 'utf8')).permissions.allow
+  assert.ok(auto.includes('Workflow(bmuz:research-flow)'))
+})
+
+test('Deliver\'s build at 1.0 hands over to Release ("onward": release, nothing shared from Deliver); any other build goes on to "Share it?"', () => {
+  const dir = garden()
+  const run = () => spawnSync(process.execPath, [join(here, '..', 'plugin', 'scripts', 'deliver.mjs'), 'build'], { cwd: dir, encoding: 'utf8' })
+  const last = r => JSON.parse(r.stdout.trim().split('\n').pop()).results
+  assert.deepEqual(last(run()), { go: 'no', onward: 'release', at: 'first' })
+  const rec = D.readRecord(dir)
+  writeFileSync(join(dir, D.RECORD), JSON.stringify({ ...rec, stage: 'beta' }))
+  assert.deepEqual(last(run()), { go: 'yes', onward: 'develop', at: 'plan' })
 })

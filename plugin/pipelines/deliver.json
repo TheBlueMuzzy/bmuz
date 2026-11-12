@@ -1,14 +1,14 @@
 {
   "id": "deliver",
   "version": 1,
-  "description": "Deliver (F219, the approved script's Stage 5): each time a milestone is ready it becomes a build you can play and share — the welcome (first time only) → the Release Check for its stage (Playable, Alpha, Beta, 1.0; not ready: finish it first or move it to the next stage) → Polish & Stand-ins → Safety & Legal → Build & Share (nothing merges, versions, pushes or goes live without your own \"Share it\"; an auto run stops there) → Playtest Notes into the roadmap → back to Develop at Plan the Sprint",
+  "description": "Deliver (F219, the approved script's Stage 5): each time a milestone is ready it becomes a build you can play and share — the welcome (first time only) → the Release Check for its stage (Playable, Alpha, Beta, 1.0; not ready: finish it first or move it to the next stage) → Polish & Stand-ins → Safety & Legal → Build & Share (nothing merges, versions, pushes or goes live without your own \"Share it\"; an auto run stops there) → Playtest Notes into the roadmap → back to Develop at Plan the Sprint. The 1.0 build goes on to Release (F230) after its card: going public is Release's",
   "watchdogMs": 1200000,
-  "next": { "pipeline": "develop", "at": "plan", "ask": false },
+  "next": { "pipeline": "{onward}", "at": "{at}", "ask": false },
   "steps": [
     {
       "id": "prep", "kind": "script", "needs": [], "always": true, "no": "5.1", "title": "Release Check",
       "description": "Which milestone, at which release stage",
-      "run": ["node", "{plugin}/scripts/deliver.mjs", "prep"], "results": ["first"]
+      "run": ["node", "{plugin}/scripts/deliver.mjs", "prep"], "results": ["first", "onward", "at"]
     },
     {
       "id": "welcome", "kind": "script", "needs": ["prep"], "when": "{first}", "no": "5.0", "title": "Welcome to Deliver",
@@ -63,7 +63,7 @@
     {
       "id": "build", "kind": "script", "needs": ["safety"], "when": "{go}", "no": "5.4", "title": "Build & Share",
       "description": "The build, a link for you and one to share",
-      "run": ["node", "{plugin}/scripts/deliver.mjs", "build"], "timeoutMs": 600000,
+      "run": ["node", "{plugin}/scripts/deliver.mjs", "build"], "results": ["go", "onward", "at"], "timeoutMs": 600000,
       "show": ".bmuz/deliver/say-build.md"
     },
     {

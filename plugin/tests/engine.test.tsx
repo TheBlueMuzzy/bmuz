@@ -2279,3 +2279,93 @@ test('F219 review fix 10: in a talk step, "develop.plan" with a count of 1 is re
   const one: any = await $.tool.call({ tool: SAY, line: 'develop.plan.one', slots: { n: '2', milestone: 'Vertical slice' } } as any)
   expect(said(one).say).toBe(`**Plan the Sprint** · Sprint 2 · Vertical slice${String.fromCharCode(10)}Here's what I'd build next, 1 feature:`)
 })
+
+// F230: Release as the engine runs it. Deliver's 1.0 build hands over to Release; each platform is its own Release run
+// (the stage hands to itself at "platform", like Develop's next sprint); an auto run stops at a platform's "Release
+// it?" gate with nothing launched; only the creative's own "bmuz approve Release it" runs launch.
+const RELEASE_PIPE = {
+  id: 'release', version: 1, next: { pipeline: '{onward}', at: '{at}', ask: false }, steps: [
+    { id: 'where', kind: 'talk', tools: ['Read'], craft: 'craft/name.md', results: ['platforms'] },
+    { id: 'platform', kind: 'script', needs: ['where'], run: ['node', 'launch.mjs', 'next'], results: ['platform'] },
+    { id: 'store', kind: 'script', needs: ['platform'], run: ['node', 'launch.mjs', 'store'], results: ['go'] },
+    { id: 'notyet', kind: 'talk', needs: ['store'], onBack: true, tools: ['Read'], craft: 'craft/name.md', results: ['lacks'] },
+    { id: 'notyet-do', kind: 'script', needs: ['notyet'], run: ['node', 'launch.mjs', 'not-yet', '{lacks}'], results: ['go'] },
+    { id: 'gate', kind: 'gate', needs: ['notyet-do'], when: '{go}', question: 'Release Garden Race on {platform}?', options: ['Not yet', 'Release it'], approve: 'Release it', backTo: 'notyet' },
+    { id: 'launch', kind: 'script', needs: ['gate'], when: '{go}', run: ['node', 'launch.mjs', 'launch'], retries: 0, timeoutMs: 600000 },
+    { id: 'more', kind: 'script', needs: ['launch'], run: ['node', 'launch.mjs', 'more'], results: ['last', 'onward', 'at'] },
+  ],
+}
+function releaseWorld(on: any, more: string) {
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const said: Record<string, string> = { next: '{"results":{"platform":"the web"}}', store: '{"results":{"go":"yes"}}', launch: '{}', more }
+  // (not-yet, as launch.mjs answers: nothing said yet → go on; what's missing said → this platform waits)
+  const answer = (argv: string[]) => (argv[2] === 'not-yet' ? `{"results":{"go":"${argv[3] ? 'no' : 'yes'}"}}` : said[argv[2]] || '{}')
+  const w = world(on, { ...base({}), 'PIPELINE:release': JSON.stringify(RELEASE_PIPE) }, (argv: string[]) => ({ exitCode: 0, stdout: `✔${String.fromCharCode(10)}${answer(argv)}` }))
+  w.files['/proj/bmuz.json'] = JSON.stringify({ pipeline: 'release', watchdogTickMs: 3600000 })
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ pipeline: 'release', current: null, status: 'idle', results: {}, resultsBy: { where: { platforms: ['The web', 'itch.io'] } }, retries: {}, finished: ['where'], blocked: null, startedAt: null })
+  return w
+}
+const launches = (w: any) => w.runs.filter((r: string[]) => r[1] === 'launch.mjs' && r[2] === 'launch').length
+
+test('F230: an auto run stops at "Release Garden Race on the web?" (the question noted, nothing launched); "bmuz approve Release it" runs launch; the next platform is its own Release run from "platform"', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = releaseWorld(on, '{"results":{"last":"no","onward":"release","at":"platform"}}')
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't1')
+  let st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect([st.current, st.finished]).toEqual(['gate', ['where', 'platform', 'store', 'notyet', 'notyet-do']])
+  expect(events(w).find((j: any) => j.ev === 'gate.pending')).toMatchObject({ step: 'gate', question: 'Release Garden Race on the web?' })
+  expect(w.files['/proj/.bmuz/questions.md']).toMatch(/Release Garden Race on the web\? \(the run stopped here; answer with "bmuz approve Release it" or another option\)/)
+  expect(launches(w)).toBe(0)
+  await $.prompt.submit({ text: 'bmuz approve Release it' } as any)
+  await turn($, 't2')
+  expect(launches(w)).toBe(1)
+  // the next platform: Release again, entered at "platform" ("where" already answered), the web's run kept
+  expect(JSON.parse(w.files['/proj/bmuz.json']).pipeline).toBe('release')
+  st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect([st.pipeline, st.skipped]).toEqual(['release', ['where', 'notyet']])
+  expect(JSON.parse(w.files['/proj/.bmuz/stages.json']).some((s: any) => s.pipeline === 'release')).toBe(true)
+  expect(st.current).toBe('gate')
+})
+
+test('F230: "Not yet" at a platform\'s gate skips launch (nothing public) and the run goes on', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const w = releaseWorld(on, '{"results":{"last":"yes","onward":"later","at":"first"}}')
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ pipeline: 'release', current: 'gate', status: 'waiting', results: { go: 'yes', platform: 'Steam' }, resultsBy: { store: { go: 'yes' }, platform: { platform: 'Steam' } }, retries: {}, finished: ['where', 'platform', 'store', 'notyet', 'notyet-do'], skipped: ['notyet'], blocked: null, startedAt: 1 })
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz approve Not yet' } as any)
+  await turn($, 't1')
+  await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { lacks: 'the capsule art' } } as any)
+  await turn($, 't2')
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(st.status).toBe('done')
+  expect(events(w).filter((j: any) => j.ev === 'step.skip').map((j: any) => j.step)).toEqual(['gate', 'launch'])
+  expect(launches(w)).toBe(0)
+})
+
+test('F230: Deliver\'s build at 1.0 says "onward": release, "at": first — the project moves on to Release, from "Where should it go?", never asking "Share it?"', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const said: Record<string, string> = { prep: '{"results":{"first":"no","onward":"develop","at":"plan"}}', build: '{"results":{"go":"no","onward":"release","at":"first"}}' }
+  const w = world(on, base({}), (argv: string[]) => ({ exitCode: 0, stdout: `✔${String.fromCharCode(10)}${said[argv[2]] || '{}'}` }))
+  w.files['PIPELINE:deliver'] = JSON.stringify({
+    id: 'deliver', version: 1, next: { pipeline: '{onward}', at: '{at}', ask: false }, steps: [
+      { id: 'prep', kind: 'script', run: ['node', 'deliver.mjs', 'prep'], results: ['first', 'onward', 'at'] },
+      { id: 'build', kind: 'script', needs: ['prep'], run: ['node', 'deliver.mjs', 'build'], results: ['go', 'onward', 'at'] },
+      { id: 'share', kind: 'gate', needs: ['build'], when: '{go}', question: 'Share it?', options: ['Not yet', 'Share it'], approve: 'Share it' },
+    ],
+  })
+  w.files['PIPELINE:release'] = JSON.stringify(RELEASE_PIPE)
+  w.files['/proj/bmuz.json'] = JSON.stringify({ pipeline: 'deliver', watchdogTickMs: 3600000 })
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ pipeline: 'deliver', current: null, status: 'idle', results: {}, retries: {}, finished: [], blocked: null, startedAt: null })
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't1')
+  expect(JSON.parse(w.files['/proj/bmuz.json']).pipeline).toBe('release')
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect([st.pipeline, st.skipped || []]).toEqual(['release', []])
+  expect(events(w).some((j: any) => j.ev === 'gate.pending' && j.step === 'share')).toBe(false)
+})

@@ -179,7 +179,7 @@ export function next(dir, now = new Date()) {
   saveRecord(dir, rec)
   // (a research report from an earlier platform's run is never read as this one's)
   rmSync(join(dir, RESEARCH_NOW), { force: true })
-  return { platform: p.name, game: rec.game, topic: p.topic, fresh: yes(!isFresh(dir, researchFile(p.key), now)), page: yes(p.page) }
+  return { platform: p.name, game: rec.game, topic: p.topic, fresh: yes(!isFresh(dir, researchFile(p.key), now)), haspage: yes(p.page) }
 }
 
 // ---- 6.1 Store & Launch ----
@@ -287,7 +287,7 @@ export async function store(dir, script = loadScript(), now = new Date()) {
   rec.per[p.key] = { ...rec.per[p.key], status: 'to do', needs, done, you, research: researchFile(p.key), recipe: recipe ? recipe.file : null, page: p.page ? pageFile(p.key) : null }
   saveRecord(dir, rec)
   write(dir, SAY.store, line('release.store', { platform: p.name, needs: needs.join('; '), done: done.length ? done.join(' · ') : 'nothing yet', you: you.length ? you.join(' · ') : 'nothing' }, script) + '\n')
-  return { go: 'yes', page: yes(p.page) }
+  return { go: 'yes', haspage: yes(p.page) }
 }
 
 // The store page's answer: "keep" (as drafted) or the page as the creative wants it.

@@ -823,7 +823,8 @@ if (isMain) {
     if (mode === 'restore-exclude') say(true, restored ? '✔ .git/info/exclude put back as it was before the release scripts ran' : '✔ nothing to put back')
     if (mode === 'prep') {
       const r = prep(dir)
-      say(true, `✔ delivering ${r.rec.title} as a ${stageOf(r.rec.stage).name} build${r.first ? ' (the first time)' : ''}\n${results({ first: yes(r.first) })}`)
+      // (F230: Deliver's next stage — Develop at Plan the Sprint, unless the 1.0 build hands over to Release)
+      say(true, `✔ delivering ${r.rec.title} as a ${stageOf(r.rec.stage).name} build${r.first ? ' (the first time)' : ''}\n${results({ first: yes(r.first), onward: 'develop', at: 'plan' })}`)
     } else if (mode === 'welcome') {
       welcome(dir)
       say(true, `✔ ${SAY.welcome}`)
@@ -847,7 +848,10 @@ if (isMain) {
       say(!p.length, p.length ? `✘ Not safe to share yet: ${p.join('; ')}` : `✔ ${SAY.safety}`)
     } else if (mode === 'build') {
       const r = build(dir)
-      say(true, `✔ ${SAY.build}: for you ${r.local} · to share ${r.share}`)
+      // (F230: the 1.0 build isn't shared from here — going public is Release's, platform by platform, each with its own
+      // "Release it": Deliver ends with the card and hands over; every other build goes on to "Share it?")
+      const one = recordOf(dir).stage === '1.0'
+      say(true, `✔ ${SAY.build}: for you ${r.local} · to share ${r.share}${one ? ' · 1.0: on to Release' : ''}\n${results(one ? { go: 'no', onward: 'release', at: 'first' } : { go: 'yes', onward: 'develop', at: 'plan' })}`)
     } else if (mode === 'not-yet') {
       // (nothing said yet — the step runs only after "Not yet" — leaves the run as it is)
       write(dir, SAY.notyet, '')
