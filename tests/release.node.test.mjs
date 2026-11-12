@@ -447,3 +447,19 @@ test('review fix 5: Release\'s own outside check fails after the live check → 
   answered(dir, 'Release it')
   await assert.rejects(releaseTest(() => L.launch(dir, script, NOW)), /Steam waits: the web's 1\.0 \(v1\.0\.0\) didn't check out and v0\.3\.0 was put back, so the code here is v0\.3\.0's again/)
 })
+
+test('review fix 6: butler runs with no shell, and only a target shaped <user>/<game>:<channel>; anything else in STATE\'s Itch line is refused before anything runs', async () => {
+  const dir = garden()
+  picked(dir, ['itch.io'])
+  L.next(dir, NOW)
+  await L.store(dir, script, NOW)
+  answered(dir, 'Release it')
+  for (const bad of ['test/garden-race:html5&calc', 'test/garden-race', '../x/y:html5', 'test/garden race:html5']) {
+    writeFileSync(join(dir, '.planning/STATE.md'), read(dir, '.planning/STATE.md').replace(/butler \S+( \S+)?$/m, `butler ${bad}`))
+    assert.equal(L.itchOf(dir), null, bad)
+  }
+  await assert.rejects(releaseTest(() => L.launch(dir, script, NOW)), /itch\.io isn't set up for this game yet/)
+  assert.ok(!calls(dir).some(c => /^butler/.test(c)), 'butler never ran')
+  const body = readFileSync(join(here, '..', 'plugin', 'scripts', 'launch.mjs'), 'utf8').split('function butler')[1].split('\n}\n')[0]
+  assert.deepEqual(body.match(/shell:\s*[^,}]+/g), ['shell: false'], 'no shell for butler')
+})

@@ -370,14 +370,16 @@ function markLive(dir, p, link, version, now) {
 // link are STATE's "Itch:" line ("Itch: https://<user>.itch.io/<game> · butler <user>/<game>:html5"), set up once by
 // hand (the recipe's one-time setup). butler is itch's own upload tool; BMUZ_BUTLER names a stand-in (tests only).
 export function itchOf(dir) {
-  const m = (readIn(dir, STATE_MD) || '').match(/\bItch:\*{0,2}[ \t]*(https?:\/\/\S+)[ \t]*·[ \t]*butler[ \t]+(\S+)/)
-  return m ? { link: m[1], target: m[2] } : null
+  const m = (readIn(dir, STATE_MD) || '').match(/\bItch:\*{0,2}[ \t]*(https?:\/\/\S+)[ \t]*·[ \t]*butler[ \t]+([^\n]*?)[ \t]*$/m)
+  // (review fix 6: the butler target is <user>/<game>:<channel>, nothing else — it goes to butler as one argument)
+  return m && /^[\w.-]+\/[\w.-]+:[\w.-]+$/.test(m[2]) && !/(^|\/)\.\.?(\/|:|$)/.test(m[2]) ? { link: m[1], target: m[2] } : null
 }
 function butler(dir, args) {
   const stand = process.env.BMUZ_BUTLER
   if (isTest() && !stand) return { ok: false, out: 'a test run uploads only to the stand-in (BMUZ_BUTLER), never to itch.io' }
   const argv = stand ? [process.execPath, stand, ...args] : ['butler', ...args]
-  const r = spawnSync(argv[0], argv.slice(1), { cwd: dir, encoding: 'utf8', timeout: 540000, shell: !stand && process.platform === 'win32' })
+  // (review fix 6: an argument list, never a shell)
+  const r = spawnSync(argv[0], argv.slice(1), { cwd: dir, encoding: 'utf8', timeout: 540000, shell: false })
   if (r.error && r.error.code === 'ENOENT') return { ok: false, out: 'butler (itch.io\'s upload tool) isn\'t installed: the itch.io recipe says how (download it from https://itchio.itch.io/butler, then "butler login" once)' }
   return { ok: r.status === 0, out: `${r.stdout || ''}${r.stderr || ''}`.trim() }
 }
@@ -412,12 +414,13 @@ export async function launch(dir, script = loadScript(), now = new Date()) {
     // (review fix 5: the web's rollback stays the web's; here it means the code is the old version's again)
     const d = (D.readRecord(dir) || {}).publish || {}
     if (d.rolledBack) throw new Error(`${p.name} waits: the web's 1.0 (${d.tag}) didn't check out and ${d.rolledBack} was put back, so the code here is ${d.rolledBack}'s again. Fix it in Develop and deliver 1.0 again, then release ${p.name}.`)
+    // (itch.io's own setup is checked before anything is released for it)
+    const itch = p.key === 'itch' ? itchOf(dir) : null
+    if (p.key === 'itch' && !itch) throw new Error('itch.io isn\'t set up for this game yet: make its page once by hand (itch.io → Dashboard → Create new project, Kind of project: HTML), then add "Itch: <the page\'s link> · butler <user>/<game>:html5" to the Key facts in .planning/STATE.md (the itch.io recipe\'s one-time setup) and say "bmuz retry"')
+    if (itch && isTest() && !isLocalLink(itch.link)) throw new Error(`a test run uploads only to a page on this machine, and the Itch line says ${itch.link}`)
     const r = D.publish(dir, script, now, { approved: true, deploy: false })
     per.version = r.version
     if (p.key === 'itch') {
-      const itch = itchOf(dir)
-      if (!itch) throw new Error('itch.io isn\'t set up for this game yet: make its page once by hand (itch.io → Dashboard → Create new project, Kind of project: HTML), then add "Itch: <the page\'s link> · butler <user>/<game>:html5" to the Key facts in .planning/STATE.md (the itch.io recipe\'s one-time setup) and say "bmuz retry"')
-      if (isTest() && !isLocalLink(itch.link)) throw new Error(`a test run uploads only to a page on this machine, and the Itch line says ${itch.link}`)
       const out = D.shipDir(dir)
       if (!out) throw new Error('there is no build folder to upload (dist/, build/…): the 1.0 build is Deliver\'s')
       if (!per.uploaded) {
