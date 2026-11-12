@@ -1,6 +1,6 @@
 # BMUZ
 
-Muzzy's way of making games — Discover, Define, Develop, Deliver — run step by step by an engine inside Claude Code.
+Muzzy's way of making games — six stages, Ideate · Define · Design · Develop · Deliver · Release (research any time) — run step by step by an engine inside Claude Code.
 
 - `plugin/` — the BMUZ plugin (a Claude Code mod)
   - `hooks/register.tsx` — the motor: starts each step, guards tools, asks at gates, keeps the status band

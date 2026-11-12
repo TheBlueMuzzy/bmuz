@@ -1,6 +1,6 @@
 # BMUZ plugin
 
-BMUZ runs a game project's process — Discover, Define, Develop, Deliver — one step at a time from a pipeline file.
+BMUZ runs a game project's process — Ideate, Define, Design, Develop, Deliver, Release (research any time) — one step at a time from a pipeline file.
 In a project with a `bmuz.json`, the engine starts each step itself, hands Claude only that step's craft note,
 limits each step to its own tools, stops at gates to ask the creative with buttons, runs script and workflow steps,
 checks each step's result, retries twice then marks the step BLOCKED and rolls back, and keeps a journal so a
