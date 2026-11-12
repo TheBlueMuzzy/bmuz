@@ -985,6 +985,25 @@ Nothing to fix: there are no open bugs.
 ## bug.verified · say · added
 Marked {bug} as verified: you checked it and it's right.
 
+# Any time · research (F229)
+
+## research.look · say
+Let me look. {time}…
+
+## research.found · say
+Here's what I found:
+{found}
+Sources are on your project page. Does it change anything?
+
+## research.wait · say · added
+The {helpers} helpers are still working, so I'll start looking once they're done: "{question}".
+
+## research.busy · say · added
+I'm still looking into "{question}". One question at a time: ask me this one again once that's back.
+
+## research.none · say · added
+I couldn't find sources I trust on "{question}", so I have nothing to add yet. Back to {back}.
+
 # Fixing a bug (F215: the bug pipeline)
 
 ## bug.fix.start · say · added

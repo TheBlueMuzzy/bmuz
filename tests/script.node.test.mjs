@@ -82,7 +82,28 @@ test('F215: the step-in reply for a bug and the 4.0 "Something broken" line are 
 })
 
 test('lines not in the approved script are marked "added" (each one has an Ask Muzzy line)', () => {
-  assert.deepEqual(Object.values(script.lines).filter(l => l.added).map(l => l.id).sort(), ['any.keep', 'bug.fix.done', 'bug.fix.reproduced', 'bug.fix.start', 'bug.none', 'bug.now', 'bug.often', 'bug.verified', 'define.feelings.eight', 'deliver.back', 'deliver.live', 'deliver.notready.box', 'design.rulebook.ok', 'design.rulebook.section', 'design.sketches.none', 'design.time.notrap', 'develop.idea', 'develop.plan.one', 'develop.setup.nologin', 'develop.waiting', 'release.none', 'release.notyet', 'release.out', 'release.walk', 'release.walk.link', 'release.walk.live.box'])
+  assert.deepEqual(Object.values(script.lines).filter(l => l.added).map(l => l.id).sort(), ['any.keep', 'bug.fix.done', 'bug.fix.reproduced', 'bug.fix.start', 'bug.none', 'bug.now', 'bug.often', 'bug.verified', 'define.feelings.eight', 'deliver.back', 'deliver.live', 'deliver.notready.box', 'design.rulebook.ok', 'design.rulebook.section', 'design.sketches.none', 'design.time.notrap', 'develop.idea', 'develop.plan.one', 'develop.setup.nologin', 'develop.waiting', 'release.none', 'release.notyet', 'release.out', 'release.walk', 'release.walk.link', 'release.walk.live.box', 'research.busy', 'research.none', 'research.wait'])
+})
+
+// F229: the research reply (the spec's "Any time: when the designer steps in"), word for word, the [slot] parts and the
+// "…" (time passing between its two halves) cut out.
+export function researchFragments(html) {
+  const ent = s => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+  const anyTime = (html.split('<h2>Any time: when the designer steps in</h2>')[1] || '').split('</section>')[0]
+  const line = (anyTime.match(/<p class="b">(Let me look\.[\s\S]*?)<\/p>/) || [])[1] || ''
+  return line.replace(/<span class="slot">[^<]*<\/span>/g, '\u0001').replace(/…/g, '\u0001').split('\u0001')
+    .map(p => E.plainWords(ent(p.replace(/<[^>]+>/g, ''))).replace(/^[.:,\s]+|[\s]+$/g, '')).filter(w => w.length >= 3)
+}
+
+test('F229: the research reply is in script.md word for word, its two halves filled', { skip: !existsSync(SPEC) && 'the framework repo is not beside this one' }, () => {
+  const frags = researchFragments(readFileSync(SPEC, 'utf8'))
+  assert.deepEqual(frags, ['Let me look.', "Here's what I found:", 'Sources are on your project page. Does it change anything?'])
+  const mine = E.plainWords(scriptText.split('# Any time · research (F229)')[1].split('# Fixing a bug')[0])
+  for (const f of frags) assert.ok(mine.includes(f), f)
+  assert.equal(E.renderLine(script, 'research.look', { time: 'About 3 minutes' }).text, 'Let me look. About 3 minutes…')
+  assert.equal(E.renderLine(script, 'research.found', { found: ['Most games do X', 'Some fail at Y', 'Z is new'] }).text,
+    "Here's what I found:\n· Most games do X\n· Some fail at Y\n· Z is new\nSources are on your project page. Does it change anything?")
+  assert.match(E.renderLine(script, 'research.busy', { question: 'how do co-op games end?' }).text, /^I'm still looking into "how do co-op games end\?"\. One question at a time/)
 })
 
 test('filling a line: slots, lists as · lines, numbered lists, [[ … ]] only when filled, numbered questions left out and renumbered, another line inside', () => {
