@@ -461,5 +461,5 @@ test('review fix 6: butler runs with no shell, and only a target shaped <user>/<
   await assert.rejects(releaseTest(() => L.launch(dir, script, NOW)), /itch\.io isn't set up for this game yet/)
   assert.ok(!calls(dir).some(c => /^butler/.test(c)), 'butler never ran')
   const body = readFileSync(join(here, '..', 'plugin', 'scripts', 'launch.mjs'), 'utf8').split('function butler')[1].split('\n}\n')[0]
-  assert.deepEqual(body.match(/shell:\s*[^,}]+/g), ['shell: false'], 'no shell for butler')
+  assert.deepEqual(body.match(/shell:\s*[^,}\s]+/g), ['shell: false'], 'no shell for butler')
 })
