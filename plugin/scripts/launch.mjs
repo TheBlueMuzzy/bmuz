@@ -29,7 +29,7 @@
 //   node launch.mjs lookback-write           6.3 the lessons kept; Develop when there's an update, else "it's out"
 //   (run in the project folder)
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -149,12 +149,15 @@ export function readyFor(dir) {
   if (d && d.stage === '1.0' && d.build) return d
   throw new Error('Release starts once Deliver has made the 1.0 build (its Build & Share card): finish 1.0 in Develop, then Deliver')
 }
-// A research report is fresh when it was written today: stores change their rules, so an older one is researched again.
+// (review fix 3) Every Release run researches every platform it takes up again: stores change their rules, and a file's
+// date says nothing (a checkout, a clone or a merge sets it). Each platform's run gets its own id; its report is stamped
+// with that id and the date on its first line, and only a report stamped with this run's id is read.
 export const researchFile = key => `.planning/research/release-${key}.md`
-export function isFresh(dir, rel, now = new Date()) {
-  const p = join(dir, rel)
-  return existsSync(p) && day(statSync(p).mtime) === day(now)
-}
+export const stampOf = (run, when) => `<!-- bmuz release research · run ${run} · ${when} -->`
+const stampRun = text => (nl(text).split('\n')[0].match(/^<!-- bmuz release research · run (\S+) · \d{4}-\d\d-\d\d -->$/) || [])[1] || null
+// A test run's stand-in for the research flow: BMUZ_RESEARCH_STUB names a folder of reports (release-<key>.md), copied
+// in as this run's report. Honoured only with BMUZ_TEST=1, so a real run always researches.
+const stubOf = key => (isTest() && process.env.BMUZ_RESEARCH_STUB ? join(process.env.BMUZ_RESEARCH_STUB, `release-${key}.md`) : null)
 export function next(dir, now = new Date()) {
   readyFor(dir)
   let rec = readRecord(dir)
@@ -176,10 +179,13 @@ export function next(dir, now = new Date()) {
   const p = platformOf(todo[0])
   rec.current = p.key
   rec.game = gameOf(dir)
+  rec.per[p.key] = { ...rec.per[p.key], run: `${now.getTime().toString(36)}${Math.random().toString(36).slice(2, 6)}-${p.key}` }
   saveRecord(dir, rec)
-  // (a research report from an earlier platform's run is never read as this one's)
+  // (a research report from an earlier run is never read as this one's)
   rmSync(join(dir, RESEARCH_NOW), { force: true })
-  return { platform: p.name, game: rec.game, topic: p.topic, fresh: yes(!isFresh(dir, researchFile(p.key), now)), haspage: yes(p.page) }
+  const stub = stubOf(p.key)
+  if (stub && existsSync(stub)) write(dir, RESEARCH_NOW, readFileSync(stub, 'utf8'))
+  return { platform: p.name, game: rec.game, topic: p.topic, fresh: yes(!(stub && existsSync(stub))), haspage: yes(p.page) }
 }
 
 // ---- 6.1 Store & Launch ----
@@ -262,19 +268,20 @@ export function walkSteps(p, you, recipe) {
 export async function store(dir, script = loadScript(), now = new Date()) {
   const rec = recordOf(dir)
   const p = current(rec)
-  // (a fresh report from this run's research: kept under the platform's own name)
+  const run = rec.per[p.key].run
+  // (this run's report, as the research flow just wrote it: about this platform, every requirement sourced — then stamped
+  // with this run's id and the date, and kept under the platform's own name)
   const now_ = readIn(dir, RESEARCH_NOW)
   if (now_ !== null) {
     const title = (nl(now_).match(/^# .+$/m) || [''])[0]
     if (!title.includes(p.topic)) throw new Error(`${RESEARCH_NOW} is about "${title.replace(/^# /, '')}", not ${p.topic}`)
-    write(dir, researchFile(p.key), now_)
+    const problems = await checkSources(now_, { offline: process.env.BMUZ_SOURCES_OFFLINE === '1' })
+    if (problems.length) throw new Error(`the research on ${p.name} isn't sourced well enough: ${problems.slice(0, 4).join('; ')}`)
+    write(dir, researchFile(p.key), `${stampOf(run, day(now))}\n${nl(now_)}`)
     rmSync(join(dir, RESEARCH_NOW), { force: true })
   }
   const text = readIn(dir, researchFile(p.key))
-  if (!text) throw new Error(`there is no research on ${p.name} (${researchFile(p.key)}): its requirements are researched fresh, never written from memory`)
-  if (!isFresh(dir, researchFile(p.key), now)) throw new Error(`the research on ${p.name} (${researchFile(p.key)}) is from before today: stores change their rules, so it is researched again`)
-  const problems = await checkSources(text, { offline: process.env.BMUZ_SOURCES_OFFLINE === '1' })
-  if (problems.length) throw new Error(`the research on ${p.name} isn't sourced well enough: ${problems.slice(0, 4).join('; ')}`)
+  if (!text || !run || stampRun(text) !== run) throw new Error(`there is no research on ${p.name} from this Release run (${researchFile(p.key)} ${text ? 'is from another run' : 'isn\'t there'}): its requirements are researched fresh each time, never written from memory`)
   const needs = requirementsOf(text)
   if (!needs.length) throw new Error(`the research on ${p.name} found no requirements (${researchFile(p.key)}, "Requirements"): it is researched again`)
   const own = [researchFile(p.key)]
@@ -573,7 +580,7 @@ if (isMain) {
       say(!p, p ? `✘ ${p}` : `✔ ${picksOf(a).join(', ')}`)
     } else if (mode === 'next') {
       const r = next(dir)
-      say(true, `✔ next: ${r.platform}${r.fresh === 'yes' ? ' (its requirements researched fresh first)' : ' (researched today already)'}\n${results(r)}`)
+      say(true, `✔ next: ${r.platform}${r.fresh === 'yes' ? ' (its requirements researched fresh first)' : ' (a test run: the stand-in research)'}\n${results(r)}`)
     } else if (mode === 'store') {
       const r = await store(dir)
       say(true, `✔ ${SAY.store}\n${results(r)}`)

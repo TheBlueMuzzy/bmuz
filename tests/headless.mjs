@@ -785,7 +785,7 @@ const scenarios = {
     const { setupReleaseGarden } = await import('./fixtures/garden-release-setup.mjs')
     const dir = gardenScratch('bmuz-garden-release')
     const port = 44000 + Math.floor(Math.random() * 1000)
-    const { host, origin } = setupReleaseGarden(dir, { port, research: ['web', 'itch', 'steam'] })
+    const { host, origin, research } = setupReleaseGarden(dir, { port, research: ['web', 'itch', 'steam'] })
     // the pretend Steam store page (the creative's own, once it's live there)
     mkdirSync(join(host, 'steam', 'garden-race'), { recursive: true })
     writeFileSync(join(host, 'steam', 'garden-race', 'index.html'), '<title>Garden Race on Steam (a stand-in page)</title>')
@@ -793,7 +793,7 @@ const scenarios = {
     const server = spawn(process.execPath, [join(here, 'fixtures', 'fake-host.mjs'), host, String(port)], { stdio: 'ignore' })
     const log = `${dir}-release.log`
     rmSync(log, { force: true }) // (an earlier run's calls are not this run's)
-    const extra = { BMUZ_RELEASE_TOOLS: join(here, 'fixtures', 'fake-release', 'scripts'), BMUZ_BUTLER: join(here, 'fixtures', 'fake-butler.mjs'), BMUZ_FAKE_RELEASE_LOG: log, BMUZ_SOURCES_OFFLINE: '1', BMUZ_RECIPES: join(here, 'fixtures', 'no-recipes') }
+    const extra = { BMUZ_RELEASE_TOOLS: join(here, 'fixtures', 'fake-release', 'scripts'), BMUZ_BUTLER: join(here, 'fixtures', 'fake-butler.mjs'), BMUZ_FAKE_RELEASE_LOG: log, BMUZ_RESEARCH_STUB: research, BMUZ_SOURCES_OFFLINE: '1', BMUZ_RECIPES: join(here, 'fixtures', 'no-recipes') }
     const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
     const json = f => { try { return JSON.parse(read(f) || 'null') } catch (e) { return null } }
     const git = (args, cwd = dir) => (spawnSync('git', args, { cwd, encoding: 'utf8' }).stdout || '').trim()

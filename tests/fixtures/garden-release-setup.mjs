@@ -2,10 +2,10 @@
 // garden (garden-developed-setup.mjs: git, the dev/vertical-slice branch, origin a bare repository in a folder on this
 // machine): every earlier milestone released (v0.3.0 the last), the 1.0 milestone "✅ ready to deliver", Deliver's record
 // of the 1.0 build (its safety checks passed), STATE's "Itch:" line on the stand-in host, and — the research stand-in —
-// today's requirements for each platform as sourced reports (STAND-INS: test fixtures, never real research; their links
-// are example.com and are never fetched: BMUZ_SOURCES_OFFLINE=1). Nothing here reaches anything real.
+// each platform's requirements as sourced reports in <dir>-research/ (STAND-INS: test fixtures, never real research;
+// their links are example.com and are never fetched: BMUZ_SOURCES_OFFLINE=1). Nothing here reaches anything real.
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { setupDevelopedGarden } from './garden-developed-setup.mjs'
 import * as M from '../../plugin/scripts/marks.mjs'
@@ -108,9 +108,11 @@ export function setupReleaseGarden(dir, { port = 0, research = ['web', 'itch', '
   // Deliver's record: the 1.0 build made (5.4's card), every check before it passed
   mkdirSync(join(dir, '.bmuz', 'deliver'), { recursive: true })
   writeFileSync(join(dir, '.bmuz', 'deliver', 'run.json'), JSON.stringify({ milestone: '1.0', title: 'v0.4 — 1.0', stage: '1.0', started: '2026-11-11', branch: 'dev/vertical-slice', go: true, publish: {}, check: { musts: { done: 1, all: 1, open: [] }, bugs: [], checks: [], missing: [] }, standins: [], safety: { secrets: [], unlicensed: [], deps: [], open: [] }, build: { local: 'file:///dist/index.html', share: `http://127.0.0.1:${port}/garden-race/`, tested: 'desktop' } }, null, 2) + '\n')
-  // today's research, one sourced report per platform (the stand-in for the research flow), committed as BMUZ would
-  mkdirSync(join(dir, '.planning', 'research'), { recursive: true })
-  for (const k of research) writeFileSync(join(dir, '.planning', 'research', `release-${k}.md`), researchReport(TOPICS[k], NEEDS[k]))
-  if (research.length) { git(dir, ['add', '.planning/research']); git(dir, ['commit', '-q', '-m', 'Release: the platforms\' requirements researched']) }
-  return out
+  // the research flow's stand-in: one sourced report per platform in a folder BESIDE the project (BMUZ_RESEARCH_STUB,
+  // honoured only in a test run), copied in as each Release run's own report, so no research flow runs in a test
+  const stub = `${dir}-research`
+  rmSync(stub, { recursive: true, force: true })
+  mkdirSync(stub, { recursive: true })
+  for (const k of research) writeFileSync(join(stub, `release-${k}.md`), researchReport(TOPICS[k], NEEDS[k]))
+  return { ...out, research: stub }
 }

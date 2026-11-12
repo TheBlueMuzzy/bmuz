@@ -5,7 +5,7 @@
 // fetched). Every push goes to a bare repository in a temp folder. Nothing here reaches anything real.
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, normalize } from 'node:path'
@@ -22,6 +22,8 @@ const script = E.parseScript(readFileSync(join(here, '..', 'plugin', 'script.md'
 const NOW = new Date()
 process.env.BMUZ_RELEASE_TOOLS = join(here, 'fixtures', 'fake-release', 'scripts')
 process.env.BMUZ_SOURCES_OFFLINE = '1'
+// (a test run: only pages on this machine, the stand-in research and butler; each test's own env on top)
+process.env.BMUZ_TEST = '1'
 process.env.BMUZ_RECIPES = join(here, 'fixtures', 'no-recipes')
 const calls = dir => (existsSync(`${dir}-release.log`) ? readFileSync(`${dir}-release.log`, 'utf8').split('\n').filter(Boolean) : [])
 const read = (dir, f) => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null)
@@ -53,7 +55,7 @@ after(() => server.close())
 // The garden at 1.0; its host on the stand-in server at http://127.0.0.1:PORT/<n>/ (STATE's Live and Itch lines).
 function garden(opts = {}) {
   const dir = join(mkdtempSync(join(tmpdir(), 'bmuz-release-')), 'garden')
-  setupReleaseGarden(dir, { port: PORT, ...opts })
+  process.env.BMUZ_RESEARCH_STUB = setupReleaseGarden(dir, { port: PORT, ...opts }).research
   const n = roots.push(`${dir}-host`) - 1
   const st = join(dir, '.planning', 'STATE.md')
   writeFileSync(st, readFileSync(st, 'utf8').replaceAll(`127.0.0.1:${PORT}/`, `127.0.0.1:${PORT}/${n}/`))
@@ -83,16 +85,24 @@ test('6.0 "Where should it go?": the box\'s labels exactly, the ones the creativ
   assert.equal(L.whereProblem(dir, ['Steam'], 'auto'), null)
 })
 
-test('the loop: the next platform in the order picked; today\'s research isn\'t done again; Release waits for Deliver\'s 1.0 build', () => {
-  const dir = garden({ research: ['web'] })
+test('review fix 3 — the loop: the next platform in the order picked; every Release run researches every platform again (a new run id each time); Release waits for Deliver\'s 1.0 build', () => {
+  const dir = garden()
   picked(dir, ['The web', 'itch.io'])
+  // (a test run's stand-in research: copied in as this run's report, so the research flow isn't launched)
   const r = L.next(dir, NOW)
   assert.deepEqual(r, { platform: 'the web', game: 'Garden Race', topic: TOPICS.web, fresh: 'no', haspage: 'no' })
+  assert.match(read(dir, L.RESEARCH_NOW), /^# Discover \(release requirements\): a web game/)
   assert.deepEqual(L.readRecord(dir).platforms, ['web', 'itch'])
-  // (a report from before today is researched again: stores change their rules)
-  const old = new Date(Date.now() - 3 * 86400000)
-  utimesSync(join(dir, L.researchFile('web')), old, old)
-  assert.equal(L.next(dir, NOW).fresh, 'yes')
+  const first = L.readRecord(dir).per.web.run
+  assert.ok(first)
+  // without a stand-in (any real run), the research flow runs every time, even when a report is already there
+  delete process.env.BMUZ_RESEARCH_STUB
+  mkdirSync(join(dir, '.planning', 'research'), { recursive: true })
+  writeFileSync(join(dir, L.researchFile('web')), researchReport(TOPICS.web, ['A public link']))
+  const again = L.next(dir, NOW)
+  assert.equal(again.fresh, 'yes')
+  assert.ok(!existsSync(join(dir, L.RESEARCH_NOW)))
+  assert.notEqual(L.readRecord(dir).per.web.run, first, 'a new run id')
   writeFileSync(join(dir, D.RECORD), JSON.stringify({ milestone: 'Beta', stage: 'beta', build: {} }))
   assert.throws(() => L.next(dir, NOW), /Release starts once Deliver has made the 1\.0 build/)
 })
@@ -120,22 +130,27 @@ test('6.1 Store & Launch: the requirements from today\'s sourced research, split
   assert.equal(git(dir, ['status', '--porcelain', '--', '.planning']), '', 'launch.mjs commits what it writes')
 })
 
-test('requirements are never written from memory: no research, research from before today, or an unsourced report is refused', async () => {
-  const dir = garden({ research: [] })
+test('review fix 3 — requirements are never written from memory, nor read from another run: no research this run, a report from another run (checkout, clone, an earlier Release), or an unsourced one is refused; this run\'s is stamped with its run id and date', async () => {
+  const dir = garden()
+  delete process.env.BMUZ_RESEARCH_STUB
   picked(dir, ['itch.io'])
   L.next(dir, NOW)
-  await assert.rejects(L.store(dir, script, NOW), /there is no research on itch\.io .*never written from memory/)
-  writeFileSync(join(dir, L.researchFile('itch')), researchReport(TOPICS.itch, ['A cover image · 630×500']))
-  const old = new Date(Date.now() - 3 * 86400000)
-  utimesSync(join(dir, L.researchFile('itch')), old, old)
-  await assert.rejects(L.store(dir, script, NOW), /is from before today: stores change their rules/)
-  writeFileSync(join(dir, L.researchFile('itch')), researchReport(TOPICS.itch, ['A cover image · 630×500']).replace('- A cover image · 630×500 [1] (one source)\n\n## Contradictions', '- A cover image · 630×500 (one source)\n\n## Contradictions'))
+  const run = L.readRecord(dir).per.itch.run
+  await assert.rejects(L.store(dir, script, NOW), /there is no research on itch\.io from this Release run .*never written from memory/)
+  // a report already there from another run (stamped with its own id, or not at all) doesn't count, whatever its date
+  mkdirSync(join(dir, '.planning', 'research'), { recursive: true })
+  writeFileSync(join(dir, L.researchFile('itch')), `<!-- bmuz release research · run other-run · ${NOW.toISOString().slice(0, 10)} -->\n${researchReport(TOPICS.itch, ['A cover image · 630×500'])}`)
+  await assert.rejects(L.store(dir, script, NOW), /from this Release run/)
+  writeFileSync(join(dir, L.RESEARCH_NOW), researchReport(TOPICS.itch, ['A cover image · 630×500']).replace('- A cover image · 630×500 [1] (one source)\n\n## Contradictions', '- A cover image · 630×500 (one source)\n\n## Contradictions'))
   await assert.rejects(L.store(dir, script, NOW), /isn't sourced well enough: .*cites no source/)
-  // a fresh report the research flow just wrote (release-now.md) is kept under the platform's name
+  // this run's report (the research flow just wrote it): stamped with the run's id and date, kept under the platform's name
   writeFileSync(join(dir, L.RESEARCH_NOW), researchReport(TOPICS.itch, ['A cover image · 630×500']))
   await L.store(dir, script, NOW)
   assert.ok(!existsSync(join(dir, L.RESEARCH_NOW)))
-  assert.match(read(dir, L.researchFile('itch')), /^# Discover \(release requirements\): itch\.io/)
+  assert.equal(read(dir, L.researchFile('itch')).split('\n')[0], `<!-- bmuz release research · run ${run} · ${NOW.toISOString().slice(0, 10)} -->`)
+  assert.match(read(dir, L.researchFile('itch')), /\n# Discover \(release requirements\): itch\.io/)
+  // the same step again (a retry after the move) still reads this run's report
+  await L.store(dir, script, NOW)
 })
 
 test('"Release it" only with the creative\'s own answer at this platform\'s gate: none, "Not yet", or one before this card refuses, changing nothing', async () => {
