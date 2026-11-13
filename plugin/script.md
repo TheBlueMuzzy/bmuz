@@ -130,6 +130,9 @@ What's the smallest version you'd want to play first?
 ## ideate.pool.decided · say
 What's already decided, and what's off the table?
 
+## ideate.pool.first · say · added
+What's the smallest version you'd want to play first: which part of the game, and what can wait? For example: {example}.
+
 ## ideate.added · say
 Got it: added to {chapters}.
 
@@ -1014,6 +1017,9 @@ Nothing has gone out yet: {waiting}. Nothing is public. Back to "Where should it
 header: Keep?
 - Keep — {answer}
 - Change — next, tell me what
+
+## any.type · say · added
+Type your answer below.
 
 # Any time · when the creative steps in (F215)
 

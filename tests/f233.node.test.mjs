@@ -177,3 +177,43 @@ test('Define on the conversion path: one "What your rulebook decides" page, then
   assert.equal(lock.slots.platform, 'computer first; online against people or the computer')
   assert.equal(lock.slots.musts, '3')
 })
+
+test('6c: the "couldn\'t read" line has its plurals right and says reasons as reasons (the live look\'s Drive folder, exactly)', () => {
+  const live = {
+    listed: [
+      ...Array(17).fill({ kind: 'a Photoshop file (art)' }), ...Array(170).fill({ kind: 'an image' }), ...Array(8).fill({ kind: 'an Illustrator file (art)' }),
+      { kind: 'a PDF (paste its text to have it read)' }, { kind: "a file I can't read as text" }, { kind: "a file I can't read as text" },
+    ],
+    unread: [1, 2, 3].map(i => ({ what: `Drive · SiriusSmugglers/${i}/…`, why: "more than 200 files: the rest weren't looked at" })),
+  }
+  assert.equal(I.unreadLine(live), "17 Photoshop files, 170 images, 8 Illustrator files, 1 PDF, 2 files I can't read as text and the rest of 3 folders with more than 200 files")
+  assert.equal(I.unreadLine({ listed: [{ kind: 'a program or build' }, { kind: 'a program or build' }, { kind: 'a slide deck file (share it as Google Slides)' }] }), '2 programs or builds and 1 slide deck file')
+  assert.equal(I.unreadLine({ unread: [{ what: 'notes.txt', why: 'over the reading limit for one pass' }] }), 'notes.txt (over the reading limit for one pass)')
+  assert.equal(I.unreadLine({ unread: [{ what: 'a', why: 'not found' }, { what: 'b', why: 'not found' }], listed: [{ kind: 'a sound' }] }), '1 sound and 2 links or files (not found)')
+  assert.equal(I.plural('Google Sheet', 3), 'Google Sheets')
+  assert.equal(I.plural("text file too big to read in one pass", 2), 'text files too big to read in one pass')
+  assert.equal(I.unreadLine({}), '')
+})
+
+test('6b: Open Ideas\' vague questions are gone; the smallest-version question says what it means, with an example from the game', () => {
+  const P = JSON.parse(readFileSync(join(plugin, 'pipelines', 'ideate.json'), 'utf8'))
+  const lines = P.steps.find(s => s.id === 'open-ideas').lines
+  assert.ok(!lines.includes('ideate.pool.smallest') && !lines.includes('ideate.pool.decided'))
+  assert.ok(lines.includes('ideate.pool.first'))
+  assert.equal(E.renderLine(script, 'ideate.pool.first', { example: 'two players, one seed deck, no online yet' }).text, "What's the smallest version you'd want to play first: which part of the game, and what can wait? For example: two players, one seed deck, no online yet.")
+  assert.match(E.renderLine(script, 'ideate.pool.first', {}).error, /needs \{example\}/)
+  assert.match(readFileSync(join(plugin, 'craft', 'ideate-open.md'), 'utf8'), /only when the material leaves that need open/)
+})
+
+test('6d: a free question ends with "Type your answer below."; the nudge writes an open question again, last', () => {
+  assert.equal(script.lines[E.TYPE_LINE].text, 'Type your answer below.')
+  const step = { id: 'feelings' }
+  const missing = [{ id: 'define.feelings.match', text: 'That sounds closest to **challenge**.' }]
+  const ask = { id: 'define.feelings.know', text: 'How would we know a player feels it?\n\nType your answer below.' }
+  const fix = E.unsaidNudge(step, [...missing, ask], 0, { ask: true, again: 1 })
+  assert.match(fix, /The script line "define\.feelings\.match" was not written word for word\. Write exactly this, nothing changed, your open question last \(it must be the last thing they see\), as your whole reply, then end your turn/)
+  assert.ok(fix.endsWith('That sounds closest to **challenge**.\n\nHow would we know a player feels it?\n\nType your answer below.'))
+  // with no question open, as before
+  assert.match(E.unsaidNudge(step, missing, 0), /Write exactly this, nothing changed, then carry on:\n\nThat sounds/)
+  assert.equal(E.unsaidNudge(step, missing, 2), null)
+})

@@ -385,6 +385,49 @@ test('F232: a line not written word for word gets the engine\'s correction with 
   expect(events(w).filter((j: any) => j.ev === 'said')[1]).toMatchObject({ missing: [] })
 })
 
+test('F233 6d: a free question ends with "Type your answer below." and stays the last thing on screen: a nudge for a line missed before it writes the question again, last, and ends the turn', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const s = sayWorld(on)
+  const NL = String.fromCharCode(10)
+  s.w.files.SCRIPT = `${SCRIPT}${NL}## any.type · say · added${NL}Type your answer below.${NL}`
+  const { w, prompts } = s
+  await start($, true)
+  await $.tool.call({ tool: SAY, line: 'define.pitch' } as any)
+  const r: any = await $.tool.call({ tool: SAY, line: 'ideate.idea' } as any)
+  const idea = `**Your Idea**${NL}Tell me about your game in your own words.${NL}${NL}Type your answer below.`
+  expect(said(r).say).toBe(idea)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask).toMatchObject({ line: 'ideate.idea', text: idea })
+  // the live look's turn: the question was written, the line before it wasn't
+  await $.turn.complete({ answer: `Your Idea${NL}Tell me about your game in your own words.${NL}${NL}Type your answer below.`, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  const fix = prompts[prompts.length - 1]
+  expect(fix).toMatch(/The script line "define\.pitch" was not written word for word\. Write exactly this, nothing changed, your open question last \(it must be the last thing they see\), as your whole reply, then end your turn/)
+  expect(fix.endsWith(`The game in a few lines, so anyone gets it in ten seconds.${NL}${NL}${idea}`)).toBe(true)
+  expect(events(w).filter((j: any) => j.ev === 'nudge').pop()).toMatchObject({ unsaid: ['define.pitch'], again: ['ideate.idea'] })
+  // written that way, the turn passes and the question is still open
+  await $.turn.complete({ answer: `The Pitch${NL}The game in a few lines, so anyone gets it in ten seconds.${NL}${NL}${idea}`, durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' } as any)
+  expect(events(w).filter((j: any) => j.ev === 'said').pop()).toMatchObject({ missing: [] })
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask).toMatchObject({ line: 'ideate.idea' })
+})
+
+test('F233 6d: "next, tell me what" ({"wait": true}) says "Type your answer below." too, checked like any line', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const s = sayWorld(on)
+  const NL = String.fromCharCode(10)
+  s.w.files.SCRIPT = `${SCRIPT}${NL}## any.type · say · added${NL}Type your answer below.${NL}`
+  const { w, prompts } = s
+  await start($, true)
+  await $.tool.call({ tool: SAY, line: 'define.pitch' } as any)
+  await $.turn.complete({ answer: 'The Pitch\nThe game in a few lines, so anyone gets it in ten seconds.', durationMs: 1, isAborted: false, turnId: 't0', reason: 'answer' } as any)
+  const r: any = await $.tool.call({ tool: SAY, wait: true } as any)
+  expect(said(r)).toMatchObject({ say: 'Type your answer below.' })
+  expect(said(r).then).toMatch(/whole reply .* end your turn/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask).toMatchObject({ line: 'wait', text: 'Type your answer below.' })
+  const before = prompts.length
+  await $.turn.complete({ answer: 'Type your answer below.', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(prompts.length).toBe(before)
+  expect(events(w).filter((j: any) => j.ev === 'said').pop()).toMatchObject({ lines: ['any.type'], missing: [] })
+})
+
 test('F232: a box comes from the script — asked exactly it reaches the creative; reworded, or with no line asked for, it is refused', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const { w } = sayWorld(on)

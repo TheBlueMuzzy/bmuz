@@ -128,15 +128,36 @@ export function standsFrom(chapters, shared, said = '') {
 }
 
 // What the shared material couldn't give as text, by what it appears to be ("2 Photoshop files (pictures, not text)").
+// (F233 task 5, 6c: the live look read "2 file I can't read as texts, 3 more than 200 files: the rest weren't looked
+// ats" — the plural went on the last word, and a reason was counted as if it were a kind of file.) The kinds are
+// counted with their own noun made plural ("2 files I can't read as text"); what couldn't be read is said by its
+// reason ("the rest of 3 folders with more than 200 files"; one item by its name), and the last part joins with "and".
+const NOUNS = /\b(file|scene|prefab|package|image|model|sound|video|PDF|archive|program|build|font|Doc|Sheet|link)\b/
+export function plural(kind, n) {
+  if (n === 1) return kind
+  const pair = kind.match(/^(\w+) or (\w+)$/)
+  if (pair) return `${pair[1]}s or ${pair[2]}s`
+  return NOUNS.test(kind) ? kind.replace(NOUNS, w => `${w}s`) : /s$/.test(kind) ? kind : `${kind}s`
+}
 export function unreadLine(shared) {
   const kinds = {}
   for (const l of listOf(shared && shared.listed)) {
     const k = clean(String(l.kind || 'a file').replace(/^an? /, '').replace(/\s*\(.*$/, ''))
     kinds[k] = (kinds[k] || 0) + 1
   }
-  for (const u of listOf(shared && shared.unread)) kinds[clean(u.why || 'unreadable')] = (kinds[clean(u.why || 'unreadable')] || 0) + 1
-  const parts = Object.entries(kinds).map(([k, n]) => `${n} ${k}${n > 1 && !/s$/.test(k) ? 's' : ''}`)
-  return parts.join(', ')
+  const parts = Object.entries(kinds).map(([k, n]) => `${n} ${plural(k, n)}`)
+  const why = {}
+  for (const u of listOf(shared && shared.unread)) {
+    const w = clean(u.why || "couldn't be opened")
+    ;(why[w] = why[w] || []).push(clean(u.what || ''))
+  }
+  for (const [w, whats] of Object.entries(why)) {
+    const n = whats.length
+    const big = w.match(/^more than (\d+) files/)
+    if (big) parts.push(`the rest of ${n === 1 ? 'a folder' : `${n} folders`} with more than ${big[1]} files`)
+    else parts.push(n === 1 && whats[0] ? `${whats[0]} (${w})` : `${n} links or files (${w})`)
+  }
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts.join('')
 }
 
 // The sources: the shared text and every answer of the creative's (journaled, the idea itself, a test run's stand-ins).

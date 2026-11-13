@@ -16,7 +16,10 @@ const plugin = join(here, '..', 'plugin')
 const P = JSON.parse(readFileSync(join(plugin, 'pipelines', 'ideate.json'), 'utf8'))
 const script = E.parseScript(readFileSync(join(plugin, 'script.md'), 'utf8'))
 // The script's example (bmuz-design-doc.html, "Example · Ideate, filled in").
-export const GARDEN_IDEA = "A card game where two friends race to grow the best garden. You draw seed cards and plant them, but weather cards can wreck the other person's rows. I'd like it on phones, quick games."
+// (F233 task 5, 6b) approved lines no step says any more: "really vague and doesn't offer enough guidance" ·
+// "a bad question. we should consider removing it" (live look 2026-11-13); ideate.pool.first replaces the first
+const RETIRED = ['ideate.pool.smallest', 'ideate.pool.decided']
+export const GARDEN_IDEA ="A card game where two friends race to grow the best garden. You draw seed cards and plant them, but weather cards can wreck the other person's rows. I'd like it on phones, quick games."
 
 test('the pipeline is the script\'s Stage 1: 1.1–1.7 in order, every Ideate line said by a step, openings first, the gates (1.3, 1.7) as script boxes', () => {
   assert.deepEqual(E.checkPipeline(P), [])
@@ -26,7 +29,9 @@ test('the pipeline is the script\'s Stage 1: 1.1–1.7 in order, every Ideate li
   assert.deepEqual(titled, [['1.1', 'Your Idea'], ['1.2', 'Your Material'], ['1.3', 'The Game So Far'], ['1.4', 'Feelings & Hopes'], ['1.5', 'Open Ideas'], ['1.6', 'Sketch List'], ['1.7', 'Your Project Page']])
   const said = new Set(P.steps.flatMap(s => s.lines || []))
   // ideate.sofar and ideate.page are composed by the script steps (shown word for word), not said by Claude
-  for (const id of Object.keys(script.lines).filter(id => id.startsWith('ideate.') && !['ideate.sofar', 'ideate.sofar.rules', 'ideate.page'].includes(id))) assert.ok(said.has(id), id)
+  for (const id of Object.keys(script.lines).filter(id => id.startsWith('ideate.') && !['ideate.sofar', 'ideate.sofar.rules', 'ideate.page', ...RETIRED].includes(id))) assert.ok(said.has(id), id)
+  // (F233 task 5, 6b: Muzzy found these two vague in the live look; kept in the script, said by no step)
+  for (const id of RETIRED) assert.ok(!said.has(id), id)
   const step = id => P.steps.find(s => s.id === id)
   assert.deepEqual(step('idea').opening, ['ideate.welcome', 'ideate.idea'])
   assert.deepEqual(step('material').opening, ['ideate.material'])

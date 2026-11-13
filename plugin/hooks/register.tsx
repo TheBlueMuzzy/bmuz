@@ -1378,12 +1378,23 @@ async function sayTool($: any, e: any) {
     await journal($, { ev: 'deviation', step: step.id, tool: E.SAY_TOOL, agentId: null, why })
     return { deny: why }
   }
+  // F233 task 5 (6d, live look 2026-11-13: "am I supposed to say something?… am I waiting on something?"): a free
+  // question always ends with the script's plain "Type your answer below." (any.type), so the last thing on screen
+  // says what to do. A script without the line (an old test script) says nothing extra.
+  const typeLine = ctx.script && ctx.script.lines && ctx.script.lines[E.TYPE_LINE] ? String(ctx.script.lines[E.TYPE_LINE].text) : ''
   if (e.wait === true) {
     if (ctx.auto) return { result: JSON.stringify({ say: '', then: 'Auto run: nobody will type. Take the creative\'s answer from the test answers (or the sensible default) and carry on in this turn.' }) }
-    ctx.state = { ...ctx.state, ask: { step: step.id, line: 'wait', text: '' } }
+    ctx.state = { ...ctx.state, ask: { step: step.id, line: 'wait', text: typeLine } }
     await journal($, { ev: 'ask.open', step: step.id, line: 'wait' })
+    if (typeLine) {
+      if (turnSaid.step !== step.id) turnSaid = { step: step.id, lines: [] }
+      turnSaid.lines = [...turnSaid.lines.filter(l => l.id !== E.TYPE_LINE), { id: E.TYPE_LINE, text: typeLine }]
+      await journal($, { ev: 'line', step: step.id, line: E.TYPE_LINE, kind: 'say', text: typeLine })
+    }
     await save($)
-    return { result: JSON.stringify({ say: '', then: 'Write nothing more and end your turn: the creative\'s next chat message is the answer.' }) }
+    return { result: JSON.stringify(typeLine
+      ? { say: typeLine, then: 'Write exactly the "say" text as your whole reply — nothing before or after it — and end your turn: the creative\'s next chat message is the answer.' }
+      : { say: '', then: 'Write nothing more and end your turn: the creative\'s next chat message is the answer.' }) }
   }
   // (an id sent with its own quotes, '"ideate.material"', is the same id: headless run 2026-11-11)
   const ids: string[] = (Array.isArray(e.line) ? e.line : [e.line]).map((x: any) => String(x ?? '').trim().replace(/^["'“‘]+|["'”’]+$/g, ''))
@@ -1411,6 +1422,11 @@ async function sayTool($: any, e: any) {
     if (rendered.findIndex((r: any) => r.kind === 'box') < words.length || words.some((r: any) => r.kind === 'free') || E.isLongSay(before)) {
       return deny('BMUZ engine: a box comes last, after at most a short line of words (no free question, nothing long: a box covers text written above it). Say the words on their own first.')
     }
+  }
+  // (F233 6d: the free question's words end with "Type your answer below.", once)
+  if (typeLine && !boxes.length && words.some((r: any) => r.kind === 'free')) {
+    const end = words[words.length - 1]
+    if (!E.plainWords(end.text).endsWith(E.plainWords(typeLine))) end.text = `${end.text}\n\n${typeLine}`
   }
   // (the lines handed out in this step, for its "must"; saved with the rest of this call below)
   const had = ctx.state.said && ctx.state.said.step === step.id && Array.isArray(ctx.state.said.lines) ? ctx.state.said.lines : []
@@ -2387,11 +2403,17 @@ export const register: Register = on => {
       if (missing.length && !(e as any).isAborted) {
         const key = `${said.step}#${ctx.state.retries[said.step] || 0}`
         if (nudges.key !== key) nudges = { key, n: 0 }
-        const fix = E.unsaidNudge(E.stepById(ctx.pipeline, said.step) || { id: said.step }, missing, nudges.n)
+        // F233 6d (live look 2026-11-13, Define's "How would we know…?"): the nudge used to have the missing line written
+        // AFTER the open free question, so the question was no longer the last thing on screen and the creative
+        // couldn't tell they were being asked. With a free question of this step open, it is written again, last.
+        const ask = E.askOpen(ctx.state)
+        const again = ask && ask.step === said.step && ask.text && !missing.some((l: any) => l.id === ask.line) ? [{ id: ask.line, text: ask.text }] : []
+        const lines = [...missing, ...again]
+        const fix = E.unsaidNudge(E.stepById(ctx.pipeline, said.step) || { id: said.step }, lines, nudges.n, { ask: !!ask && ask.step === said.step, again: again.length })
         if (fix) {
           nudges.n += 1
-          turnSaid = { step: said.step, lines: missing }
-          await journal($, { ev: 'nudge', step: said.step, n: nudges.n, unsaid: missing.map((l: any) => l.id) })
+          turnSaid = { step: said.step, lines }
+          await journal($, { ev: 'nudge', step: said.step, n: nudges.n, unsaid: missing.map((l: any) => l.id), ...(again.length ? { again: again.map(l => l.id) } : {}) })
           // (F229: a step-in's line asked for again is still the step-in: its turn's open end is no failed try — headless
           // run 22:49, the research line nudged twice, then an auto run counted the step as failed and restarted it)
           if (steppedIn) stepInTurn = true

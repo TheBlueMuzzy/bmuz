@@ -1712,10 +1712,20 @@ export function continueLine(step, n = 0) {
 }
 
 // What the engine says when a line wasn't said word for word (the turn's end). null once MAX_NUDGES are used.
-export function unsaidNudge(step, lines, n = 0) {
+// (F233 6d) opts.ask: a free question of this step is open, so the turn ends after the words (nothing is carried on),
+// and opts.again: how many of the lines at the end are that question, written again so it is the last thing on screen.
+export function unsaidNudge(step, lines, n = 0, opts = {}) {
   if (n >= MAX_NUDGES || !lines.length) return null
-  return `BMUZ engine — this message comes from the BMUZ engine, not the creative (step "${step.id}"). The script line${lines.length > 1 ? 's' : ''} ${lines.map(l => `"${l.id}"`).join(', ')} ${lines.length > 1 ? 'were' : 'was'} not written word for word. Write exactly this, nothing changed, then carry on:\n\n${lines.map(l => l.text).join('\n\n')}`
+  const again = Math.max(0, Math.min(lines.length - 1, Number(opts.again) || 0))
+  const missing = lines.slice(0, lines.length - again)
+  const tail = opts.ask
+    ? `Write exactly this, nothing changed${again ? ', your open question last (it must be the last thing they see)' : ''}, as your whole reply, then end your turn: the creative's next chat message is the answer`
+    : 'Write exactly this, nothing changed, then carry on'
+  return `BMUZ engine — this message comes from the BMUZ engine, not the creative (step "${step.id}"). The script line${missing.length > 1 ? 's' : ''} ${missing.map(l => `"${l.id}"`).join(', ')} ${missing.length > 1 ? 'were' : 'was'} not written word for word. ${tail}:\n\n${lines.map(l => l.text).join('\n\n')}`
 }
+
+// (F233 6d) The script line every free question ends with: "Type your answer below."
+export const TYPE_LINE = 'any.type'
 
 // The band's words for a step with a script number ("2.3") and title: "Define · 3 of 8 · The Pitch". The welcome
 // ("2.0") isn't counted. Steps without a number take the nearest numbered step above them. null = not numbered.
