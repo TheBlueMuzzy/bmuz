@@ -1243,8 +1243,12 @@ export function onFail(state, step, why) {
 export function finish(state, step, result) {
   const retries = { ...(state.retries || {}) }
   delete retries[step.id]
+  // (F234 review fix 3: the step's plan keeps the lines it said, so the stage's end lists what it never asked)
+  const plan = state.asked && state.asked[step.id]
+  const asked = plan ? { asked: { ...state.asked, [step.id]: { ...plan, said: state.said && state.said.step === step.id && Array.isArray(state.said.lines) ? state.said.lines : [] } } } : {}
   return {
     ...state,
+    ...asked,
     finished: state.finished.includes(step.id) ? state.finished : [...state.finished, step.id],
     results: result ? { ...state.results, ...result } : state.results,
     resultsBy: result ? { ...(state.resultsBy || {}), [step.id]: result } : (state.resultsBy || {}),
@@ -1322,7 +1326,10 @@ export function mustProblem(step, state, result = {}) {
   const left = [...(isList(step.must) ? step.must : []), ...ifs].filter(id => !had.includes(id) && !lifted.includes(id))
   if (!left.length) return null
   const many = left.length > 1
-  return `the step isn't finished: the script's line${many ? 's' : ''} ${left.map(id => `"${id}"`).join(', ')} ${many ? 'were' : 'was'} never said. Say ${many ? 'each' : 'it'} with ${SAY_TOOL} {"line": "<id>"} the way the craft note says (an auto run too: take the answer from the test answers), then call ${ENGINE_TOOL} again`
+  // (F234 review fix 3: an answer the document has but hasn't settled is confirmed, never dropped)
+  const unsure = plan && Array.isArray(plan.fields) ? left.filter(id => plan.fields.some(f => f.line === id && f.status === 'unsure')) : []
+  const keep = unsure.length && (step.lines || []).includes('any.keep') ? ` (${unsure.map(id => `"${id}"`).join(', ')}: the document already has an answer, so confirm it with "any.keep", its "question" in that line's own words)` : ''
+  return `the step isn't finished: the script's line${many ? 's' : ''} ${left.map(id => `"${id}"`).join(', ')} ${many ? 'were' : 'was'} never said${keep}. Say ${many ? 'each' : 'it'} with ${SAY_TOOL} {"line": "<id>"} the way the craft note says (an auto run too: take the answer from the test answers), then call ${ENGINE_TOOL} again`
 }
 
 // Gate answer: the `approve` option approves; any other sends the creative back to
@@ -2181,7 +2188,9 @@ export function askPlan(step, fieldsDoc, gddText, opts = {}) {
     if (opts.only && !opts.only.includes(c.field)) return { ...c, status: 'path', why: 'not on this path', evidence: null }
     if (opts.forced) return { ...c, status: 'missing', why: 'reopened: asked again', evidence: null }
     const st = fieldStatus(doc[c.field], chapters)
-    const why = st.status === 'there' ? whyThere(st.evidence) : st.status === 'unsure' ? `the design document has "${st.evidence.line}", not settled` : 'not in the design document yet'
+    // (headless ideate-finished: the stage's end read `has "Idea: "against the computer"", not settled`)
+    const has = st.status === 'unsure' ? String(st.evidence.line).replace(/^\s*-?\s*(Fixed|Clear|Idea):\s*/i, '').trim() : ''
+    const why = st.status === 'there' ? whyThere(st.evidence) : st.status === 'unsure' ? `the design document has ${/^["“]/.test(has) ? has : `"${has}"`}, not settled` : 'not in the design document yet'
     return { ...c, status: st.status, why, evidence: st.evidence }
   })
   const asked = fields.filter(f => f.status !== 'path')
@@ -2241,20 +2250,41 @@ export function planNote(step, plan) {
 // (F234 rule 2, headless ideate-decided 14:49: haiku asked a Keep for both answers the rules already give) The field a
 // say call would ask though the plan says it is already there: its own line, or an any.keep whose question is that
 // line's question. null when the call asks nothing that is there.
+// (review fix 2, reviewer 2026-11-13: one line can ask several answers — Define's "Is that your game?" box, Ideate's
+// feelings message — so a line is refused only when EVERY answer on it is there; with one missing it is asked for it)
 export function asksThere(plan, ids, slots, script) {
   if (!plan || !Array.isArray(plan.fields)) return null
-  const there = plan.fields.filter(f => f.status === 'there' && f.line)
-  const q = l => { const x = script && script.lines && script.lines[l]; return plainWords(x && x.box ? x.box.question : x ? x.text : '').replace(/\s*\(pick any\)$/, '') }
-  for (const f of there) {
-    if (ids.includes(f.line)) return f
-    const keep = ids.includes('any.keep') && slots && typeof slots.question === 'string' ? plainWords(slots.question).replace(/\s*\(pick any\)$/, '') : ''
-    if (keep && q(f.line) && (keep === q(f.line) || keep.startsWith(q(f.line).replace(/\?$/, '')))) return f
+  const keepAt = ids.includes('any.keep') ? keepLineOf(plan.fields.map(f => f.line).filter(Boolean), slots, script) : null
+  for (const l of [...new Set(plan.fields.map(f => f.line).filter(Boolean))]) {
+    if (!(ids.includes(l) || keepAt === l) || !lineSettled(plan, l)) continue
+    return plan.fields.find(f => f.line === l && f.status === 'there')
   }
   return null
 }
 
+// Every answer a line asks is there (or off this path), so the line asks nothing: false when any is missing or unsure.
+export function lineSettled(plan, line) {
+  const fs = (plan && Array.isArray(plan.fields) ? plan.fields : []).filter(f => f.line === line)
+  return fs.length > 0 && fs.some(f => f.status === 'there') && fs.every(f => f.status === 'there' || f.status === 'path')
+}
+
+// (review fix 3) The line an any.keep stands for: the step's collected line whose question its "question" slot is, in
+// that question's words. null when it is none of them.
+// (headless ideate-decided 2026-11-13: a free line's question sits inside its text — "And which ones are "someday"? Name
+// them…" — so the question is its first "…?", without a leading "And"/"So", compared as fieldText)
+const askWords = t => { const s = fieldText(plainWords(t).replace(/\s*\(pick any\)$/i, '')).replace(/^(and|so|then)\s+/, ''); const i = s.indexOf('?'); return i >= 0 ? s.slice(0, i) : s }
+const questionOf = (script, l) => { const x = script && script.lines && script.lines[l]; return askWords(x && x.box ? x.box.question : x ? x.text : '') }
+function keepLineOf(lines, slots, script) {
+  const keep = slots && typeof slots.question === 'string' ? askWords(slots.question) : ''
+  if (!keep) return null
+  // (headless ideate-finished: "Must the computer be able to play it?" keeps "If there's an opponent: must the computer
+  // be able to play it?" — a Keep may leave out the line's lead-in)
+  return [...new Set(lines)].find(l => { const q = questionOf(script, l); return q && (keep === q || keep.startsWith(q) || (keep.length >= 15 && q.includes(keep))) }) || null
+}
+export const keepLine = (step, slots, script) => keepLineOf((step && step.collects ? step.collects : []).map(c => c.line).filter(Boolean), slots, script)
+
 // "Already decided", told to every step with "collects" (F234 rule 1).
-export const DECIDED_RULE = `Already decided: if the creative answers one of this step's questions with "already decided" (or "we decided that", "that's settled"), that is a step-in for that ONE question: call ${DECIDED_TOOL} {"answer": "what was decided, in their words or from the design document", "line": "<that question's line id>"}, write the line it returns word for word, take the answer as theirs and carry on with the next question. It settles that one question, never the ones after it.`
+export const DECIDED_RULE = `Already decided: if the creative answers one of this step's questions with "already decided" (or "we decided that", "that's settled"), that is a step-in for that ONE question: call ${DECIDED_TOOL} {"answer": "what was decided, in their words or from the design document", "line": "<that question's line id>"} (a question that asks several answers, like a box confirming a whole draft: add "field", the one their words are about), write the line it returns word for word, take the answer as theirs and carry on with the next question. It settles that one answer, never the others or the ones after it.`
 
 // How to reopen a question the stage's end listed as not asked (told to the steps after it).
 export function reopenRule(items) {
@@ -2266,12 +2296,21 @@ export function reopenRule(items) {
 export const soundsDecided = text => /\b(already decided|(we|i)('ve| have)? (already )?decided (that|this|it)|that'?s (already )?(settled|decided))\b/i.test(String(text || ''))
 export const decidedNote = () => `BMUZ engine: this answer says "already decided": that is the step-in for that ONE question. Call ${DECIDED_TOOL} {"answer": "what was decided", "line": "<that question's line id>"}, write the line it returns word for word, then carry on with the next question.`
 
-// The must lines a plan lifts: a line whose every field is there, unsure (confirmed with any.keep instead) or off the path.
+// The must lines a plan lifts: a line whose every field is there or off the path. (review fix 3, rule 5: an unsure
+// field is never lifted: its must is met by its own question or by its any.keep, which the say tool counts as that line.)
 export function liftedMusts(step, plan) {
   if (!plan) return []
   const byLine = {}
   for (const f of plan.fields) if (f.line) (byLine[f.line] = byLine[f.line] || []).push(f)
-  return Object.entries(byLine).filter(([, fs]) => fs.every(f => f.status !== 'missing')).map(([l]) => l)
+  return Object.entries(byLine).filter(([, fs]) => fs.every(f => f.status === 'there' || f.status === 'path')).map(([l]) => l)
+}
+
+// (review fix 4, rule 3) A script step a path's "when" turns off still runs when it writes down a talk step that ran
+// off its path (asking only what a later stage needs): else that answer is never written.
+export function ranOffPath(state, step) {
+  if (!step || step.kind !== 'script' || !state) return false
+  const asked = state.asked || {}
+  return (step.needs || []).some(n => asked[n] && Array.isArray(asked[n].only) && asked[n].only.length && (state.finished || []).includes(n) && !(state.skipped || []).includes(n))
 }
 
 // The stage's "I didn't ask about …" list: every field a finished step of this run didn't ask (whole steps skipped,
@@ -2282,7 +2321,14 @@ export function skipItems(p, state) {
   for (const s of p.steps) {
     const a = asked[s.id]
     if (!a || !(state.finished || []).includes(s.id)) continue
-    for (const f of a.fields || []) if (f.status === 'there') out.push({ n: out.length + 1, step: s.id, title: s.title || s.description || s.id, what: f.what, why: f.why })
+    for (const f of a.fields || []) {
+      // (an answer settled in this step by "already decided" was asked: it isn't on the list)
+      if (f.status === 'there' && f.here) continue
+      if (f.status === 'there') out.push({ n: out.length + 1, step: s.id, title: s.title || s.description || s.id, what: f.what, why: f.why })
+      // (review fix 3, rule 4: a field to ask or confirm whose question the step never said — no must made it — is listed
+      // too; "said" is kept on the plan when the step finishes)
+      else if ((f.status === 'missing' || f.status === 'unsure') && f.line && Array.isArray(a.said) && !a.said.includes(f.line)) out.push({ n: out.length + 1, step: s.id, title: s.title || s.description || s.id, what: f.what, why: `not asked: ${f.why}` })
+    }
   }
   return out
 }
@@ -2318,15 +2364,38 @@ export function reopenStep(p, state, stepId) {
 
 // The question "already decided" answers: the line(s) of the last question handed out in this step (state.lastAsk),
 // narrowed to `line` when one was named. Returns { line, fields } or { error }.
-export function decidedTarget(step, state, line = '') {
+// The words of an "already decided" answer, without a leading "<what> is" / "it's" (the line names it already).
+export function decidedWords(answer, what = '') {
+  let w = String(answer || '').replace(/\s+/g, ' ').trim().replace(/^(it'?s |that'?s |we'?ve )?already decided\s*[:,-]?\s+/i, '')
+  const name = String(what || '').trim().replace(/^the\s+/i, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  if (name) w = w.replace(new RegExp(`^(the\\s+)?${name}\\s*(is|are|:)\\s+`, 'i'), '')
+  return w.replace(/^(it'?s|it is)\s+/i, '').trim()
+}
+
+// "a, b or c" (any.decided.which's options)
+export const orList = xs => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} or ${xs[xs.length - 1]}` : xs.join(''))
+
+export function decidedTarget(step, state, line = '', field = '') {
   const last = state && state.lastAsk && state.lastAsk.step === step.id ? state.lastAsk.lines : []
   if (!last.length) return { error: 'no question of this step was asked yet: "already decided" settles the question just asked' }
   // (headless ideate-decided 15:1x: in an auto run the step-in came after the next box; a question of this step asked
   // earlier, named by its line, is still that one question)
   const earlier = line && state.said && state.said.step === step.id && (state.said.lines || []).includes(line) && (step.collects || []).some(c => c.line === line)
-  const pick = line ? (last.includes(line) || earlier ? [line] : []) : last
-  if (!pick.length) return { error: `"${line}" isn't a question this step asked (${last.join(', ')})` }
+  // (review fix 1, reviewer 2026-11-13: one question can ask several answers — Define's "Is that your game?" box holds
+  // six, Ideate's feelings message three — so "field" names the one; without it the target says "several" and the
+  // engine asks which, never settling them all)
+  const want = String(field || '').trim()
+  const is = c => !!want && (c.field === want || fieldText(c.what) === fieldText(want))
+  const named = !line && want ? (step.collects || []).find(c => is(c) && last.includes(c.line)) : null
+  const at = line || (named ? named.line : '')
+  const pick = at ? (last.includes(at) || earlier ? [at] : []) : last
+  if (!pick.length) return { error: `"${at}" isn't a question this step asked (${last.join(', ')})` }
   if (pick.length > 1) return { error: `several questions were asked together (${pick.join(', ')}): name the one it answers with "line"` }
-  const fields = (step.collects || []).filter(c => c.line === pick[0])
-  return { line: pick[0], fields }
+  const all = (step.collects || []).filter(c => c.line === pick[0])
+  if (want && all.length) {
+    const one = all.filter(is)
+    if (!one.length) return { error: `"${want}" isn't one of the answers that question asks (${all.map(c => `"${c.field}": ${c.what}`).join('; ')})` }
+    return { line: pick[0], fields: one }
+  }
+  return { line: pick[0], fields: all, ...(all.length > 1 ? { several: true } : {}) }
 }

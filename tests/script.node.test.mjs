@@ -85,7 +85,7 @@ test('lines not in the approved script are marked "added" (each one has an Ask M
   // (F233 — Finished games come in as fixed: the conversion path's lines, each on the Ask Muzzy list)
   const F233 = ['ideate.sofar.rules', 'ideate.rules', 'ideate.rules.gap', 'ideate.digital.who', 'ideate.digital.computer', 'define.welcome.rules', 'define.rules', 'define.rules.ok', 'ideate.pool.first', 'any.type']
   // (F234 — Steps ask only what's still open: already decided, the stage's skip list and reopen, the ask for the rules)
-  const F234 = ['ideate.rules.link', 'any.decided', 'any.decided.what', 'any.skipped', 'any.reopen']
+  const F234 = ['ideate.rules.link', 'any.decided', 'any.decided.what', 'any.decided.which', 'any.skipped', 'any.reopen']
   assert.deepEqual(Object.values(script.lines).filter(l => l.added).map(l => l.id).sort(), [...F233, ...F234, 'any.keep', 'bug.fix.done', 'bug.fix.reproduced', 'bug.fix.start', 'bug.none', 'bug.now', 'bug.often', 'bug.verified', 'define.feelings.eight', 'deliver.back', 'deliver.live', 'deliver.notready.box', 'design.rulebook.ok', 'design.rulebook.section', 'design.sketches.none', 'design.time.notrap', 'develop.idea', 'develop.plan.one', 'develop.setup.nologin', 'develop.waiting', 'release.none', 'release.notyet', 'release.out', 'release.walk', 'release.walk.link', 'release.walk.live.box', 'research.busy', 'research.changed', 'research.lost', 'research.none', 'research.notstarted', 'research.wait'].sort())
 })
 

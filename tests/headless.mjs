@@ -599,6 +599,46 @@ const scenarios = {
   },
 
 
+  // F234 review fix 1 (reviewer 2026-11-13): a finished game (Moonmarket) in Define at What Your Rulebook Decides, whose
+  // one box ("Is that your game?") confirms six answers. "Already decided" about the loop at that box settles the loop
+  // only: one decided record, none for the feelings, pillars or pitch, no "already decided" line in chapters 1–3, and
+  // the box is asked again for the rest. Stopped once the step's chapters are written.
+  async 'ideate-decided-box'() {
+    const dir = scratch('bmuz-ideate-decided-box')
+    const G = await import('../plugin/scripts/gdd.mjs')
+    const rules = readFileSync(join(here, 'fixtures', 'finished-game', 'rules.md'), 'utf8')
+    const RULES = ['Each player puts their cart on any stall and draws 3 goods cards.', 'Move your cart one or two stalls around the ring.', 'When it reaches space 8 the market closes and the game ends.', 'The most points wins. A tie is a shared win.'].map(r => `Fixed: "${r}" (from rules.md)`)
+    mkdirSync(join(dir, '.planning', 'research'), { recursive: true })
+    writeFileSync(join(dir, '.planning/GDD.md'), G.writeChapter(G.newGdd('Moonmarket'), 8, RULES, 'loose', {}).text)
+    writeFileSync(join(dir, 'rules.md'), rules)
+    writeFileSync(join(dir, '.planning/research/shared.md'), `# What you shared\n\n## rules.md\n\n${rules}`)
+    writeFileSync(join(dir, '.planning/research/ideate-so-far.json'), JSON.stringify({ path: 'convert' }))
+    const define = JSON.parse(readFileSync(join(plugin, 'pipelines', 'define.json'), 'utf8'))
+    const entered = E.enterAt(define, E.freshState('define'), 'decides', { convert: 'yes', fresh: 'no' }).state
+    mkdirSync(join(dir, '.bmuz'), { recursive: true })
+    writeFileSync(join(dir, '.bmuz/state.json'), JSON.stringify(entered, null, 2))
+    const answers = { decides: { 'Is that your game?': 'Already decided: the core loop is "move your cart, trade at the stall, race the market\'s close". The rest is right, yes, that\'s it.' } }
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'define', testAnswers: answers }, null, 2))
+    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : '')
+    const state = () => { try { return JSON.parse(read('.bmuz/state.json')) } catch (e) { return {} } }
+    const out = await runCollect(dir, 'bmuz go', `${TOOLS} ToolSearch mcp__bmuz__say mcp__bmuz__decided`, () => (state().finished || []).includes('decides-gdd'), 1_200_000)
+    writeFileSync(join(dir, 'run-output.txt'), out)
+    const js = journalOf(dir)
+    const dec = js.filter(j => j.ev === 'decided')
+    const fields = (() => { try { return JSON.parse(read('.planning/research/fields.json')) } catch (e) { return {} } })()
+    check('F234 review fix 1: "already decided" at the box that confirms six answers settled one (the loop), never all six', dec.length === 1 && JSON.stringify(dec[0].fields) === '["loop"]' && JSON.stringify(Object.keys(fields)) === '["loop"]', `${JSON.stringify(dec)} | fields: ${Object.keys(fields).join(', ')} | ${trailOf(js.filter(j => j.step === 'decides')).slice(0, 600)}`)
+    const ch = G.readGdd(read('.planning/GDD.md'))
+    check('F234 review fix 1: no "already decided" line was written into the feelings, pillars or pitch (chapters 1–3)', [1, 2, 3].every(n => !/already decided/.test((ch[n] || {}).text || '')), [1, 2, 3].map(n => `${n}: ${((ch[n] || {}).text || '').slice(0, 120)}`).join(' | '))
+    const boxes = js.filter(j => j.ev === 'line' && j.step === 'decides' && j.line === 'define.rules.ok')
+    const at = js.indexOf(dec[0])
+    check('F234 review fix 1: the box was asked again for the rest after the one answer was settled', at >= 0 && boxes.some(j => js.indexOf(j) > at) && (state().finished || []).includes('decides'), `${boxes.length} boxes; ${trailOf(js.slice(-8))}`)
+    // (the run is stopped once the step is written down, maybe with the next step's first line handed out but not yet
+    // written: only this step's lines count)
+    const said = js.filter(j => j.ev === 'line' && j.kind !== 'box' && j.step === 'decides').filter(kept(js))
+    const missing = said.filter(j => !plain(out).includes(plain(j.text)))
+    check('F234: every fixed line the engine handed out in this step is in Claude\'s words word for word', said.length > 0 && missing.length === 0, missing.map(j => `${j.line}: ${plain(j.text).slice(0, 120)}`).join(' | '))
+  },
+
   // F234 — Steps ask only what's still open: a finished game (Moonmarket) in Define, at Platform & Play, its rules
   // already saying where it's played and who plays (the GDD's chapter 5 and .planning/research/fields.json, as Ideate's
   // reading records them). Proves, in one run: what the rules say is not asked (and is listed at the stage's end, to
@@ -646,7 +686,9 @@ const scenarios = {
     check('F234 rule 3: what the rules leave open and a later stage needs was still asked (Which one platform first?)', plat.some(j => j.line === 'define.platform.first'), plat.map(j => j.line).join(', '))
     const dec = js.filter(j => j.ev === 'decided')
     const decAt = js.indexOf(dec[0])
-    const after = js.slice(decAt + 1).filter(j => j.ev === 'line' && j.step === 'platform-rules' && ['define.platform.someday', 'define.platform.ai'].includes(j.line))
+    // (review fix run 2026-11-13: haiku may ask the other questions before the one it was told is decided, or as a Keep;
+    // what rule 1 needs is that they were still asked in the step and not settled with it)
+    const after = js.filter(j => j.ev === 'line' && j.step === 'platform-rules' && (['define.platform.someday', 'define.platform.ai'].includes(j.line) || (j.line === 'any.keep' && /someday|computer be able/i.test(j.box?.question || '')))).filter(j => js.indexOf(j) !== decAt)
     const fields = (() => { try { return JSON.parse(read('.planning/research/fields.json')) } catch (e) { return {} } })()
     check('F234 rule 1: "already decided" settled exactly that one question (platform.first, written into chapter 5), and the next questions were still asked', dec.length === 1 && JSON.stringify(dec[0].fields) === '["platform.first"]' && /you said it's already decided/.test((G.readGdd(read('.planning/GDD.md'))[5] || {}).text || '') && (fields['platform.first'] || []).some(r => r.kind === 'decided') && after.length >= 1 && js.some(j => j.ev === 'line' && j.line === 'any.decided'), `${JSON.stringify(dec)} | after: ${after.map(j => j.line).join(', ')}`)
     const lock = read('.planning/research/define-lock.md')

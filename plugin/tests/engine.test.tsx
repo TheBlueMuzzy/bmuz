@@ -416,6 +416,8 @@ test('F233: a question list is the step\'s own pool lines (never Claude\'s words
   s.w.files.SCRIPT = [SCRIPT, '## any.type · say · added', 'Type your answer below.', '', '## ideate.open.ask · free', '{questions#}', 'Answer in one message, in any order.', '', '## ideate.pool.where · say', 'Where do you picture people playing it: on a phone, a computer, both?', ''].join(NL)
   const p = JSON.parse(s.w.files.PIPELINE)
   p.steps[0].lines = [...p.steps[0].lines, 'ideate.open.ask', 'ideate.pool.where']
+  // (F234 review fix 3, headless ideate-finished: a pool line that asks a collected answer counts as asked)
+  p.steps[0].collects = [{ field: 'platform.where', what: 'Where people play it', chapter: 5, line: 'ideate.pool.where', neededBy: [] }]
   s.w.files.PIPELINE = JSON.stringify(p)
   await start($, true)
   const own: any = await $.tool.call({ tool: SAY, line: 'ideate.open.ask', slots: { questions: ['Anything it should not do?'] } } as any)
@@ -424,6 +426,7 @@ test('F233: a question list is the step\'s own pool lines (never Claude\'s words
   expect(why(after)).toMatch(/a free question is the last thing said: say "ideate\.pool\.where" before "ideate\.open\.ask"/)
   const ok: any = await $.tool.call({ tool: SAY, line: 'ideate.open.ask', slots: { questions: [{ line: 'ideate.pool.where' }] } } as any)
   expect(said(ok).say).toBe(`1. Where do you picture people playing it: on a phone, a computer, both?${NL}Answer in one message, in any order.${NL}${NL}Type your answer below.`)
+  expect(JSON.parse(s.w.files['/proj/.bmuz/state.json']).said.lines).toContain('ideate.pool.where')
 })
 
 test('F233 6d: "next, tell me what" ({"wait": true}) says "Type your answer below." too, checked like any line', async ($, on) => {
@@ -2831,6 +2834,7 @@ const F_SCRIPT = [
   '## any.type · say · added', 'Type your answer below.', '',
   '## any.decided · say · added', 'Noted: {what} is already decided ({answer}). I won\'t ask about it again.', '',
   '## any.decided.what · free · added', 'What was decided? Tell me in a line and I\'ll write it down.', '',
+  '## any.decided.which · free · added', 'Which one is already decided: {options}? I\'ll still ask about the others.', '',
   '## any.skipped · say · added', '**What I didn\'t ask about**', '{skipped#}', 'To bring one back, say "reopen" and its number.', '',
   '## any.reopen · say · added', 'Back to {title}, so you can answer it yourself.', '',
 ].join(F_NL)
@@ -2933,10 +2937,11 @@ test('F234 rule 1: "already decided" settles exactly the question just asked —
   // q.first counts as said; q.who is still a must
   const done: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { chapters: {} } } as any)
   expect(String(done.result)).toMatch(/line "q\.who" was never said/)
+  // the settled question isn't asked again (review fix 1: the plan knows it is there now)
+  expect(why(await $.tool.call({ tool: SAY, line: 'q.first' } as any))).toMatch(/already in the design document/)
   // two questions asked together: it must name which one
-  await $.tool.call({ tool: SAY, line: ['q.first', 'q.who'] } as any)
-  const both: any = await $.tool.call({ tool: 'mcp__bmuz__decided', answer: 'solo' } as any)
-  expect(why(both)).toMatch(/several questions were asked together \(q\.first, q\.who\): name the one/)
+  await $.tool.call({ tool: SAY, line: ['q.who'] } as any)
+  expect(E.decidedTarget(JSON.parse(w.files.PIPELINE).steps[0], { ...fstate(w), lastAsk: { step: 'a', lines: ['q.free', 'q.who'] } }).error).toMatch(/several questions were asked together \(q\.free, q\.who\): name the one/)
   // no answer in their words: the engine asks what was decided, one free line
   const what: any = await $.tool.call({ tool: 'mcp__bmuz__decided', line: 'q.who' } as any)
   expect(said(what).say).toMatch(/^What was decided\? Tell me in a line and I'll write it down\./)
@@ -2965,6 +2970,99 @@ test('F234 rule 4: "reopen 1" at the stage\'s end runs that step again with ever
   expect(fstate(w).current).toBe('b')
   const bad: any = await $.tool.call({ tool: 'mcp__bmuz__reopen', which: '7' } as any)
   expect(why(bad)).toMatch(/nothing was left out|isn't on the list/)
+})
+
+// F234 review fixes (reviewer 2026-11-13): one box that collects two answers (like Define's "Is that your game?"), an
+// unsure answer that must be confirmed, and a write step after a talk step that ran off its path.
+const ONE_BOX = (extra: any = {}) => JSON.stringify({
+  id: 'hello', version: 1, steps: [
+    { id: 'a', kind: 'talk', no: '2.1', title: 'Your Rules', tools: ['AskUserQuestion'], craft: 'craft/name.md', lines: ['q.first', 'q.free'], must: ['q.first'], results: ['chapters'], collects: [FIRST, { ...WHO, line: 'q.first' }], ...extra },
+    { id: 'ready', kind: 'talk', needs: ['a'], tools: ['AskUserQuestion'], craft: 'craft/name.md', lines: ['q.free'], results: ['onward'] },
+  ],
+})
+
+test('F234 review fix 1, rule 1: "already decided" at a box that asks two answers settles only the one named; the box is asked again for the other', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = fieldsWorld(on, ['Open: Which platform?'], {})
+  w.files.PIPELINE = ONE_BOX()
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't0')
+  await $.tool.call({ tool: SAY, line: 'q.first' } as any)
+  // no field named: refused, naming both, never both written
+  const none: any = await $.tool.call({ tool: 'mcp__bmuz__decided', answer: 'The web' } as any)
+  expect(why(none)).toMatch(/asks several answers: "platform\.first" \(Which one platform first\), "players\.who" \(Who else is playing\)/)
+  expect(w.runs.filter((x: string[]) => /fields[.]mjs$/.test(String(x[1])))).toEqual([])
+  // their words don't say which: one short question
+  const ask: any = await $.tool.call({ tool: 'mcp__bmuz__decided', answer: 'The web', field: '?' } as any)
+  expect(said(ask).say).toBe('Which one is already decided: which one platform first or who else is playing? I\'ll still ask about the others.')
+  // named: that one only
+  const r: any = await $.tool.call({ tool: 'mcp__bmuz__decided', answer: 'The web', field: 'platform.first' } as any)
+  expect(said(r).say).toBe('Noted: which one platform first is already decided (The web). I won\'t ask about it again.')
+  expect(w.runs.filter((x: string[]) => /fields[.]mjs$/.test(String(x[1]))).map((x: string[]) => x.slice(2, 6))).toEqual([['decided', 'platform.first', '5', 'a']])
+  expect(Object.keys(JSON.parse(w.files['/proj/.planning/research/fields.json']))).toEqual(['platform.first'])
+  expect(fev(w).find((j: any) => j.ev === 'decided')).toMatchObject({ fields: ['platform.first'], open: ['players.who'] })
+  expect(String(r.result)).toMatch(/still asks who else is playing/)
+  // the box no longer counts as said (the other answer is open), and asking it again is allowed
+  expect(String((await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { chapters: {} } } as any) as any).result)).toMatch(/"q\.first" was never said/)
+  expect(refused(await $.tool.call({ tool: SAY, line: 'q.first' } as any))).toBe(false)
+  expect(refused(await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { chapters: {} } } as any))).toBe(false)
+})
+
+test('F234 review fix 2, rules 3 and 4: one answer there, one missing on the same box — the box is asked, not refused, and the step can finish', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const line = 'Fixed: The web (you said it\'s already decided)'
+  const { w } = fieldsWorld(on, [line], { 'platform.first': [{ chapter: 5, line, kind: 'decided', step: 'x' }] })
+  w.files.PIPELINE = ONE_BOX()
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't0')
+  expect(fev(w).find((j: any) => j.ev === 'confirm')).toMatchObject({ step: 'a', fields: [{ field: 'platform.first', status: 'there' }, { field: 'players.who', status: 'missing' }] })
+  const step_done = async () => $.tool.call({ tool: 'mcp__bmuz__step_done', result: { chapters: {} } } as any)
+  expect(String(((await step_done()) as any).result)).toMatch(/"q\.first" was never said/)
+  expect(refused(await $.tool.call({ tool: SAY, line: 'q.first' } as any))).toBe(false)
+  expect(refused(await step_done())).toBe(false)
+})
+
+test('F234 review fix 3, rule 5: an unsure answer is not lifted — step_done is refused until it is asked or kept; the Keep counts as its question', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const said1 = 'Clear: "online, at the same time"'
+  const { w } = fieldsWorld(on, [said1], { 'players.who': [{ chapter: 5, line: said1, kind: 'said', step: 'rules-open' }] })
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't0')
+  await $.tool.call({ tool: SAY, line: 'q.first' } as any)
+  const no: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { chapters: {} } } as any)
+  expect(String(no.result)).toMatch(/"q\.who" was never said \("q\.who": the document already has an answer, so confirm it with "any\.keep"/)
+  expect(refused(await $.tool.call({ tool: SAY, line: 'any.keep', slots: { question: 'Who else is playing?', answer: 'online' } } as any))).toBe(false)
+  // "already decided" at the Keep settles that answer
+  expect(fstate(w).lastAsk).toEqual({ step: 'a', lines: ['q.who'] })
+  expect(refused(await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { chapters: {} } } as any))).toBe(false)
+  expect(fstate(w).asked.a.said).toEqual(['q.first', 'any.keep', 'q.who'])
+})
+
+test('F234 review fix 4, rule 3: a talk step that ran off its path for a needed answer has its write step run too', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = fieldsWorld(on, ['Open: Which platform?'], {}, { finished: ['path'], results: { fresh: 'no' }, resultsBy: { path: { fresh: 'no' } } })
+  w.files.PIPELINE = JSON.stringify({
+    id: 'hello', version: 1, steps: [
+      { id: 'path', kind: 'talk', tools: ['AskUserQuestion'], craft: 'craft/name.md', lines: ['q.free'], results: ['fresh'] },
+      { id: 'a', kind: 'talk', needs: ['path'], when: '{fresh}', no: '2.5', title: 'Platform & Play', tools: ['AskUserQuestion'], craft: 'craft/name.md', lines: ['q.first', 'q.who'], results: ['chapters'], collects: [FIRST, { ...WHO, neededBy: [] }] },
+      { id: 'a-gdd', kind: 'script', when: '{fresh}', needs: ['a'], run: ['node', 'end.mjs'], writes: ['end.md'] },
+      { id: 'ready', kind: 'talk', needs: ['a-gdd'], tools: ['AskUserQuestion'], craft: 'craft/name.md', lines: ['q.free'], results: ['onward'] },
+    ],
+  })
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't0')
+  expect(fstate(w).current).toBe('a')
+  expect(fstate(w).asked.a.only).toEqual(['platform.first'])
+  expect(refused(await $.tool.call({ tool: SAY, line: 'q.first' } as any))).toBe(false)
+  expect(refused(await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { chapters: { 5: '- **First:** the web' } } } as any))).toBe(false)
+  await turn($, 't1')
+  expect(w.runs.some((x: string[]) => /end[.]mjs$/.test(String(x[1])))).toBe(true)
+  expect(fstate(w).skipped || []).not.toContain('a-gdd')
+  expect(fstate(w).current).toBe('ready')
 })
 
 // F234 task 6 (review fix from F233 task 8): the turn-end correction writes the open question again, last, but never a

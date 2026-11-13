@@ -1031,6 +1031,9 @@ Noted: {what} is already decided ({answer}). I won't ask about it again.
 ## any.decided.what · free · added
 What was decided? Tell me in a line and I'll write it down.
 
+## any.decided.which · free · added
+Which one is already decided: {options}? I'll still ask about the others.
+
 ## any.skipped · say · added
 **What I didn't ask about**
 {skipped#}

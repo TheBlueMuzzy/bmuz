@@ -65,11 +65,11 @@ test('task 3, rules 2 and 5: there only with a fixed rule or a decision whose li
   const all = Object.fromEntries(step.collects.map(c => [c.field, [{ chapter: 5, line: fixed, kind: 'fixed' }]]))
   assert.equal(E.askPlan(step, all, doc).decision, 'skip')
   assert.equal(E.askPlan(step, all, doc, { forced: true }).decision, 'ask')
-  // the musts it lifts: lines whose fields are there or confirmed; a missing one stays
+  // the musts it lifts: lines whose fields are there; an unsure one (rule 5: confirm) and a missing one stay
   const lifted = E.liftedMusts(step, plan)
-  assert.ok(lifted.includes('define.platform.who') && lifted.includes('define.platform.where') && lifted.includes('define.platform.first') && !lifted.includes('define.platform.someday'))
+  assert.deepEqual(lifted, ['define.platform.who', 'define.platform.ai'].filter(l => plan.fields.find(f => f.line === l).status === 'there'))
   const state = { asked: { platform: E.planRecord(plan, step) }, said: { step: 'platform', lines: ['define.platform'] } }
-  assert.match(E.mustProblem(step, state, {}), /"define\.platform\.someday" was never said/)
+  assert.match(E.mustProblem(step, state, {}), /"define\.platform\.where", "define\.platform\.first", "define\.platform\.someday" were never said/)
   assert.doesNotMatch(E.mustProblem(step, state, {}), /define\.platform\.who/)
   // the plan as the step is told it
   const note = E.planNote(step, plan)
@@ -259,4 +259,96 @@ test('task 4: "already decided" for a question this step asked earlier, named by
   const st = { lastAsk: { step: 'platform-rules', lines: ['define.platform.ai'] }, said: { step: 'platform-rules', lines: ['define.platform', 'define.platform.first', 'define.platform.ai'] } }
   assert.deepEqual(E.decidedTarget(step, st, 'define.platform.first').fields.map(f => f.field), ['platform.first'])
   assert.match(E.decidedTarget(step, st, 'define.platform.someday').error, /isn't a question this step asked/)
+})
+
+// ---- review fixes (reviewer 2026-11-13) ----
+const decidesPlan = statuses => ({ fields: E.stepById(DEFINE, 'decides').collects.map(c => ({ ...c, status: statuses[c.field] || 'missing', why: 'w' })) })
+
+test('review fix 1, rule 1: "already decided" at a box that collects several answers settles only the one named — never all six', () => {
+  const step = E.stepById(DEFINE, 'decides')
+  const st = { lastAsk: { step: 'decides', lines: ['define.rules.ok'] }, said: { step: 'decides', lines: ['define.rules', 'define.rules.ok'] } }
+  // no field named: the engine has to ask which one (several), never settle them all
+  const t = E.decidedTarget(step, st, '')
+  assert.equal(t.line, 'define.rules.ok')
+  assert.ok(t.several, 'several answers on one line must be asked which')
+  // named by its id, or by its "what": that one only
+  assert.deepEqual(E.decidedTarget(step, st, '', 'loop').fields.map(f => f.field), ['loop'])
+  assert.deepEqual(E.decidedTarget(step, st, 'define.rules.ok', 'The core loop').fields.map(f => f.field), ['loop'])
+  assert.ok(!E.decidedTarget(step, st, '', 'loop').several)
+  assert.match(E.decidedTarget(step, st, '', 'the price').error, /isn't one of the answers/)
+  // one line, one field: as before
+  const pf = E.stepById(DEFINE, 'platform-rules')
+  assert.deepEqual(E.decidedTarget(pf, { lastAsk: { step: 'platform-rules', lines: ['define.platform.first'] } }, '').fields.map(f => f.field), ['platform.first'])
+  // Ideate's feelings: three answers in one free message, the same
+  const fe = E.stepById(IDEATE, 'feelings')
+  assert.ok(E.decidedTarget(fe, { lastAsk: { step: 'feelings', lines: ['ideate.feelings'] } }, '').several)
+  // after one is settled, the line still asks the rest: it counts as said only once every answer on it is there
+  assert.equal(E.lineSettled(decidesPlan({ loop: 'there' }), 'define.rules.ok'), false)
+  assert.equal(E.lineSettled(decidesPlan(Object.fromEntries(step.collects.map(c => [c.field, 'there']))), 'define.rules.ok'), true)
+})
+
+test('review fix 2, rules 3 and 4: a line is refused only when every answer on it is there; with one missing it is asked (no stall)', () => {
+  const plan = decidesPlan({ 'feel.target': 'there', 'feel.know': 'there', pillars: 'there', 'pitch.oneliner': 'there', 'pitch.lines': 'there' })
+  assert.equal(E.asksThere(plan, ['define.rules.ok'], {}, script), null)
+  assert.deepEqual(E.liftedMusts(E.stepById(DEFINE, 'decides'), plan), [])
+  const all = decidesPlan({ 'feel.target': 'there', 'feel.know': 'there', pillars: 'there', 'pitch.oneliner': 'there', 'pitch.lines': 'there', loop: 'there' })
+  assert.ok(E.asksThere(all, ['define.rules.ok'], {}, script))
+  // Ideate's feelings: one of three there, the message is still asked for the other two
+  const fe = { fields: E.stepById(IDEATE, 'feelings').collects.map((c, i) => ({ ...c, status: i ? 'missing' : 'there', why: 'w' })) }
+  assert.equal(E.asksThere(fe, ['ideate.feelings'], {}, script), null)
+})
+
+test('review fix 3, rule 5: an unsure answer is never lifted: only its own question or its Keep meets the must; a field never asked reaches the stage\'s end', () => {
+  const step = E.stepById(DEFINE, 'platform-rules')
+  const plan = { fields: step.collects.map(c => ({ ...c, status: c.field === 'platform.first' ? 'unsure' : c.field === 'players.who' ? 'there' : 'missing', why: 'w', evidence: { line: 'Clear: the web' } })) }
+  assert.deepEqual(E.liftedMusts(step, plan), ['define.platform.who'])
+  const st = { said: { step: 'platform-rules', lines: ['define.platform'] }, asked: { 'platform-rules': plan } }
+  assert.match(E.mustProblem(step, st), /define\.platform\.first/)
+  // its Keep, in that question's words, stands for the question
+  assert.equal(E.keepLine(step, { question: 'Which one platform first?', answer: 'the web' }, script), 'define.platform.first')
+  assert.equal(E.keepLine(step, { question: 'Is it fun?', answer: 'yes' }, script), null)
+  // the stage's end lists a field the step never asked (no must made it), with why
+  const p = { steps: [step] }
+  const items = E.skipItems(p, { finished: ['platform-rules'], asked: { 'platform-rules': { ...plan, title: 'Platform & Play', said: ['define.platform', 'define.platform.first', 'define.platform.where', 'define.platform.someday'] } } })
+  assert.deepEqual(items.map(i => i.what), ['Who else plays', 'Whether the computer must play it'])
+  assert.equal(items[0].why, 'w')
+  assert.match(items[1].why, /not asked/)
+})
+
+test('review fix 4, rule 3: the write step of a talk step that ran off its path (asking only what a later stage needs) runs too', () => {
+  const s = E.stepById(DEFINE, 'feelings-gdd')
+  const base = { finished: ['feelings'], skipped: [] }
+  assert.equal(E.ranOffPath({ ...base, asked: { feelings: { decision: 'ask', fields: [], only: ['feel.target'] } } }, s), true)
+  assert.equal(E.ranOffPath({ ...base, asked: { feelings: { decision: 'ask', fields: [] } } }, s), false)
+  assert.equal(E.ranOffPath({ ...base, skipped: ['feelings'], asked: { feelings: { only: ['feel.target'] } } }, s), false)
+  assert.equal(E.ranOffPath({ finished: [], asked: {} }, E.stepById(DEFINE, 'feelings')), false)
+})
+
+test('review fix 1 (headless ideate-decided-box): an answer that starts with what it answers drops those words ("the core loop is …")', () => {
+  assert.equal(E.decidedWords('the core loop is "move, trade, race"', 'The core loop'), '"move, trade, race"')
+  assert.equal(E.decidedWords('Core loop: move, trade', 'The core loop'), 'move, trade')
+  assert.equal(E.decidedWords("it's the web", 'The first platform'), 'the web')
+  assert.equal(E.decidedWords('The web', 'The first platform'), 'The web')
+  assert.equal(E.decidedWords('  two   players ', ''), 'two players')
+})
+
+test('review fix 3 (headless ideate-decided): a Keep of a free line\'s question counts as it; an answer settled here by "already decided" isn\'t on the stage\'s end list', () => {
+  const step = E.stepById(DEFINE, 'platform-rules')
+  assert.equal(E.keepLine(step, { question: 'Which ones are "someday"?', answer: 'phones' }, script), 'define.platform.someday')
+  const fields = step.collects.map(c => ({ ...c, status: c.field === 'platform.first' ? 'there' : 'missing', why: 'you said it\'s already decided: the web', ...(c.field === 'platform.first' ? { here: true } : {}) }))
+  const items = E.skipItems({ steps: [step] }, { finished: ['platform-rules'], asked: { 'platform-rules': { fields, title: 'Platform & Play', said: step.collects.map(c => c.line) } } })
+  assert.deepEqual(items, [])
+})
+
+test('review fix 1: "Already decided: the web" as the answer is the web', () => {
+  assert.equal(E.decidedWords('Already decided: the web.', 'The first platform'), 'the web.')
+  assert.equal(E.decidedWords("It's already decided, the web", 'The first platform'), 'the web')
+})
+
+test('review fix 3 (headless ideate-finished): a Keep that leaves out the line\'s lead-in still stands for it; the unsure "why" reads plainly', () => {
+  const step = E.stepById(DEFINE, 'platform-rules')
+  assert.equal(E.keepLine(step, { question: 'Must the computer be able to play it?', answer: 'yes' }, script), 'define.platform.ai')
+  const line = 'Idea: "against the computer"'
+  const plan = E.askPlan(step, { 'computer.ai': [{ chapter: 5, line, kind: 'read' }] }, gdd([line]))
+  assert.equal(plan.fields.find(f => f.field === 'computer.ai').why, 'the design document has "against the computer", not settled')
 })

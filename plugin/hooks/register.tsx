@@ -640,8 +640,8 @@ async function registerAll($: any) {
   })
   await $.tool.register({
     name: 'decided',
-    description: 'BMUZ engine (Ideate, Define; any talk step with script lines): the creative answered the question just asked with "already decided". Give what was decided, in their words or from the design document, and that question\'s line id: {"answer": "...", "line": "define.platform.first"}. It settles that one question only. Returns the line to say word for word and what to do next.',
-    inputSchema: { type: 'object', properties: { answer: { type: 'string' }, line: { type: 'string' } } },
+    description: 'BMUZ engine (Ideate, Define; any talk step with script lines): the creative answered the question just asked with "already decided". Give what was decided, in their words or from the design document, and that question\'s line id: {"answer": "...", "line": "define.platform.first"}. When that question asks several answers (a box that confirms a whole draft), add "field": the one answer their words are about (the engine says which there are). It settles that one answer only. Returns the line to say word for word and what to do next.',
+    inputSchema: { type: 'object', properties: { answer: { type: 'string' }, line: { type: 'string' }, field: { type: 'string' } } },
     isDeferred: false,
   })
   await $.tool.register({
@@ -1192,7 +1192,8 @@ async function advance($: any, resume: boolean, opts: { timer?: boolean, go?: bo
     // (F232: an "onBack" step runs only when a gate sent the creative back to it)
     // F234 rule 3: a step a path's "when" turns off still runs, asking only the fields a later stage needs that nothing
     // else asks (neededMissing)
-    const offPath = !isRestart && !E.isWanted(step, vars())
+    // (review fix 4: the write step of a talk step that ran that way runs too, else its answer is never written)
+    const offPath = !isRestart && !E.isWanted(step, vars()) && !E.ranOffPath(ctx.state, step)
     const only = offPath && step.kind === 'talk' && step.collects && !E.onBackSkips(step, ctx.state) ? await stillNeeded($, step) : null
     if (!isRestart && ((offPath && !only) || E.onBackSkips(step, ctx.state))) {
       const empties = E.wrapEmpties(ctx.pipeline, ctx.state, [step.id])
@@ -1520,9 +1521,15 @@ async function sayTool($: any, e: any) {
   }
   // (the lines handed out in this step, for its "must"; saved with the rest of this call below)
   const had = ctx.state.said && ctx.state.said.step === step.id && Array.isArray(ctx.state.said.lines) ? ctx.state.said.lines : []
-  ctx.state = { ...ctx.state, said: { step: step.id, lines: [...new Set([...had, ...ids])] } }
+  // (F234 review fix 3, rule 5: a Keep of a question this step collects stands for that question — its must is met, and
+  // "already decided" at the Keep settles that answer)
+  const kept = ids.includes('any.keep') && step.collects ? E.keepLine(step, slots, ctx.script) : null
+  // (headless ideate-finished: a question list's pool line that asks a collected answer was asked too, so it isn't "not
+  // asked" at the stage's end)
+  const pooledAsks = Array.isArray(slots.questions) && step.collects ? slots.questions.map((q: any) => q && q.line).filter((l: any) => typeof l === 'string' && step.collects.some((c: any) => c.line === l)) : []
+  ctx.state = { ...ctx.state, said: { step: step.id, lines: [...new Set([...had, ...ids, ...(kept ? [kept] : []), ...pooledAsks])] } }
   // (F234: the question just asked — its lines, and a question list's own pool lines — for "already decided")
-  const asks = rendered.filter((r: any) => r.kind === 'free' || r.kind === 'box').map((r: any) => r.id)
+  const asks = rendered.filter((r: any) => r.kind === 'free' || r.kind === 'box').map((r: any) => (r.id === 'any.keep' && kept ? kept : r.id))
   if (asks.length) {
     const pool = Array.isArray(slots.questions) ? slots.questions.map((q: any) => q && q.line).filter((l: any) => typeof l === 'string') : []
     ctx.state = { ...ctx.state, lastAsk: { step: step.id, lines: [...new Set([...asks, ...pool])] } }
@@ -1639,9 +1646,29 @@ async function ideaTool($: any, e: any) {
 async function decidedTool($: any, e: any) {
   const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
   if (!step || step.kind !== 'talk' || ctx.state.status !== 'working' || !step.lines) return { deny: 'BMUZ engine: no talk step is asking anything now, so nothing is settled. Carry on.' }
-  const target = E.decidedTarget(step, ctx.state, String(e.line ?? '').trim())
+  const which = String(e.field ?? '').trim()
+  const target = E.decidedTarget(step, ctx.state, String(e.line ?? '').trim(), which === '?' ? '' : which)
   if (target.error) return { deny: `BMUZ engine: ${target.error}.` }
-  const answer = String(e.answer ?? '').replace(/\s+/g, ' ').trim()
+  // (headless ideate-decided-box: "the core loop is …" as the answer read "the core loop is already decided (the core
+  // loop is …)": the answer's own "<what> is" is left out)
+  const answer = E.decidedWords(String(e.answer ?? ''), target.fields.length === 1 ? target.fields[0].what : '')
+  // (review fix 1, rule 1: that question asks several answers; "already decided" settles one, so which one — from
+  // their words when they say it, else one short question — never all of them)
+  if (target.several && which !== '?') {
+    const names = target.fields.map((f: any) => `"${f.field}" (${f.what})`).join(', ')
+    return { deny: `BMUZ engine: that question (${target.line}) asks several answers: ${names}. "Already decided" settles exactly one. Call ${E.DECIDED_TOOL} again with "field": "<the one their words are about>" and "answer". If their words don't say which, call it with "field": "?" and the engine gives you one short question to ask.` }
+  }
+  if (target.several) {
+    const r = E.renderLine(ctx.script, 'any.decided.which', { options: E.orList(target.fields.map((f: any) => f.what.charAt(0).toLowerCase() + f.what.slice(1))) })
+    if (r.error) return { deny: `BMUZ engine: ${r.error}` }
+    const names = target.fields.map((f: any) => `"${f.field}" (${f.what})`).join(', ')
+    if (!ctx.auto) ctx.state = { ...ctx.state, ask: { step: step.id, line: 'any.decided.which', text: r.text } }
+    await journal($, { ev: 'line', step: step.id, line: 'any.decided.which', kind: 'free', text: r.text })
+    if (turnSaid.step !== step.id) turnSaid = { step: step.id, lines: [] }
+    turnSaid.lines.push({ id: 'any.decided.which', text: r.text })
+    await save($)
+    return { result: JSON.stringify({ say: r.text, then: `Write exactly the "say" text as your whole reply and end your turn. Their next message names the one (${names}): then call ${E.DECIDED_TOOL} again with that "field", "line": "${target.line}" and "answer". The others are still asked.` }) }
+  }
   if (!answer) {
     // (their words and the design document don't say what was decided: ask it, one free line, never a guess)
     const r = E.renderLine(ctx.script, 'any.decided.what', {})
@@ -1664,14 +1691,26 @@ async function decidedTool($: any, e: any) {
   const what = target.fields.length ? target.fields.map((f: any) => f.what.charAt(0).toLowerCase() + f.what.slice(1)).join(' and ') : 'that'
   const r = E.renderLine(ctx.script, 'any.decided', { what, answer: answer.replace(/[.]+$/, '') })
   if (r.error) return { deny: `BMUZ engine: ${r.error}` }
+  // (review fix 1: the step's plan knows the answer is there now; the question counts as said only once every answer it
+  // asks is there — one of six settled leaves the box to ask again for the rest)
+  const plan = ctx.state.asked && ctx.state.asked[step.id]
+  let rest: any[] = []
+  if (plan && Array.isArray(plan.fields)) {
+    const fields = plan.fields.map((f: any) => (wrote.includes(f.field) ? { ...f, status: 'there', why: `you said it's already decided: ${answer.replace(/[.]+$/, '')}`, here: true } : f))
+    ctx.state = { ...ctx.state, asked: { ...ctx.state.asked, [step.id]: { ...plan, fields } } }
+    rest = fields.filter((f: any) => f.line === target.line && f.status !== 'there' && f.status !== 'path')
+  }
   const had = ctx.state.said && ctx.state.said.step === step.id ? ctx.state.said.lines : []
-  ctx.state = { ...ctx.state, said: { step: step.id, lines: [...new Set([...had, target.line])] } }
-  await journal($, { ev: 'decided', step: step.id, line: target.line, fields: wrote, answer })
+  ctx.state = { ...ctx.state, said: { step: step.id, lines: rest.length ? had.filter((l: string) => l !== target.line) : [...new Set([...had, target.line])] } }
+  await journal($, { ev: 'decided', step: step.id, line: target.line, fields: wrote, answer, ...(rest.length ? { open: rest.map((f: any) => f.field) } : {}) })
   await journal($, { ev: 'line', step: step.id, line: 'any.decided', kind: 'say', text: r.text })
   if (turnSaid.step !== step.id) turnSaid = { step: step.id, lines: [] }
   turnSaid.lines = [...turnSaid.lines.filter(l => l.id !== 'any.decided'), { id: 'any.decided', text: r.text }]
   await save($)
-  return { result: JSON.stringify({ say: r.text, then: `Write exactly the "say" text, then carry on with this step's next question (only that one question is settled; take "${answer}" as their answer to it in the result).` }) }
+  const then = rest.length
+    ? `Write exactly the "say" text. Only that one answer is settled: the same question ("${target.line}") still asks ${rest.map((f: any) => f.what.charAt(0).toLowerCase() + f.what.slice(1)).join(', ')}, so ask it again for those (say "${target.line}" again), then carry on.`
+    : `Write exactly the "say" text, then carry on with this step's next question (only that one question is settled; take "${answer}" as their answer to it in the result).`
+  return { result: JSON.stringify({ say: r.text, then }) }
 }
 
 // "reopen <n>" at the stage's end: that step runs again with every question asked, then the stage's end again.
