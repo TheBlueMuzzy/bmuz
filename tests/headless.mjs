@@ -545,7 +545,7 @@ const scenarios = {
       'platform-rules': { 'Keep? (each answer from Ideate)': 'Keep', 'Which one platform first?': 'The web', 'Must the computer be able to play it?': 'Yes, and it has to be good' },
       scope: {
         'The smallest version that still gives the feeling': 'Two players against each other online, the base game only.',
-        'Each idea: must, should, could or won\'t?': 'The board, goods and orders: Must. The moon track: Must. Online, taking turns: Must. A computer opponent: Should. A tutorial: Could. Expansions: Won\'t.',
+        'Each idea: must, should, could or won\'t?': 'Online, taking turns: Must. A computer opponent: Should. A tutorial: Could. Expansions: Won\'t.',
         'A reason for each won\'t': 'Expansions: the base game first.',
       },
       slice: { 'Anything in the wrong box?': 'No, it looks right.', 'Does that slice feel like the game?': 'Yes' },
@@ -565,7 +565,9 @@ const scenarios = {
     const gdd = read('.planning/GDD.md')
     check('F233 (ideate): the rules are in the GDD as fixed, with their source', (gdd.match(/^- Fixed: .*\(from [^)]*rules\.md\)$/gm) || []).length >= 3, (gdd.split('### 8 ·')[1] || '').slice(0, 800))
     // 2. no question asks what the rules answer: every question that touches a fact the rules settle names what they say
-    const asked = both.filter(j => j.ev === 'line' && (j.kind === 'free' || j.kind === 'box')).map(j => (j.kind === 'box' ? `${j.box.question} ${j.box.options.map(o => `${o.label} ${o.description}`).join(' ')}` : j.text))
+    // (a sketch's own question — "On one device, can each player keep their hand secret?" — is answered by playing
+    // the sketch, not asked of the creative: the sketch list's options are left out, its question kept)
+    const asked = both.filter(j => j.ev === 'line' && (j.kind === 'free' || j.kind === 'box')).map(j => (j.kind === 'box' ? `${j.box.question} ${j.line === 'ideate.sketch.pick' ? '' : j.box.options.map(o => `${o.label} ${o.description}`).join(' ')}` : j.text))
     const FACTS = [/how (is|do you|does it) (get )?set ?up|the setup/i, /how does (a|the|one) game end|when does (a|the) game end/i, /who wins|how do(es)? (you|a player|someone) win/i, /\btie\b/i, /how many players/i, /\b(secret|hidden)\b/i, /what('s| is) (in|on) (an|each) order/i, /how (far|many stalls) (do|can) you move/i]
     const bad = asked.flatMap(t => t.split('\n')).filter(l => FACTS.some(re => re.test(l)) && !/Your rules (say|are for)/.test(l))
     check('F233: no question asks about something the rulebook answers (each one that touches a rule says what the rules say first)', asked.length > 0 && bad.length === 0, bad.join(' | ') || `${asked.length} questions`)
@@ -581,6 +583,11 @@ const scenarios = {
     const said = both.filter(j => j.ev === 'line' && j.kind !== 'box').filter(kept(both))
     const missing = said.filter(j => !plain(out).includes(plain(j.text)))
     check('F233: every fixed line the engine handed out is in Claude\'s words word for word', said.length > 0 && missing.length === 0, missing.map(j => `${j.line}: ${plain(j.text).slice(0, 120)}`).join(' | '))
+    // (the first run, read first-hand: "added to 8, 5, 11", "closes.. We'll know", "who" asked as a box and again as Keep)
+    const sloppy = said.filter(j => (j.line === 'ideate.added' && /added to [\d,\s]+\.$/.test(j.text)) || /[^.]\.\.(\s|$)/.test(j.text)).map(j => `${j.line}: ${j.text.slice(0, 100)}`)
+    const plat = define.filter(j => j.ev === 'line' && j.step === 'platform-rules')
+    const twice = [['define.platform.where', 'Where is the player'], ['define.platform.who', 'Who else is playing']].filter(([id, q]) => plat.some(j => j.line === id) && plat.some(j => j.line === 'any.keep' && j.box.question.startsWith(q))).map(([id]) => id)
+    check('F233: the lines read right (chapters by name, no doubled full stops) and Platform & Play asks nothing twice', sloppy.length === 0 && twice.length === 0, [...sloppy, ...twice.map(id => `${id} asked and kept`)].join(' | '))
     const ids = new Set(both.filter(j => j.ev === 'line').map(j => j.line))
     const must = ['ideate.rules', 'ideate.open.ask', 'ideate.added', 'define.welcome.rules', 'define.rules', 'define.rules.ok', 'define.platform', 'define.platform.first', 'define.scope', 'define.scope.slice', 'define.scope.report']
     check('F233: the conversion path\'s lines were all said', must.every(id => ids.has(id)), `not said: ${must.filter(id => !ids.has(id)).join(', ')}`)

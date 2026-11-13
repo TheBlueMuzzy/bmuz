@@ -409,6 +409,23 @@ test('F233 6d: a free question ends with "Type your answer below." and stays the
   expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask).toMatchObject({ line: 'ideate.idea' })
 })
 
+test('F233: a question list is the step\'s own pool lines (never Claude\'s words), and the free question is the last thing said, ending with "Type your answer below."', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const s = sayWorld(on)
+  const NL = String.fromCharCode(10)
+  s.w.files.SCRIPT = [SCRIPT, '## any.type · say · added', 'Type your answer below.', '', '## ideate.open.ask · free', '{questions#}', 'Answer in one message, in any order.', '', '## ideate.pool.where · say', 'Where do you picture people playing it: on a phone, a computer, both?', ''].join(NL)
+  const p = JSON.parse(s.w.files.PIPELINE)
+  p.steps[0].lines = [...p.steps[0].lines, 'ideate.open.ask', 'ideate.pool.where']
+  s.w.files.PIPELINE = JSON.stringify(p)
+  await start($, true)
+  const own: any = await $.tool.call({ tool: SAY, line: 'ideate.open.ask', slots: { questions: ['Anything it should not do?'] } } as any)
+  expect(why(own)).toMatch(/each of "questions" is one of this step's pool lines/)
+  const after: any = await $.tool.call({ tool: SAY, line: ['ideate.open.ask', 'ideate.pool.where'], slots: { questions: [{ line: 'ideate.pool.where' }] } } as any)
+  expect(why(after)).toMatch(/a free question is the last thing said: say "ideate\.pool\.where" before "ideate\.open\.ask"/)
+  const ok: any = await $.tool.call({ tool: SAY, line: 'ideate.open.ask', slots: { questions: [{ line: 'ideate.pool.where' }] } } as any)
+  expect(said(ok).say).toBe(`1. Where do you picture people playing it: on a phone, a computer, both?${NL}Answer in one message, in any order.${NL}${NL}Type your answer below.`)
+})
+
 test('F233 6d: "next, tell me what" ({"wait": true}) says "Type your answer below." too, checked like any line', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const s = sayWorld(on)

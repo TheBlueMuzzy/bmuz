@@ -1410,6 +1410,14 @@ async function sayTool($: any, e: any) {
   // (F230 item 9a: a slot holding only a placeholder — "<to fill>" — is no answer: the line would be said unfilled)
   const hole = E.placeholderSlot(slots)
   if (hole) return deny(`BMUZ engine: {${hole.slot}} is a placeholder ("${hole.value}"): fill it from the game, then say the line.`)
+  // (F233: a question list — Ideate's "{questions#}" — is the step's own pool lines, never questions in Claude's words:
+  // headless ideate-finished 12:3x passed plain text and the creative read "Anything it should not do?", not the
+  // script's line)
+  const pooled = ids.some(id => ctx.script.lines[id] && /\{questions#?\}/.test(String(ctx.script.lines[id].text || '')))
+  if (pooled && Array.isArray(slots.questions)) {
+    const own = slots.questions.filter((q: any) => !(q && typeof q === 'object' && typeof q.line === 'string' && step.lines.includes(q.line) && ctx.script.lines[q.line] && ctx.script.lines[q.line].kind === 'say'))
+    if (own.length) return deny(`BMUZ engine: each of "questions" is one of this step's pool lines, as {"line": "<id>", "slots": {…}} (never your own words): ${JSON.stringify(own[0]).slice(0, 120)} isn't.`)
+  }
   const rendered = ids.map(id => E.renderLine(ctx.script, id, slots))
   const bad = rendered.find((r: any) => r.error)
   if (bad) return deny(`BMUZ engine: ${bad.error}.`)
@@ -1423,9 +1431,14 @@ async function sayTool($: any, e: any) {
       return deny('BMUZ engine: a box comes last, after at most a short line of words (no free question, nothing long: a box covers text written above it). Say the words on their own first.')
     }
   }
-  // (F233 6d: the free question's words end with "Type your answer below.", once)
-  if (typeLine && !boxes.length && words.some((r: any) => r.kind === 'free')) {
-    const end = words[words.length - 1]
+  // (F233 6d: the free question's words end with "Type your answer below.", once — on the free line itself, which
+  // must then be the last thing said: headless ideate-finished 12:3x sent the pool lines after the question too)
+  const lastFree = words.map((r: any) => r.kind).lastIndexOf('free')
+  if (lastFree >= 0 && lastFree < words.length - 1) {
+    return deny(`BMUZ engine: a free question is the last thing said: say ${words.slice(lastFree + 1).map((r: any) => `"${r.id}"`).join(', ')} before "${words[lastFree].id}" (a question list's items go inside its "slots", as {"line": "<id>", "slots": {…}}).`)
+  }
+  if (typeLine && !boxes.length && lastFree >= 0) {
+    const end = words[lastFree]
     if (!E.plainWords(end.text).endsWith(E.plainWords(typeLine))) end.text = `${end.text}\n\n${typeLine}`
   }
   // (the lines handed out in this step, for its "must"; saved with the rest of this call below)

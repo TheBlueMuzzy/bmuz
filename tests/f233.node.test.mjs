@@ -162,7 +162,8 @@ test('Define on the conversion path: one "What your rulebook decides" page, then
   // the lock still writes GDD Part 1 the same way: chapters 1–4 chosen from one step, the ✓ lines filled from it
   const state = JSON.parse(readFileSync(join(dir, '.bmuz/state.json'), 'utf8'))
   state.pipeline = 'define'
-  state.resultsBy = { ...state.resultsBy,
+  // (the skipped new-idea steps' results are there but empty: headless ideate-finished, "define.lock needs {loop}")
+  state.resultsBy = { ...state.resultsBy, feelings: {}, pillars: {}, pitch: {}, loop: {}, platform: { platform: null },
     decides: { chapters: { 1: '**The feeling:** racing the moon — challenge', 2: '- **Race the moon**: every turn counts down.\n- **Read the market**: watch the others.\n- **Small hands**: hard choices.', 3: 'You push your cart around a ring of stalls.\n**One line:** Fill the night market\'s orders before the moon sets.', 4: '**move → take or swap → fill an order**' }, feelings: ['racing the moon'], feeling: 'racing the moon', pillars: [{ name: 'Race the moon' }, { name: 'Read the market' }, { name: 'Small hands' }], oneliner: 'Fill the night market\'s orders before the moon sets.', loop: 'move → take or swap → fill an order' },
     'platform-rules': { chapters: { 5: '- **First:** the web' }, platform: 'computer first; online against people or the computer' },
     scope: { musts: ['the board', 'orders', 'the moon'] } }

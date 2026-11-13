@@ -6,7 +6,7 @@ Craft note (define, step "decides" — F233 — Finished games come in as fixed:
    - The 3 Pillars: three, each one to three words and a line on what it means here, read from what the rules put at the centre.
    - The Pitch: 3–5 lines written to "you" ("lines", a list) and one line ("oneliner").
    - The Core Loop: "You ___, then ___, so you can ___." from how a turn goes ("loop").
-3. Say mcp__bmuz__say {"line": "define.rules", "slots": {"feelings": "...", "know": "...", "pillars": ["**<Pillar>**: <what it means here>", …], "oneliner": "...", "lines": ["You …", …], "loop": "..."}}. It's long, so it's your whole reply; end your turn (the engine carries the step on).
+3. The slots are clauses the line puts its own full stops after: "feelings", "know" and "oneliner" end with no full stop. Say mcp__bmuz__say {"line": "define.rules", "slots": {"feelings": "...", "know": "...", "pillars": ["**<Pillar>**: <what it means here>", …], "oneliner": "...", "lines": ["You …", …], "loop": "..."}}. It's long, so it's your whole reply; end your turn (the engine carries the step on).
 4. Then say "define.rules.ok" and ask its box.
    - "Yes, that's it": call step_done.
    - "Change some": call mcp__bmuz__say {"wait": true} and end your turn (the option already said "next, tell me what"). Their next message is what to change: change only that, then say "define.rules" again with the new draft (end your turn), then "define.rules.ok" again.

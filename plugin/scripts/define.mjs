@@ -49,7 +49,12 @@ export function lockShow(project, state, script = loadScript()) {
   const by = state.resultsBy || {}
   // (F233: a finished game's feelings, pillars, pitch and loop come from one step, "decides"; its platform from
   // "platform-rules")
-  const r = k => by[k] || (['feelings', 'pillars', 'pitch', 'loop'].includes(k) ? by.decides : k === 'platform' ? by['platform-rules'] : null) || {}
+  // (a skipped step's result is there but empty — headless ideate-finished 12:2x: "define.lock needs {loop}" — so the
+  // first result that holds the key wins)
+  const alt = k => (['feelings', 'pillars', 'pitch', 'loop'].includes(k) ? by.decides : k === 'platform' ? by['platform-rules'] : null)
+  const KEY = { feelings: 'feelings', pillars: 'pillars', pitch: 'oneliner', loop: 'loop', platform: 'platform', scope: 'musts' }
+  const has = (x, k) => x && typeof x === 'object' && x[KEY[k] || k] != null && x[KEY[k] || k] !== '' && !(Array.isArray(x[KEY[k] || k]) && !x[KEY[k] || k].length)
+  const r = k => [by[k], alt(k)].find(x => has(x, k)) || by[k] || {}
   const first = n => (String((G.readGdd(doc)[n] || {}).text || '').split('\n')[0] || '').replace(/^- /, '').replace(/^\*\*[^*]+\*\*:?\s*/, '')
   const open = stillOpen(doc)
   const slots = {
