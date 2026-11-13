@@ -73,9 +73,9 @@ test('task 3, rules 2 and 5: there only with a fixed rule or a decision whose li
   assert.doesNotMatch(E.mustProblem(step, state, {}), /define\.platform\.who/)
   // the plan as the step is told it
   const note = E.planNote(step, plan)
-  assert.match(note, /Who else is playing \(define\.platform\.who\): already there, so don't ask it/)
-  assert.match(note, /Where the player is, and what they hold \(define\.platform\.where\): the document has "Clear: "On a computer first"".*Confirm it with "any\.keep"/)
-  assert.match(note, /Which platforms are someday \(define\.platform\.someday\): not in the document yet: ask it \(store needs it\)/)
+  assert.match(note, /Who else plays \(define\.platform\.who\): already there, so don't ask it/)
+  assert.match(note, /Where it's played, and what the player holds \(define\.platform\.where\): the document has "Clear: "On a computer first"".*Confirm it with "any\.keep"/)
+  assert.match(note, /The someday platforms \(define\.platform\.someday\): not in the document yet: ask it \(store needs it\)/)
 })
 
 test('task 3, rule 3: a step a path turns off still asks a needed field that nothing else asks; the conversion path as built needs none', () => {
@@ -247,4 +247,16 @@ test('task 6 (F233 task 10): a Drive folder reads its Docs before its art, newes
   assert.deepEqual(j.sources.map(s => s.name), ['Drive · Sirius/Sirius Smugglers - Rules', 'Drive · Sirius/Rules (old)'])
   assert.equal(j.listed.length, 198)
   assert.ok(j.unread.some(u => u.what === 'Drive · Sirius/…' && /more than 200 files/.test(u.why)))
+})
+
+test('task 4: an answer that says "already decided" is noticed, so it gets the engine\'s note beside it', () => {
+  for (const t of ['Already decided: the web.', "we've already decided that", "that's settled", 'I decided that already? no: I decided it']) assert.ok(E.soundsDecided(t), t)
+  for (const t of ['The web', 'not decided yet', 'undecided']) assert.ok(!E.soundsDecided(t), t)
+})
+
+test('task 4: "already decided" for a question this step asked earlier, named by its line, still settles only that one', () => {
+  const step = E.stepById(DEFINE, 'platform-rules')
+  const st = { lastAsk: { step: 'platform-rules', lines: ['define.platform.ai'] }, said: { step: 'platform-rules', lines: ['define.platform', 'define.platform.first', 'define.platform.ai'] } }
+  assert.deepEqual(E.decidedTarget(step, st, 'define.platform.first').fields.map(f => f.field), ['platform.first'])
+  assert.match(E.decidedTarget(step, st, 'define.platform.someday').error, /isn't a question this step asked/)
 })

@@ -2896,6 +2896,10 @@ test('F234: a decided answer still in the GDD is not asked (its must lifted); an
   const all = prompts.join(F_NL)
   expect(all).toMatch(/Which one platform first \(q\.first\): already there, so don't ask it \(you said it's already decided: The web\)/)
   expect(all).toMatch(/Who else is playing \(q\.who\): the document has "Clear: "online, at the same time"".*Confirm it with "any\.keep"/)
+  // what is there is refused if asked anyway, its own box or a Keep of it (headless ideate-decided 14:49)
+  expect(why(await $.tool.call({ tool: SAY, line: 'q.first' } as any))).toMatch(/"Which one platform first" is already in the design document .* not even as a Keep/)
+  expect(why(await $.tool.call({ tool: SAY, line: 'any.keep', slots: { question: 'Which one platform first?', answer: 'the web' } } as any))).toMatch(/already in the design document/)
+  expect(refused(await $.tool.call({ tool: SAY, line: 'any.keep', slots: { question: 'Who else is playing?', answer: 'online' } } as any))).toBe(false)
   // both musts are lifted (one there, one confirmed), so step_done goes through
   const r: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { chapters: { 5: '- **First:** the web' } } } as any)
   expect(refused(r)).toBe(false)

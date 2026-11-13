@@ -1599,7 +1599,9 @@ export function renderLine(script, id, slots = {}) {
   }
   if (line.kind !== 'box') {
     const f = fillTemplate(line.text, s, nested)
-    return f.missing ? { error: `line "${id}" needs ${f.missing.map(n => `{${n}}`).join(', ')} in "slots"` } : { id, kind: line.kind, text: f.text }
+    // (F234, headless ideate-finished 14:49: a slot that ends with its own full stop before the line's — "the race.." —
+    // reads as a typo; one full stop is kept, an ellipsis is left alone)
+    return f.missing ? { error: `line "${id}" needs ${f.missing.map(n => `{${n}}`).join(', ')} in "slots"` } : { id, kind: line.kind, text: f.text.replace(/([^.])\.\.(?!\.)/g, '$1.') }
   }
   const q = fillTemplate(line.box.question, s, nested)
   if (q.missing) return { error: `box "${id}" needs ${q.missing.map(n => `{${n}}`).join(', ')} in "slots"` }
@@ -2236,6 +2238,21 @@ export function planNote(step, plan) {
   return out.join('\n')
 }
 
+// (F234 rule 2, headless ideate-decided 14:49: haiku asked a Keep for both answers the rules already give) The field a
+// say call would ask though the plan says it is already there: its own line, or an any.keep whose question is that
+// line's question. null when the call asks nothing that is there.
+export function asksThere(plan, ids, slots, script) {
+  if (!plan || !Array.isArray(plan.fields)) return null
+  const there = plan.fields.filter(f => f.status === 'there' && f.line)
+  const q = l => { const x = script && script.lines && script.lines[l]; return plainWords(x && x.box ? x.box.question : x ? x.text : '').replace(/\s*\(pick any\)$/, '') }
+  for (const f of there) {
+    if (ids.includes(f.line)) return f
+    const keep = ids.includes('any.keep') && slots && typeof slots.question === 'string' ? plainWords(slots.question).replace(/\s*\(pick any\)$/, '') : ''
+    if (keep && q(f.line) && (keep === q(f.line) || keep.startsWith(q(f.line).replace(/\?$/, '')))) return f
+  }
+  return null
+}
+
 // "Already decided", told to every step with "collects" (F234 rule 1).
 export const DECIDED_RULE = `Already decided: if the creative answers one of this step's questions with "already decided" (or "we decided that", "that's settled"), that is a step-in for that ONE question: call ${DECIDED_TOOL} {"answer": "what was decided, in their words or from the design document", "line": "<that question's line id>"}, write the line it returns word for word, take the answer as theirs and carry on with the next question. It settles that one question, never the ones after it.`
 
@@ -2243,6 +2260,11 @@ export const DECIDED_RULE = `Already decided: if the creative answers one of thi
 export function reopenRule(items) {
   return `Reopen: the stage's end listed what wasn't asked (${items.map(i => `${i.n}. ${i.what}`).join('; ')}). If the creative says "reopen" with a number or a name from that list, call ${REOPEN_TOOL} {"which": "their words"}, write the line it returns word for word and end your turn: the engine runs that step again.`
 }
+
+// (headless ideate-decided 15:0x: haiku took "Already decided: the web." as a plain answer) A message or an answer that
+// says "already decided" carries the engine's note beside it, like a bug or a research ask.
+export const soundsDecided = text => /\b(already decided|(we|i)('ve| have)? (already )?decided (that|this|it)|that'?s (already )?(settled|decided))\b/i.test(String(text || ''))
+export const decidedNote = () => `BMUZ engine: this answer says "already decided": that is the step-in for that ONE question. Call ${DECIDED_TOOL} {"answer": "what was decided", "line": "<that question's line id>"}, write the line it returns word for word, then carry on with the next question.`
 
 // The must lines a plan lifts: a line whose every field is there, unsure (confirmed with any.keep instead) or off the path.
 export function liftedMusts(step, plan) {
@@ -2299,8 +2321,11 @@ export function reopenStep(p, state, stepId) {
 export function decidedTarget(step, state, line = '') {
   const last = state && state.lastAsk && state.lastAsk.step === step.id ? state.lastAsk.lines : []
   if (!last.length) return { error: 'no question of this step was asked yet: "already decided" settles the question just asked' }
-  const pick = line ? last.filter(l => l === line) : last
-  if (!pick.length) return { error: `"${line}" isn't the question just asked (${last.join(', ')})` }
+  // (headless ideate-decided 15:1x: in an auto run the step-in came after the next box; a question of this step asked
+  // earlier, named by its line, is still that one question)
+  const earlier = line && state.said && state.said.step === step.id && (state.said.lines || []).includes(line) && (step.collects || []).some(c => c.line === line)
+  const pick = line ? (last.includes(line) || earlier ? [line] : []) : last
+  if (!pick.length) return { error: `"${line}" isn't a question this step asked (${last.join(', ')})` }
   if (pick.length > 1) return { error: `several questions were asked together (${pick.join(', ')}): name the one it answers with "line"` }
   const fields = (step.collects || []).filter(c => c.line === pick[0])
   return { line: pick[0], fields }

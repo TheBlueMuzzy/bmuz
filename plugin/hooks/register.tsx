@@ -1005,6 +1005,7 @@ async function startTalk($: any, step: any, why: string) {
   const plan = step.collects ? await planFor($, step, rec && rec.only ? rec.only : null) : null
   if (plan) hiddenNotes += `\n${E.planNote(step, plan)}`
   if (step.lines) hiddenNotes += `\n${E.DECIDED_RULE}`
+  if (step.lines && answers !== undefined && E.soundsDecided(JSON.stringify(answers))) hiddenNotes += `\n${E.decidedNote()}`
   const skipped = E.skipItems(ctx.pipeline, ctx.state)
   if (skipped.length && ctx.pipeline.steps.some((s: any) => s.stageEnd && ctx.state.finished.includes(s.id))) hiddenNotes += `\n${E.reopenRule(skipped)}`
   // A resume (a new window, "bmuz go") while a free question is open: Claude says the same question again.
@@ -1491,6 +1492,9 @@ async function sayTool($: any, e: any) {
     const own = slots.questions.filter((q: any) => !(q && typeof q === 'object' && typeof q.line === 'string' && step.lines.includes(q.line) && ctx.script.lines[q.line] && ctx.script.lines[q.line].kind === 'say'))
     if (own.length) return deny(`BMUZ engine: each of "questions" is one of this step's pool lines, as {"line": "<id>", "slots": {…}} (never your own words): ${JSON.stringify(own[0]).slice(0, 120)} isn't.`)
   }
+  // (F234 rule 2: what the design document already holds is never asked, not even as a Keep)
+  const there = E.asksThere(ctx.state.asked && ctx.state.asked[step.id], ids, slots, ctx.script)
+  if (there) return deny(`BMUZ engine: "${there.what}" is already in the design document (${there.why}), so it isn't asked, not even as a Keep. Leave it out and ask the next question.`)
   const rendered = ids.map(id => E.renderLine(ctx.script, id, slots))
   const bad = rendered.find((r: any) => r.error)
   if (bad) return deny(`BMUZ engine: ${bad.error}.`)
@@ -2396,6 +2400,7 @@ export const register: Register = on => {
     const brokenHint = [
       ...(!ctx.broken && E.soundsBroken(text) ? [E.stepInNote(text, { auto: ctx.auto })] : []),
       ...(!ctx.broken && E.soundsLikeResearch(text) ? [E.researchNote()] : []),
+      ...(!ctx.broken && E.soundsDecided(text) ? [E.decidedNote()] : []),
     ]
     if (openAsk && !/^\s*bmuz\b/i.test(text)) {
       await journal($, { ev: 'answer', step: openAsk.step, line: openAsk.line, via: 'typed', text })

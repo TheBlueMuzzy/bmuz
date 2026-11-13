@@ -232,10 +232,10 @@
       "craft": "craft/define-platform.md",
       "results": ["chapters", "platform"],
       "collects": [
-        { "field": "platform.where", "what": "Where the player is, and what they hold", "chapter": 5, "line": "define.platform.where", "neededBy": ["design", "build"] },
-        { "field": "platform.first", "what": "Which one platform first", "chapter": 5, "line": "define.platform.first", "neededBy": ["build", "store"] },
-        { "field": "platform.someday", "what": "Which platforms are someday", "chapter": 5, "line": "define.platform.someday", "neededBy": ["store"] },
-        { "field": "players.who", "what": "Who else is playing", "chapter": 5, "line": "define.platform.who", "neededBy": ["design", "build"] },
+        { "field": "platform.where", "what": "Where it's played, and what the player holds", "chapter": 5, "line": "define.platform.where", "neededBy": ["design", "build"] },
+        { "field": "platform.first", "what": "The first platform", "chapter": 5, "line": "define.platform.first", "neededBy": ["build", "store"] },
+        { "field": "platform.someday", "what": "The someday platforms", "chapter": 5, "line": "define.platform.someday", "neededBy": ["store"] },
+        { "field": "players.who", "what": "Who else plays", "chapter": 5, "line": "define.platform.who", "neededBy": ["design", "build"] },
         { "field": "computer.ai", "what": "Whether the computer must play it", "chapter": 5, "line": "define.platform.ai", "neededBy": ["design"] }
       ],
       "when": "{fresh}"
@@ -264,10 +264,10 @@
       "craft": "craft/define-platform-rules.md",
       "results": ["chapters", "platform"],
       "collects": [
-        { "field": "platform.where", "what": "Where the player is, and what they hold", "chapter": 5, "line": "define.platform.where", "neededBy": ["design", "build"] },
-        { "field": "platform.first", "what": "Which one platform first", "chapter": 5, "line": "define.platform.first", "neededBy": ["build", "store"] },
-        { "field": "platform.someday", "what": "Which platforms are someday", "chapter": 5, "line": "define.platform.someday", "neededBy": ["store"] },
-        { "field": "players.who", "what": "Who else is playing", "chapter": 5, "line": "define.platform.who", "neededBy": ["design", "build"] },
+        { "field": "platform.where", "what": "Where it's played, and what the player holds", "chapter": 5, "line": "define.platform.where", "neededBy": ["design", "build"] },
+        { "field": "platform.first", "what": "The first platform", "chapter": 5, "line": "define.platform.first", "neededBy": ["build", "store"] },
+        { "field": "platform.someday", "what": "The someday platforms", "chapter": 5, "line": "define.platform.someday", "neededBy": ["store"] },
+        { "field": "players.who", "what": "Who else plays", "chapter": 5, "line": "define.platform.who", "neededBy": ["design", "build"] },
         { "field": "computer.ai", "what": "Whether the computer must play it", "chapter": 5, "line": "define.platform.ai", "neededBy": ["design"] }
       ]
     },
@@ -345,7 +345,7 @@
       "results": ["chapters", "musts"],
       "collects": [
         { "field": "scope.smallest", "what": "The smallest version that still gives the feeling", "chapter": 6, "line": "define.scope.smallest", "neededBy": ["design"] },
-        { "field": "scope.musts", "what": "Must, should, could or won't for each idea", "chapter": 6, "line": "define.scope.idea", "neededBy": ["design", "build"] }
+        { "field": "scope.musts", "what": "Must, should, could or won't, for each idea", "chapter": 6, "line": "define.scope.idea", "neededBy": ["design", "build"] }
       ]
     },
     {
