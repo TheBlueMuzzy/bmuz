@@ -2816,3 +2816,180 @@ test('F229 (headless 22:49): a step waiting from an earlier window is left for "
   expect(events(w).some((j: any) => j.ev === 'stepin.left' && j.step === 'ask')).toBe(true)
   expect(record(w)).toEqual(before)
 })
+
+// ---- F234 — Steps ask only what's still open ----
+// Steps "a" (two fields, two musts) and "b" (one of the same fields), then the stage's end (a "stageEnd" script step
+// that shows its file). fields.mjs is the fake disk's: "decided" writes the line into the GDD and the record, as the
+// real script does.
+const F_NL = String.fromCharCode(10)
+const F_SCRIPT = [
+  '# Test script', '',
+  '## q.first · box', '? Which one platform first?', 'header: First', '- The web — a link', '- Steam — a store', '',
+  '## q.who · box', '? Who else is playing?', 'header: Who', '- Nobody — solo', '- Online — at the same time', '',
+  '## q.free · free', 'How long is a game?', '',
+  '## any.keep · box · added', '? {question}', 'header: Keep?', '- Keep — {answer}', '- Change — next, tell me what', '',
+  '## any.type · say · added', 'Type your answer below.', '',
+  '## any.decided · say · added', 'Noted: {what} is already decided ({answer}). I won\'t ask about it again.', '',
+  '## any.decided.what · free · added', 'What was decided? Tell me in a line and I\'ll write it down.', '',
+  '## any.skipped · say · added', '**What I didn\'t ask about**', '{skipped#}', 'To bring one back, say "reopen" and its number.', '',
+  '## any.reopen · say · added', 'Back to {title}, so you can answer it yourself.', '',
+].join(F_NL)
+const FIRST = { field: 'platform.first', what: 'Which one platform first', chapter: 5, line: 'q.first', neededBy: ['build', 'store'] }
+const WHO = { field: 'players.who', what: 'Who else is playing', chapter: 5, line: 'q.who', neededBy: ['design'] }
+const gddWith = (lines: string[]) => ['# Test — Game Design Document', '', '## Part 1 · The concept', '', '### 5 · Platform & Play Structure', '*where*', '', 'Level: loose', '<!-- bmuz 5 · 00000000 -->', ...lines.map(l => `- ${l}`), '<!-- /bmuz 5 -->', ''].join(F_NL)
+function fieldsWorld(on: any, gdd: string[], fields: any, first: any = null) {
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(F_NL)); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  let w: any = null
+  w = world(on, base({}), (argv: string[]) => {
+    if (/fields[.]mjs$/.test(String(argv[1])) && argv[2] === 'decided') {
+      const line = `Fixed: ${argv.slice(6).join(' ')} (you said it's already decided)`
+      const doc = w.files['/proj/.planning/GDD.md']
+      w.files['/proj/.planning/GDD.md'] = doc.replace('<!-- /bmuz 5 -->', `- ${line}${F_NL}<!-- /bmuz 5 -->`)
+      const f = JSON.parse(w.files['/proj/.planning/research/fields.json'] || '{}')
+      f[argv[3]] = [...(f[argv[3]] || []), { chapter: Number(argv[4]), line, kind: 'decided', step: argv[5] }]
+      w.files['/proj/.planning/research/fields.json'] = JSON.stringify(f)
+      return { exitCode: 0, stdout: `✔ ${argv[3]} decided` }
+    }
+    if (/end[.]mjs$/.test(String(argv[1]))) { w.files['/proj/end.md'] = 'The end.'; return { exitCode: 0, stdout: '✔' } }
+    return { exitCode: 0, stdout: '{}' }
+  })
+  w.files.PIPELINE = JSON.stringify({
+    id: 'hello', version: 1, steps: [
+      { id: 'a', kind: 'talk', no: '2.5', title: 'Platform & Play', tools: ['AskUserQuestion'], craft: 'craft/name.md', lines: ['q.first', 'q.who', 'q.free', 'any.keep'], must: ['q.first', 'q.who'], results: ['chapters'], collects: [FIRST, WHO] },
+      { id: 'b', kind: 'talk', needs: ['a'], no: '2.6', title: 'First Platform Again', tools: ['AskUserQuestion'], craft: 'craft/name.md', lines: ['q.first'], results: ['chapters'], collects: [FIRST] },
+      { id: 'end', kind: 'script', needs: ['b'], run: ['node', 'end.mjs'], writes: ['end.md'], show: 'end.md', stageEnd: true },
+      { id: 'ready', kind: 'talk', needs: ['end'], tools: ['AskUserQuestion'], craft: 'craft/name.md', lines: ['q.free'], results: ['onward'] },
+    ],
+  })
+  w.files.SCRIPT = F_SCRIPT
+  w.files['/proj/.planning/GDD.md'] = gddWith(gdd)
+  w.files['/proj/.planning/research/fields.json'] = JSON.stringify(fields)
+  w.files['/proj/.bmuz/state.json'] = JSON.stringify({ pipeline: 'hello', current: null, status: 'idle', results: {}, retries: {}, finished: [], blocked: null, startedAt: null, ...(first || {}) })
+  return { w, prompts }
+}
+const fev = (w: any) => w.files['/proj/.bmuz/journal.jsonl'].split(F_NL).filter(Boolean).map((l: string) => JSON.parse(l))
+const fstate = (w: any) => JSON.parse(w.files['/proj/.bmuz/state.json'])
+
+test('F234: a new idea\'s document (nothing recorded) — the step asks everything, journaled "ask", nothing lifted', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = fieldsWorld(on, ['Idea: "maybe the web?"'], {})
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't0')
+  expect(fev(w).find((j: any) => j.ev === 'ask')).toMatchObject({ step: 'a', fields: [{ field: 'platform.first', status: 'missing' }, { field: 'players.who', status: 'missing' }] })
+  expect(prompts.join(F_NL)).toMatch(/Which one platform first \(q\.first\): not in the document yet: ask it \(build, store need it\)/)
+  const r: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { chapters: {} } } as any)
+  expect(String(r.result)).toMatch(/"q\.first", "q\.who" were never said/)
+})
+
+test('F234: a decided answer still in the GDD is not asked (its must lifted); an unsure one is confirmed with any.keep; a step whose every answer is there is skipped, journaled, and listed', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const line = 'Fixed: The web (you said it\'s already decided)'
+  const said = 'Clear: "online, at the same time"'
+  const { w, prompts } = fieldsWorld(on, [line, said], { 'platform.first': [{ chapter: 5, line, kind: 'decided', step: 'x' }], 'players.who': [{ chapter: 5, line: said, kind: 'said', step: 'rules-open' }] })
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't0')
+  expect(fev(w).find((j: any) => j.ev === 'confirm')).toMatchObject({ step: 'a', fields: [{ field: 'platform.first', status: 'there' }, { field: 'players.who', status: 'unsure' }] })
+  const all = prompts.join(F_NL)
+  expect(all).toMatch(/Which one platform first \(q\.first\): already there, so don't ask it \(you said it's already decided: The web\)/)
+  expect(all).toMatch(/Who else is playing \(q\.who\): the document has "Clear: "online, at the same time"".*Confirm it with "any\.keep"/)
+  // both musts are lifted (one there, one confirmed), so step_done goes through
+  const r: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { chapters: { 5: '- **First:** the web' } } } as any)
+  expect(refused(r)).toBe(false)
+  await turn($, 't1')
+  // "b" collects only platform.first, which is there: skipped, never started
+  expect(fev(w).find((j: any) => j.ev === 'skip')).toMatchObject({ step: 'b', fields: [{ field: 'platform.first', status: 'there' }] })
+  expect(fev(w).find((j: any) => j.ev === 'step.skip' && j.step === 'b')).toMatchObject({ by: 'fields', empties: { b: { chapters: { 5: [line] } } } })
+  expect(fev(w).some((j: any) => j.ev === 'step.start' && j.step === 'b')).toBe(false)
+  expect(E.skipItems(JSON.parse(w.files.PIPELINE), fstate(w))).toEqual([
+    { n: 1, step: 'a', title: 'Platform & Play', what: 'Which one platform first', why: 'you said it\'s already decided: The web' },
+    { n: 2, step: 'b', title: 'First Platform Again', what: 'Which one platform first', why: 'you said it\'s already decided: The web' },
+  ])
+})
+
+test('F234 rule 1: "already decided" settles exactly the question just asked — one field written, the other still asked', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = fieldsWorld(on, ['Open: Which platform?'], {})
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't0')
+  const none: any = await $.tool.call({ tool: 'mcp__bmuz__decided', answer: 'The web' } as any)
+  expect(why(none)).toMatch(/no question of this step was asked yet/)
+  await $.tool.call({ tool: SAY, line: 'q.first' } as any)
+  const r: any = await $.tool.call({ tool: 'mcp__bmuz__decided', answer: 'The web' } as any)
+  expect(refused(r)).toBe(false)
+  expect(said(r).say).toBe('Noted: which one platform first is already decided (The web). I won\'t ask about it again.')
+  const calls = w.runs.filter((x: string[]) => /fields[.]mjs$/.test(String(x[1])))
+  expect(calls.map((x: string[]) => x.slice(2, 6))).toEqual([['decided', 'platform.first', '5', 'a']])
+  expect(JSON.parse(w.files['/proj/.planning/research/fields.json'])).toEqual({ 'platform.first': [{ chapter: 5, line: 'Fixed: The web (you said it\'s already decided)', kind: 'decided', step: 'a' }] })
+  expect(fev(w).find((j: any) => j.ev === 'decided')).toMatchObject({ step: 'a', line: 'q.first', fields: ['platform.first'], answer: 'The web' })
+  // q.first counts as said; q.who is still a must
+  const done: any = await $.tool.call({ tool: 'mcp__bmuz__step_done', result: { chapters: {} } } as any)
+  expect(String(done.result)).toMatch(/line "q\.who" was never said/)
+  // two questions asked together: it must name which one
+  await $.tool.call({ tool: SAY, line: ['q.first', 'q.who'] } as any)
+  const both: any = await $.tool.call({ tool: 'mcp__bmuz__decided', answer: 'solo' } as any)
+  expect(why(both)).toMatch(/several questions were asked together \(q\.first, q\.who\): name the one/)
+  // no answer in their words: the engine asks what was decided, one free line
+  const what: any = await $.tool.call({ tool: 'mcp__bmuz__decided', line: 'q.who' } as any)
+  expect(said(what).say).toMatch(/^What was decided\? Tell me in a line and I'll write it down\./)
+})
+
+test('F234 rule 4: "reopen 1" at the stage\'s end runs that step again with every question asked, then the end again; nothing else is redone', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const line = 'Fixed: The web (you said it\'s already decided)'
+  const rec = { chapter: 5, line, kind: 'decided', step: 'x' }
+  const plan = { decision: 'skip', title: 'First Platform Again', fields: [{ field: 'platform.first', what: 'Which one platform first', line: 'q.first', status: 'there', why: 'you said it\'s already decided: The web' }] }
+  const { w, prompts } = fieldsWorld(on, [line], { 'platform.first': [rec] }, { current: 'ready', status: 'working', startedAt: 1, finished: ['a', 'b', 'end'], skipped: ['b'], asked: { b: plan }, resultsBy: { a: { chapters: {} }, b: { chapters: {} } } })
+  await start($, true)
+  // the step after the stage's end is told how to reopen
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't0')
+  expect(prompts.join(F_NL)).toMatch(/Reopen: the stage's end listed what wasn't asked \(1\. Which one platform first\)/)
+  const r: any = await $.tool.call({ tool: 'mcp__bmuz__reopen', which: 'reopen 1' } as any)
+  expect(said(r).say).toBe('Back to First Platform Again, so you can answer it yourself.')
+  const s = fstate(w)
+  expect(s.finished).toEqual(['a'])
+  expect(s.forced).toEqual(['b'])
+  expect(fev(w).find((j: any) => j.ev === 'reopen')).toMatchObject({ step: 'b', dropped: ['b', 'end', 'ready'] })
+  await $.turn.complete({ answer: 'Back to First Platform Again, so you can answer it yourself.', durationMs: 1, isAborted: false, turnId: 't1' } as any)
+  // "b" runs now, its field asked (not skipped again, though it is still in the GDD)
+  expect(fev(w).filter((j: any) => j.ev === 'ask').pop()).toMatchObject({ step: 'b', fields: [{ field: 'platform.first', status: 'missing', why: 'reopened: asked again' }] })
+  expect(fstate(w).current).toBe('b')
+  const bad: any = await $.tool.call({ tool: 'mcp__bmuz__reopen', which: '7' } as any)
+  expect(why(bad)).toMatch(/nothing was left out|isn't on the list/)
+})
+
+// F234 task 6 (review fix from F233 task 8): the turn-end correction writes the open question again, last, but never a
+// line twice: a {"wait": true} ask is "Type your answer below." itself, and a heading said in the same call as the free
+// question, when only the heading was dropped, isn't repeated inside the question again.
+test('F234 (F233 task 8): the "write it again" correction never repeats a line — {"wait": true}, and a heading + free question in one call', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const s = sayWorld(on)
+  const NL = String.fromCharCode(10)
+  s.w.files.SCRIPT = `${SCRIPT}${NL}## any.type · say · added${NL}Type your answer below.${NL}`
+  const { w, prompts } = s
+  const count = (text: string, part: string) => text.split(part).length - 1
+  await start($, true)
+  // 1. wait: nothing written at all
+  await $.tool.call({ tool: SAY, wait: true } as any)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  const fix1 = prompts[prompts.length - 1]
+  expect(fix1).toMatch(/The script line "any\.type" was not written word for word/)
+  expect(count(fix1, 'Type your answer below.')).toBe(1)
+  expect(events(w).filter((j: any) => j.ev === 'nudge').pop()).toMatchObject({ unsaid: ['any.type'] })
+  expect(events(w).filter((j: any) => j.ev === 'nudge').pop().again).toBeUndefined()
+  // 2. a heading and the free question in one call; only the heading was dropped
+  await $.prompt.submit({ text: 'the web' } as any)
+  const r: any = await $.tool.call({ tool: SAY, line: ['define.pitch', 'ideate.idea'] } as any)
+  expect(refused(r)).toBe(false)
+  await $.turn.complete({ answer: `Your Idea${NL}Tell me about your game in your own words.${NL}${NL}Type your answer below.`, durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' } as any)
+  const fix2 = prompts[prompts.length - 1]
+  expect(fix2).toMatch(/The script line "define\.pitch" was not written word for word/)
+  expect(count(fix2, 'The game in a few lines, so anyone gets it in ten seconds.')).toBe(1)
+  expect(count(fix2, 'Tell me about your game in your own words.')).toBe(1)
+  expect(fix2.endsWith(`Tell me about your game in your own words.${NL}${NL}Type your answer below.`)).toBe(true)
+})

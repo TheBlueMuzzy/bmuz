@@ -1745,6 +1745,20 @@ export function unsaidNudge(step, lines, n = 0, opts = {}) {
 // (F233 6d) The script line every free question ends with: "Type your answer below."
 export const TYPE_LINE = 'any.type'
 
+// (F234 task 6, review fix from F233 task 8) The open free question, written again last by the turn-end correction —
+// without repeating a line: a {"wait": true} ask is "Type your answer below." itself (any.type), and the lines already
+// in the correction (missing) are taken out of the question's text (a heading said in the same call as the question).
+export function againLines(missing, ask, stepId) {
+  if (!ask || ask.step !== stepId || !ask.text) return []
+  const id = ask.line === 'wait' ? TYPE_LINE : ask.line
+  if (missing.some(l => l.id === id)) return []
+  let text = String(ask.text)
+  for (const l of missing) if (l.text && text.includes(l.text)) text = text.replace(l.text, '')
+  text = text.replace(/\n{3,}/g, '\n\n').trim()
+  if (!text || missing.some(l => plainWords(l.text) === plainWords(text))) return []
+  return [{ id, text }]
+}
+
 // The band's words for a step with a script number ("2.3") and title: "Define · 3 of 8 · The Pitch". The welcome
 // ("2.0") isn't counted. Steps without a number take the nearest numbered step above them. null = not numbered.
 export function stepPlace(p, step) {

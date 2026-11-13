@@ -2578,7 +2578,8 @@ export const register: Register = on => {
         // AFTER the open free question, so the question was no longer the last thing on screen and the creative
         // couldn't tell they were being asked. With a free question of this step open, it is written again, last.
         const ask = E.askOpen(ctx.state)
-        const again = ask && ask.step === said.step && ask.text && !missing.some((l: any) => l.id === ask.line) ? [{ id: ask.line, text: ask.text }] : []
+        // (F234 task 6: never a line twice — a "wait" ask is any.type, and lines already missing leave the question's text)
+        const again = E.againLines(missing, ask, said.step)
         const lines = [...missing, ...again]
         const fix = E.unsaidNudge(E.stepById(ctx.pipeline, said.step) || { id: said.step }, lines, nudges.n, { ask: !!ask && ask.step === said.step, again: again.length })
         if (fix) {
