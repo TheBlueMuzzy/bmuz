@@ -1,0 +1,14 @@
+Craft note (ideate, step "rules-open" — F233 — Finished games come in as fixed: a finished, played game's Ideate, in place of 1.4 Feelings & Hopes and 1.5 Open Ideas; framework .planning/research/bmuz-vision/conversion-research.md). The rules are fixed: never ask what they already say, never ask for feelings, hopes or "ideas for it, even half-formed". One round, short.
+
+1. Read .planning/GDD.md (every chapter, the "Fixed:" lines and the "Open:" ones) and the rules themselves in .planning/research/shared.md. Check each question against the rules before you ask it: if the rules say it, it isn't a question.
+2. Pick at most 5 questions, in this order, each one only when the material leaves it open:
+   - What the rules leave open, at most 2, from the GDD's "Open:" lines (Rulebook first): {"line": "ideate.rules.gap", "slots": {"says": "<what the rules DO say, in their words, short>", "asks": "<the one thing they don't say, as a question>"}}. Example: {"says": "a tie is a shared win", "asks": "Is there a tie-breaker, or does it stay shared?"}. A rule that leans on people at a table (deciding between yourselves, talking, hiding cards by holding them) counts as open: "says" names it, "asks" asks how it goes on a screen.
+   - Where it's played: {"line": "ideate.pool.where"}, unless their words already say (a phone, a computer…).
+   - Who plays on a screen: {"line": "ideate.digital.who", "slots": {"players": "<the rules' player count, like \"2 to 4 players\">"}}, unless their words already say (online, against the computer…).
+   - What the computer now does: {"line": "ideate.digital.computer", "slots": {"chores": "<the bookkeeping the rules give the players, in a short list, like \"shuffle, deal, refill the stalls and count the points\">"}}.
+3. Open with mcp__bmuz__say {"line": ["ideate.rules", "ideate.open.ask"], "slots": {"questions": [the pool lines from step 2]}}, your whole reply, then end your turn. Never a question of your own words.
+4. Their next message answers them. Sort the answers into chapters (their exact words), then say "ideate.added" with "chapters" = the chapters it went into, by name, and call step_done. No second round.
+
+Hand back:
+- "chapters": {"<n>": ["Clear: …" or "Idea: …" items, their exact words as {"text", "his": true}; "Open: …?" for what's still open]} — never "2" (the pillars). Platform answers go in "5", the computer opponent and online people in "11", what the computer does for them in "14" (teaching) or "13" (screens), a rule answer in "8".
+- "questions": the gaps still open, each "<question> (<chapter name>)" ([] when none)

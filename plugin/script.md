@@ -139,6 +139,19 @@ header: One more?
 - One more round — {left} gaps left, about 3 minutes
 - That's enough for now — the rest stay open; Define comes back to them
 
+## ideate.rules · say · added
+**What Your Rules Leave Open**
+Your rules already answer most things, so I'll only ask what they don't, and what's new now that it's on a screen. "Not sure yet" is always a fine answer.
+
+## ideate.rules.gap · say · added
+Your rules say {says}. {asks}
+
+## ideate.digital.who · say · added
+Your rules are for {players} around a table. On a screen, who plays: people online (at the same time, or taking turns), friends on one screen, the computer, or a mix?
+
+## ideate.digital.computer · say · added
+At the table, players {chores} themselves. The computer can do all of that now. Anything it shouldn't do, or anything extra you'd like (a tutorial, hints, replays)?
+
 ## ideate.sketch · say
 **Sketch List**
 A sketch is a small, throwaway playable page that answers one question: "Is this fun?", "Which of these two feels better?", "Can you read it on a phone?". Each one has sliders to tune, three saved presets, and a button to copy your settings back to me. We don't build the game from sketches; they settle questions before we build. Today I'm only making the list. We build them in Design.

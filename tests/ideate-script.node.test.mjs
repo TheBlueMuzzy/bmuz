@@ -21,7 +21,8 @@ export const GARDEN_IDEA = "A card game where two friends race to grow the best 
 test('the pipeline is the script\'s Stage 1: 1.1–1.7 in order, every Ideate line said by a step, openings first, the gates (1.3, 1.7) as script boxes', () => {
   assert.deepEqual(E.checkPipeline(P), [])
   assert.deepEqual(E.checkLines(P, script), [])
-  const titled = [...new Map(P.steps.filter(s => s.no).map(s => [s.no, s.title])).entries()]
+  // (F233: the conversion path's 1.4 has its own title; the new-idea path's titles are the script's)
+  const titled = [...new Map(P.steps.filter(s => s.no && s.when !== '{convert}').map(s => [s.no, s.title])).entries()]
   assert.deepEqual(titled, [['1.1', 'Your Idea'], ['1.2', 'Your Material'], ['1.3', 'The Game So Far'], ['1.4', 'Feelings & Hopes'], ['1.5', 'Open Ideas'], ['1.6', 'Sketch List'], ['1.7', 'Your Project Page']])
   const said = new Set(P.steps.flatMap(s => s.lines || []))
   // ideate.sofar and ideate.page are composed by the script steps (shown word for word), not said by Claude

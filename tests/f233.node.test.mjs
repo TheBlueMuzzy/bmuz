@@ -101,3 +101,31 @@ test('the so-far step hands the path back for the steps that run only on it ({co
   assert.deepEqual(run(MOON_READ).result, { convert: 'yes', fresh: 'no' })
   assert.deepEqual(run({ ...MOON_READ, finished: false }).result, { convert: 'no', fresh: 'yes' })
 })
+
+test('Ideate on the conversion path: "What Your Rules Leave Open" runs in place of Feelings & Hopes and Open Ideas; the new-idea path is unchanged', () => {
+  const P = JSON.parse(readFileSync(join(plugin, 'pipelines', 'ideate.json'), 'utf8'))
+  const step = id => P.steps.find(s => s.id === id)
+  const convert = { convert: 'yes', fresh: 'no' }
+  const fresh = { convert: 'no', fresh: 'yes' }
+  assert.ok(E.isWanted(step('rules-open'), convert) && !E.isWanted(step('feelings'), convert) && !E.isWanted(step('open-ideas'), convert))
+  assert.ok(!E.isWanted(step('rules-open'), fresh) && E.isWanted(step('feelings'), fresh) && E.isWanted(step('open-ideas'), fresh))
+  assert.ok(E.isWanted(step('sketches'), convert) && E.isWanted(step('sketches'), fresh), 'the sketch list is on both paths')
+  assert.deepEqual(step('sketches').needs, ['rules-gdd'])
+  // its questions: each names what the rules DO say first; never the feelings, hopes or "ideas for it, even half-formed"
+  const r = E.renderLine(script, 'ideate.open.ask', { questions: [
+    { line: 'ideate.rules.gap', slots: { says: 'you refill an empty stall from the deck', asks: 'What happens when the deck runs out?' } },
+    { line: 'ideate.pool.where' },
+    { line: 'ideate.digital.who', slots: { players: '2 to 4 players' } },
+    { line: 'ideate.digital.computer', slots: { chores: 'shuffle, deal, refill the stalls and count the points' } },
+  ] })
+  assert.equal(r.text, [
+    '1. Your rules say you refill an empty stall from the deck. What happens when the deck runs out?',
+    '2. Where do you picture people playing it: on a phone, a computer, both?',
+    '3. Your rules are for 2 to 4 players around a table. On a screen, who plays: people online (at the same time, or taking turns), friends on one screen, the computer, or a mix?',
+    '4. At the table, players shuffle, deal, refill the stalls and count the points themselves. The computer can do all of that now. Anything it shouldn\'t do, or anything extra you\'d like (a tutorial, hints, replays)?',
+    'Answer in one message, in any order.',
+  ].join('\n'))
+  const lines = step('rules-open').lines
+  for (const id of ['ideate.feelings', 'ideate.open', 'ideate.pool.mentioned', 'ideate.pool.remember', 'ideate.pool.decided', 'ideate.round']) assert.ok(!lines.includes(id), id)
+  assert.match(readFileSync(join(plugin, step('rules-open').craft), 'utf8'), /never ask what they already say/)
+})
