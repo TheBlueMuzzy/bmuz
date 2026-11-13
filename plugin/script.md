@@ -204,6 +204,31 @@ Then I check it all for clashes, we size up the scope, and you lock it.
 Whatever your GDD already says shows up first, one tap to keep. Before each big decision I'll offer to research how other games handled it. Nothing here is final: the rulebook in Design will reopen some of this, and that's normal.
 About 30–45 minutes. You can stop after any step; everything is saved.
 
+## define.welcome.rules · say · added
+**Welcome to Define**
+In Ideate we gathered. In Define we decide, and your rules already decide most of it, so this is short:
+1. **What Your Rulebook Decides**: the feelings, the 3 pillars, the pitch and the core loop, drafted from your rules for you to confirm or correct in one go
+2. **Platform & Play**: where it's played, and who with
+Then we size up the scope for each release, pick the smallest version to play first, list the risks, and you lock it.
+About 15 minutes. You can stop after any step; everything is saved.
+
+## define.rules · say · added
+**What Your Rulebook Decides**
+Here's what your rules already decide, as I read them:
+
+**The Feelings:** {feelings}. We'll know a player feels it when {know}.
+**The 3 Pillars:**
+{pillars}
+**The Pitch:** {oneliner}
+{lines}
+**The Core Loop:** {loop}
+
+## define.rules.ok · box · added
+? Is that your game?
+header: Your rules
+- Yes, that's it — these four go into your design document as decided
+- Change some — next, tell me what
+
 ## define.feelings · say
 **The Feelings**
 The one or two feelings that are this game, and a sign we could actually see in a player. Every later decision gets checked against these.

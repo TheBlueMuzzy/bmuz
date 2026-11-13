@@ -129,3 +129,51 @@ test('Ideate on the conversion path: "What Your Rules Leave Open" runs in place 
   for (const id of ['ideate.feelings', 'ideate.open', 'ideate.pool.mentioned', 'ideate.pool.remember', 'ideate.pool.decided', 'ideate.round']) assert.ok(!lines.includes(id), id)
   assert.match(readFileSync(join(plugin, step('rules-open').craft), 'utf8'), /never ask what they already say/)
 })
+
+test('Define on the conversion path: one "What your rulebook decides" page, then only Platform & Play, scope, the slice and the risks', async () => {
+  const D = await import('../plugin/scripts/define.mjs')
+  const P = JSON.parse(readFileSync(join(plugin, 'pipelines', 'define.json'), 'utf8'))
+  assert.deepEqual(E.checkPipeline(P), [])
+  assert.deepEqual(E.checkLines(P, script), [])
+  const convert = { convert: 'yes', fresh: 'no' }
+  const fresh = { convert: 'no', fresh: 'yes' }
+  const runs = vars => P.steps.filter(s => s.kind === 'talk' || s.kind === 'flow' || s.kind === 'gate').filter(s => E.isWanted(s, { ...vars, research: 'no' }) && !s.onBack).map(s => s.id)
+  assert.deepEqual(runs(convert), ['welcome-rules', 'decides', 'platform-rules', 'scope', 'slice', 'lock'])
+  assert.deepEqual(runs(fresh), ['welcome', 'feelings', 'pillars', 'pitch-ask', 'pitch', 'loop', 'platform', 'clash', 'clash-review', 'clashes', 'scope', 'slice', 'lock'], 'the new-idea path is unchanged')
+  assert.equal(P.steps[0].id, 'path')
+  // the path is worked out from Ideate's reading (or a GDD with its rules fixed), never asked
+  const { dir } = moonProject(MOON_READ)
+  const path = () => {
+    const r = spawnSync('node', [join(plugin, 'scripts', 'define.mjs'), 'path'], { cwd: dir, encoding: 'utf8' })
+    assert.equal(r.status, 0, r.stdout)
+    return E.scriptResults(P.steps[0], r.stdout).result
+  }
+  assert.deepEqual(path(), fresh, 'nothing read yet: a new idea')
+  I.soFar(dir, JSON.parse(readFileSync(join(dir, '.bmuz/state.json'), 'utf8')), script)
+  assert.deepEqual(path(), convert)
+  writeFileSync(join(dir, I.SO_FAR_JSON), '{}')
+  assert.deepEqual(path(), convert, 'a GDD whose Rulebook has its rules fixed')
+  // the page: the four drafted from the rules, word for word, then one box (confirm / change some)
+  const page = E.renderLine(script, 'define.rules', { feelings: 'challenge: racing the moon to fill orders before the market closes', know: 'they groan when someone fills the order they were building', pillars: ['**Race the moon**: every turn counts down', '**Read the market**: what others are collecting', '**Small hands**: three goods, hard choices'], oneliner: 'Fill the night market\'s orders before the moon sets.', lines: ['You push your cart around a ring of stalls.', 'You swap goods to match an order before anyone else.'], loop: 'You move, then take or swap a good, so you can fill an order.' })
+  assert.match(page.text, /^\*\*What Your Rulebook Decides\*\*\nHere's what your rules already decide, as I read them:\n\n\*\*The Feelings:\*\* challenge: racing the moon/)
+  assert.match(page.text, /\*\*The 3 Pillars:\*\*\n· \*\*Race the moon\*\*: every turn counts down\n/)
+  const box = E.renderLine(script, 'define.rules.ok', {})
+  assert.deepEqual(box.box.options.map(o => o.label), ['Yes, that\'s it', 'Change some'])
+  // the lock still writes GDD Part 1 the same way: chapters 1–4 chosen from one step, the ✓ lines filled from it
+  const state = JSON.parse(readFileSync(join(dir, '.bmuz/state.json'), 'utf8'))
+  state.pipeline = 'define'
+  state.resultsBy = { ...state.resultsBy,
+    decides: { chapters: { 1: '**The feeling:** racing the moon — challenge', 2: '- **Race the moon**: every turn counts down.\n- **Read the market**: watch the others.\n- **Small hands**: hard choices.', 3: 'You push your cart around a ring of stalls.\n**One line:** Fill the night market\'s orders before the moon sets.', 4: '**move → take or swap → fill an order**' }, feelings: ['racing the moon'], feeling: 'racing the moon', pillars: [{ name: 'Race the moon' }, { name: 'Read the market' }, { name: 'Small hands' }], oneliner: 'Fill the night market\'s orders before the moon sets.', loop: 'move → take or swap → fill an order' },
+    'platform-rules': { chapters: { 5: '- **First:** the web' }, platform: 'computer first; online against people or the computer' },
+    scope: { musts: ['the board', 'orders', 'the moon'] } }
+  writeFileSync(join(dir, '.bmuz/state.json'), JSON.stringify(state))
+  for (const id of ['decides', 'platform-rules']) assert.equal(spawnSync('node', [join(plugin, 'scripts', 'gdd.mjs'), 'step', id, 'chosen'], { cwd: dir, encoding: 'utf8' }).status, 0)
+  const ch = G.readGdd(readFileSync(join(dir, '.planning/GDD.md'), 'utf8'))
+  for (const n of [1, 2, 3, 4, 5]) assert.equal(ch[n].level, 'chosen', `chapter ${n}`)
+  const lock = D.lockShow(dir, state, script)
+  assert.equal(lock.slots.feelings, 'racing the moon')
+  assert.equal(lock.slots.pillars, 'Race the moon · Read the market · Small hands')
+  assert.equal(lock.slots.oneliner, 'Fill the night market\'s orders before the moon sets.')
+  assert.equal(lock.slots.platform, 'computer first; online against people or the computer')
+  assert.equal(lock.slots.musts, '3')
+})

@@ -2,6 +2,7 @@
 //   node define.mjs lock-show   2.8 Concept Lock: the concept, one page, composed from the script word for word with
 //                               what Define chose (the ✓ lines) and what's still open, then shown
 //   node define.mjs locked      after "Lock it": the lock logged in the GDD's Decisions and Changes
+//   node define.mjs path        (F233) a finished game or a new idea: {"results": {"convert", "fresh"}}
 //   (run in the project folder)
 // Each Define step writes its own chapter as "chosen" (gdd.mjs step <id> chosen); this script only reads them back.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -30,10 +31,25 @@ export function stillOpen(doc, max = 3) {
   return out
 }
 
+// (F233) Which path Define takes: a finished, played game (Ideate's so-far found its rules: "path": "convert" in
+// ideate-so-far.json), else, for a project brought straight to Define, a GDD whose Rulebook already has at least 3
+// "Fixed:" rules. Worked out, never asked. Returns "convert" or "new".
+export const SO_FAR_JSON = '.planning/research/ideate-so-far.json'
+export const MIN_FIXED = 3
+export function pathOf(project) {
+  let j = null
+  try { j = JSON.parse(G.readFileIn(project, SO_FAR_JSON) || 'null') } catch (e) { j = null }
+  if (j && (j.path === 'convert' || j.path === 'new')) return j.path
+  const rules = String((G.readGdd(G.readFileIn(project, G.GDD) || '')[8] || {}).text || '').split('\n').filter(l => /^(- )?Fixed:\s/.test(l))
+  return rules.length >= MIN_FIXED ? 'convert' : 'new'
+}
+
 export function lockShow(project, state, script = loadScript()) {
   const doc = G.readFileIn(project, G.GDD) || G.newGdd()
   const by = state.resultsBy || {}
-  const r = k => by[k] || {}
+  // (F233: a finished game's feelings, pillars, pitch and loop come from one step, "decides"; its platform from
+  // "platform-rules")
+  const r = k => by[k] || (['feelings', 'pillars', 'pitch', 'loop'].includes(k) ? by.decides : k === 'platform' ? by['platform-rules'] : null) || {}
   const first = n => (String((G.readGdd(doc)[n] || {}).text || '').split('\n')[0] || '').replace(/^- /, '').replace(/^\*\*[^*]+\*\*:?\s*/, '')
   const open = stillOpen(doc)
   const slots = {
@@ -67,6 +83,12 @@ export function locked(project, now = new Date()) {
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const mode = process.argv[2]
   const project = process.cwd()
+  if (mode === 'path') {
+    const path = pathOf(project)
+    console.log(`✔ ${path === 'convert' ? 'a finished game: Define drafts what its rules decide, then asks only what they leave open' : 'a new idea: Define decides it step by step'}`)
+    console.log(JSON.stringify({ results: { convert: path === 'convert' ? 'yes' : 'no', fresh: path === 'convert' ? 'no' : 'yes' } }))
+    process.exit(0)
+  }
   let state = null
   try { state = JSON.parse(readFileSync(join(project, '.bmuz/state.json'), 'utf8')) } catch (e) { state = null }
   if (!state) { console.log('✘ no .bmuz/state.json: this runs inside a define run'); process.exit(1) }
@@ -78,7 +100,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
       locked(project)
       console.log(`✔ ${G.GDD}: the concept locked (Decisions, Changes)`)
     } else {
-      console.log('✘ use: node define.mjs lock-show | locked')
+      console.log('✘ use: node define.mjs path | lock-show | locked')
       process.exit(1)
     }
   } catch (err) {

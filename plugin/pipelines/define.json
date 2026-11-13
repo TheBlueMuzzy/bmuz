@@ -6,21 +6,66 @@
   "next": { "pipeline": "design", "ask": false },
   "steps": [
     {
+      "id": "path",
+      "kind": "script",
+      "needs": [],
+      "description": "Which path: a finished, played game (Ideate found its rules) or a new idea (F233); worked out, never asked",
+      "run": ["node", "{plugin}/scripts/define.mjs", "path"],
+      "results": ["convert", "fresh"]
+    },
+    {
       "id": "welcome",
       "kind": "talk",
-      "needs": [],
+      "needs": ["path"],
       "no": "2.0",
       "title": "Welcome to Define",
       "description": "What Define is for and how it flows",
       "tools": ["Read"],
       "lines": ["define.welcome"],
       "opening": ["define.welcome"],
-      "craft": "craft/define-welcome.md"
+      "craft": "craft/define-welcome.md",
+      "when": "{fresh}"
+    },
+    {
+      "id": "welcome-rules",
+      "kind": "talk",
+      "needs": ["welcome"],
+      "when": "{convert}",
+      "no": "2.0",
+      "title": "Welcome to Define",
+      "description": "A finished game (F233): what Define is for when the rules already decide most of it",
+      "tools": ["Read"],
+      "lines": ["define.welcome.rules"],
+      "opening": ["define.welcome.rules"],
+      "craft": "craft/define-welcome-rules.md"
+    },
+    {
+      "id": "decides",
+      "kind": "talk",
+      "needs": ["welcome-rules"],
+      "when": "{convert}",
+      "no": "2.1",
+      "title": "What Your Rulebook Decides",
+      "description": "A finished game (F233): the feelings, the 3 pillars, the pitch and the core loop, drafted from the rules; confirm or correct in one pass",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "lines": ["define.rules", "define.rules.ok"],
+      "must": ["define.rules", "define.rules.ok"],
+      "opening": ["define.rules"],
+      "craft": "craft/define-rules.md",
+      "results": ["chapters", "feelings", "feeling", "pillars", "oneliner", "loop"]
+    },
+    {
+      "id": "decides-gdd",
+      "kind": "script",
+      "needs": ["decides"],
+      "description": "What your rulebook decides, chosen, into the GDD (chapters 1–4)",
+      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "decides", "chosen"],
+      "writes": [".planning/GDD.md", ".planning/project-page.html"]
     },
     {
       "id": "feelings",
       "kind": "talk",
-      "needs": ["welcome"],
+      "needs": ["decides-gdd"],
       "no": "2.1",
       "title": "The Feelings",
       "description": "The one or two feelings that are this game, how we'd know, and what it won't have",
@@ -29,7 +74,8 @@
       "must": ["define.feelings.know", "define.feelings.not"],
       "opening": ["define.feelings"],
       "craft": "craft/define-feelings.md",
-      "results": ["chapters", "feelings", "feeling"]
+      "results": ["chapters", "feelings", "feeling"],
+      "when": "{fresh}"
     },
     {
       "id": "feelings-gdd",
@@ -51,7 +97,8 @@
       "must": ["define.pillars.take", "define.pillars.test"],
       "opening": ["define.pillars"],
       "craft": "craft/define-pillars.md",
-      "results": ["chapters", "pillars"]
+      "results": ["chapters", "pillars"],
+      "when": "{fresh}"
     },
     {
       "id": "pillars-gdd",
@@ -72,7 +119,8 @@
       "lines": ["define.pitch", "define.pitch.research"],
       "opening": ["define.pitch"],
       "craft": "craft/define-pitch-ask.md",
-      "results": ["research", "brief"]
+      "results": ["research", "brief"],
+      "when": "{fresh}"
     },
     {
       "id": "prior-art",
@@ -83,7 +131,8 @@
       "title": "The Pitch",
       "description": "The closest games: what players love and miss in them, and what's new here (only when you asked)",
       "workflow": "bmuz:research-flow",
-      "args": { "checker": "{plugin}/scripts/check-sources.mjs",
+      "args": {
+        "checker": "{plugin}/scripts/check-sources.mjs",
         "topic": "prior-art",
         "brief": "{brief}",
         "youAre": "",
@@ -107,7 +156,8 @@
       "must": ["define.pitch.take", "define.pitch.breath"],
       "craft": "craft/define-pitch.md",
       "results": ["chapters", "oneliner"],
-      "recap": ["research"]
+      "recap": ["research"],
+      "when": "{fresh}"
     },
     {
       "id": "pitch-gdd",
@@ -129,7 +179,8 @@
       "must": ["define.loop.here", "define.loop.ok"],
       "opening": ["define.loop"],
       "craft": "craft/define-loop.md",
-      "results": ["chapters", "loop"]
+      "results": ["chapters", "loop"],
+      "when": "{fresh}"
     },
     {
       "id": "loop-gdd",
@@ -151,7 +202,8 @@
       "must": ["define.platform.where", "define.platform.first", "define.platform.someday", "define.platform.who"],
       "opening": ["define.platform"],
       "craft": "craft/define-platform.md",
-      "results": ["chapters", "platform"]
+      "results": ["chapters", "platform"],
+      "when": "{fresh}"
     },
     {
       "id": "platform-gdd",
@@ -162,16 +214,40 @@
       "writes": [".planning/GDD.md", ".planning/project-page.html"]
     },
     {
-      "id": "clash",
+      "id": "platform-rules",
       "kind": "talk",
       "needs": ["platform-gdd"],
+      "when": "{convert}",
+      "no": "2.5",
+      "title": "Platform & Play",
+      "description": "A finished game (F233): where it's played first, and who with; what you said in Ideate shows first, one tap to keep",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "lines": ["define.platform", "define.platform.where", "define.platform.first", "define.platform.someday", "define.platform.who", "define.platform.ai", "any.keep"],
+      "must": ["define.platform.first"],
+      "opening": ["define.platform"],
+      "craft": "craft/define-platform-rules.md",
+      "results": ["chapters", "platform"]
+    },
+    {
+      "id": "platform-rules-gdd",
+      "kind": "script",
+      "needs": ["platform-rules"],
+      "description": "Platform & Play, chosen, into the GDD",
+      "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "platform-rules", "chosen"],
+      "writes": [".planning/GDD.md", ".planning/project-page.html"]
+    },
+    {
+      "id": "clash",
+      "kind": "talk",
+      "needs": ["platform-rules-gdd"],
       "no": "2.6",
       "title": "Clash Check",
       "description": "What the clash check does, before the reviewers read",
       "tools": ["Read"],
       "lines": ["define.clash"],
       "opening": ["define.clash"],
-      "craft": "craft/define-clash.md"
+      "craft": "craft/define-clash.md",
+      "when": "{fresh}"
     },
     {
       "id": "clash-review",
@@ -185,7 +261,8 @@
       "agentTools": ["Read", "Glob", "Grep", "StructuredOutput", "Write"],
       "writes": [".planning/research/define-clash.md"],
       "timeoutMs": 1200000,
-      "done": { "type": "file-contains", "path": ".planning/research/define-clash.md", "text": "## Clashes" }
+      "done": { "type": "file-contains", "path": ".planning/research/define-clash.md", "text": "## Clashes" },
+      "when": "{fresh}"
     },
     {
       "id": "clashes",
@@ -197,7 +274,8 @@
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["define.clash.one", "define.clash.what", "define.clash.none"],
       "craft": "craft/define-clashes.md",
-      "results": ["clashes"]
+      "results": ["clashes"],
+      "when": "{fresh}"
     },
     {
       "id": "clashes-gdd",
