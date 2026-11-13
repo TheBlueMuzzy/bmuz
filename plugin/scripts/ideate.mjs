@@ -47,13 +47,15 @@ const listOf = v => (Array.isArray(v) ? v : v == null || v === '' ? [] : [v])
 const here = dirname(fileURLToPath(import.meta.url))
 export const loadScript = () => E.parseScript(readFileSync(join(here, '..', 'script.md'), 'utf8'))
 
-// One item as the creative will read it: their words in quotes (checked), else marked "my reading".
+// One item as the creative will read it: their words in quotes (checked), else marked "my reading". (F233) An item
+// with a "source" (the shared file a finished game's rule came from) says where: "…" (from Rules v3).
 function checkItem(x, src) {
-  const it = typeof x === 'string' ? { text: clean(x), his: false } : x && typeof x === 'object' ? { text: clean(x.text ?? ''), his: x.his === true } : { text: '' }
+  const it = typeof x === 'string' ? { text: clean(x), his: false } : x && typeof x === 'object' ? { text: clean(x.text ?? ''), his: x.his === true, source: clean(x.source ?? '') } : { text: '' }
   const text = it.text.replace(/^["“]|["”]$/g, '')
   if (!text) return null
   const theirs = it.his && (isVerbatim(text, src.material) || isVerbatim(text, src.answers))
-  return { text, theirs, shown: theirs ? `"${text}"` : `${text} (my reading)`, claimed: it.his }
+  const from = it.source ? ` (from ${it.source})` : ''
+  return { text, theirs, shown: theirs ? `"${text}"${from}` : `${text} (my reading${it.source ? `, from ${it.source}` : ''})`, claimed: it.his, source: it.source || '' }
 }
 
 // A reading by chapter ({ "5": { fixed, ideas, open } }), checked. Returns { chapters: { n: { fixed, ideas, open } },
@@ -83,10 +85,10 @@ export function checkReading(reading, src) {
   return { chapters: out, notQuoted }
 }
 
-// A chapter's lines in the GDD: Clear (facts they brought) · Idea · Open.
-export function chapterLines(c) {
+// A chapter's lines in the GDD: Clear (facts they brought) · Idea · Open. (F233) A finished game's rules are "Fixed:".
+export function chapterLines(c, finished = false) {
   return [
-    ...c.fixed.map(x => `Clear: ${x.shown}`),
+    ...c.fixed.map(x => `${finished ? 'Fixed' : 'Clear'}: ${x.shown}`),
     ...c.ideas.map(x => `Idea: ${x.shown}`),
     ...c.open.map(q => `Open: ${q}`),
   ]
@@ -101,6 +103,16 @@ export function addLines(doc, n, lines, by) {
   for (const l of lines) if (!merged.some(m => norm(m) === norm(l))) merged.push(l)
   if (merged.length === have.length) return doc
   return G.writeChapter(doc, n, merged, 'loose', by).text
+}
+
+// (F233) A finished game: the reading says so ("finished": true, worked out from the material, never asked) and its
+// rules really are written down (at least MIN_RULES rules read as fixed in the Rulebook chapter). Then the conversion
+// path: the rules are fixed, and Ideate and Define ask only what they leave open and what digital adds.
+export const MIN_RULES = 3
+export function isFinished(read, chapters) {
+  const f = read && read.finished
+  const said = f === true || (typeof f === 'string' && /^\s*(yes|true)\b/i.test(f))
+  return said && !!chapters[8] && chapters[8].fixed.length >= MIN_RULES
 }
 
 // Where the game stands, worked out from it (script 1.1: never asked).
@@ -154,10 +166,11 @@ export function soFar(project, state, script = loadScript()) {
   const { shared, src } = sources(project, state)
   const read = (state.resultsBy || {}).read || {}
   const { chapters, notQuoted } = checkReading(read.sofar, src)
+  const finished = isFinished(read, chapters)
   let doc = G.readFileIn(project, G.GDD) || G.newGdd(read.name)
   if (read.name && !G.gameName(doc)) doc = G.setName(doc, read.name)
   const b = by(state, 'read')
-  for (const [n, c] of Object.entries(chapters)) doc = addLines(doc, Number(n), chapterLines(c), b)
+  for (const [n, c] of Object.entries(chapters)) doc = addLines(doc, Number(n), chapterLines(c, finished), b)
   // The open questions go on the GDD's running list, each with its chapter.
   const open = GAP_ORDER.flatMap(n => (chapters[n] ? chapters[n].open.map(q => ({ n, q })) : []))
   doc = G.addToList(doc, 'Open Questions', open.map(o => `${o.q} (${G.chapterName(o.n)})`)).text
@@ -166,7 +179,9 @@ export function soFar(project, state, script = loadScript()) {
   // The message, from the script, word for word.
   const all = Object.values(chapters)
   const fixed = all.flatMap(c => c.fixed)
-  const clear = [...fixed.filter(x => x.theirs), ...fixed.filter(x => !x.theirs)].slice(0, 4).map(x => x.shown)
+  // (F233: a finished game shows more of its rules, the Rulebook's first)
+  const ordered = finished ? [...(chapters[8] ? chapters[8].fixed : []), ...all.filter(c => c !== chapters[8]).flatMap(c => c.fixed)] : fixed
+  const clear = [...ordered.filter(x => x.theirs), ...ordered.filter(x => !x.theirs)].slice(0, finished ? 6 : 4).map(x => x.shown)
   const ideas = all.flatMap(c => c.ideas).slice(0, 4).map(x => x.shown)
   const gaps = GAP_ORDER.filter(n => chapters[n] && chapters[n].open.length).map(n => `${chapters[n].open[0]} (${G.chapterName(n)})`)
   const emptyGaps = GAP_ORDER.filter(n => !chapters[n] && !NOT_IN_IDEATE.includes(n)).map(n => `nothing yet (${G.chapterName(n)})`)
@@ -174,21 +189,26 @@ export function soFar(project, state, script = loadScript()) {
   const slots = {
     files: files ? `${files} file${files > 1 ? 's' : ''}` : '',
     clear: clear.length ? clear : ['nothing yet'],
-    ideas: ideas.length ? ideas : ['nothing yet'],
-    open: [...gaps, ...emptyGaps].slice(0, Math.max(3, Math.min(5, gaps.length))),
+    // (F233: a finished game's own notes only, and no heading when there are none; its open list is what the rules
+    // leave open, never "nothing yet (The Feelings)": Define reads those from the rules)
+    ideas: ideas.length ? ideas : finished ? '' : ['nothing yet'],
+    open: finished
+      ? (gaps.length ? GAP_ORDER.flatMap(n => (chapters[n] ? chapters[n].open.map(q => `${q} (${G.chapterName(n)})`) : [])).slice(0, 6) : ['nothing: your rules cover it'])
+      : [...gaps, ...emptyGaps].slice(0, Math.max(3, Math.min(5, gaps.length))),
     stands: standsFrom(chapters, shared, read.stands),
     unread: unreadLine(shared),
     link: G.pageLink(project),
   }
-  const r = E.renderLine(script, 'ideate.sofar', slots)
+  // (F233) A finished game's version says its rules are fixed; it never says "Nothing here is decided yet".
+  const r = E.renderLine(script, finished ? 'ideate.sofar.rules' : 'ideate.sofar', slots)
   if (r.error) throw new Error(r.error)
   writeFile(project, SO_FAR, r.text + '\n')
   // "Jump to Define" is offered only when the material already covers the feelings, pitch and core loop.
   // (their own words, checked: my reading of their notes doesn't count as their notes covering it)
   const covered = [1, 3, 4].filter(n => chapters[n] && chapters[n].fixed.some(x => x.theirs))
   const jump = covered.length === 3
-  writeFile(project, SO_FAR_JSON, JSON.stringify({ jump, covers: jump ? 'your notes already cover the feelings, pitch and core loop' : '', stands: slots.stands, chapters: Object.keys(chapters).map(Number), notQuoted }, null, 2) + '\n')
-  return { chapters, notQuoted, jump, text: r.text }
+  writeFile(project, SO_FAR_JSON, JSON.stringify({ jump, covers: jump ? 'your notes already cover the feelings, pitch and core loop' : '', stands: slots.stands, path: finished ? 'convert' : 'new', chapters: Object.keys(chapters).map(Number), notQuoted }, null, 2) + '\n')
+  return { chapters, notQuoted, jump, finished, text: r.text }
 }
 
 // ---- 1.4–1.7: what a step gathered, added to its chapters ----
@@ -208,7 +228,7 @@ export function addStep(project, state, step) {
     const lines = []
     for (const x of listOf(v)) {
       const raw = typeof x === 'string' ? x : x && x.text
-      const label = /^(Clear|Idea|Open):\s*/i.exec(clean(raw))
+      const label = /^(Clear|Fixed|Idea|Open):\s*/i.exec(clean(raw))
       const it = checkItem(label ? (typeof x === 'string' ? clean(x).slice(label[0].length) : { ...x, text: clean(raw).slice(label[0].length) }) : x, src)
       if (!it) continue
       if (it.claimed && !it.theirs) notQuoted++
@@ -257,7 +277,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
   try {
     if (mode === 'so-far') {
       const r = soFar(project, state)
-      console.log(`✔ ${G.GDD}: version 1 — chapters ${Object.keys(r.chapters).join(', ') || 'none'} loose${r.notQuoted ? ` (${r.notQuoted} given as quotes but not found in their words: kept as my reading)` : ''}; ${SO_FAR}${r.jump ? ' · Jump to Define offered' : ''}`)
+      console.log(`✔ ${G.GDD}: version 1 — chapters ${Object.keys(r.chapters).join(', ') || 'none'} loose${r.notQuoted ? ` (${r.notQuoted} given as quotes but not found in their words: kept as my reading)` : ''}; ${SO_FAR}${r.jump ? ' · Jump to Define offered' : ''}${r.finished ? ' · a finished game: its rules are fixed' : ''}`)
+      // (F233: the path, for the steps that run only on it: "when": "{convert}" / "{fresh}")
+      console.log(JSON.stringify({ results: { convert: r.finished ? 'yes' : 'no', fresh: r.finished ? 'no' : 'yes' } }))
     } else if (mode === 'add' && /^[a-z][a-z0-9-]*$/.test(String(step || ''))) {
       const r = addStep(project, state, step)
       console.log(`✔ ${G.GDD}: ${step} — chapters ${r.touched.join(', ') || 'none'}${Object.entries(r.added).map(([l, a]) => `; ${a.length} on ${l}`).join('')}${r.notQuoted ? ` (${r.notQuoted} quotes not found in their words: kept as my reading)` : ''}`)

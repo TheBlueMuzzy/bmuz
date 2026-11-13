@@ -55,8 +55,9 @@
       "id": "so-far",
       "kind": "script",
       "needs": ["read"],
-      "description": "The game so far: the GDD, version 1 (your quotes checked against your words), shown to you",
+      "description": "The game so far: the GDD, version 1 (your quotes checked against your words), shown to you; a finished game's rules go in as fixed, and it takes the conversion path (convert: yes)",
       "run": ["node", "{plugin}/scripts/ideate.mjs", "so-far"],
+      "results": ["convert", "fresh"],
       "writes": [".planning/GDD.md", ".planning/project-page.html", ".planning/research/ideate-so-far.md", ".planning/research/ideate-so-far.json"],
       "show": ".planning/research/ideate-so-far.md",
       "done": { "type": "file-contains", "path": ".planning/research/ideate-so-far.md", "text": "**The Game So Far**" }

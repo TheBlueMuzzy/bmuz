@@ -28,8 +28,19 @@ Rules:
 - The game's own terms; no jargon. Each item once, in the chapter it feeds most.
 - What was only listed (a .unity, a .psd) is a fixed fact in plain words in the chapter it belongs to ("a Unity project exists: the scene itself wasn't read"), never as if you read it.
 
+A finished game (F233 — Finished games come in as fixed; framework research/bmuz-vision/conversion-research.md). Decide it from what you read, never by asking. It is finished when BOTH hold:
+- written rules that cover setup, how a turn goes and how a game ends or is won, and
+- it has been played as it is, or made: they say they've played it ("played it hundreds of times", "it's finished", "I'm converting it to digital"), or there are board / card art files made for a physical version.
+A draft they're still unsure about ("draft 3", "I'm not sure yet", "trimming felt like busywork") is not finished: it's "a concept with some rules written down".
+When it is finished:
+- Every rule the rulebook states goes in "fixed" (mostly chapter "8"; its setting and tone in "3" or "12"), as their exact words with "source": the shared file's name as shared.md heads it, without "Drive · " ({"text": "…", "his": true, "source": "Sirius Smugglers - Rules"}). Read it all: at least the components, setup, a turn, how it ends and how to win, each its own item.
+- A rulebook's intro or flavour text ("Welcome to the system, smuggler…") is the game's setting and tone: "fixed", in "3" or "12". Never in "ideas". "ideas" holds only what they say they'd like to change or add (their messages, their own comments in the file).
+- "open" holds only what the rules really leave open: read the rules for it before you write a question, and never ask what they already say. Each one names what the rules DO say first: "Your rules say a tie for least Evidence is a shared win. Is there a tie-breaker?" A rule that leans on people at a table ("decide between yourselves", talking, interrupting) is open for the digital version. Then the digital-only gaps, in "5" and "11": where it's played, online (live or by turns), against the computer.
+- "1" The Feelings and "4" The Core Loop: what the rules show (the goal, the tension, a turn in a line) as "fixed" items or your own reading; no "open" questions there.
+
 Hand back:
 - "sofar": {"5": {"fixed": [...], "ideas": [...], "open": ["...?"]}, "8": {...}, …} (only the chapters with something)
-- "stands": where the game stands, in a few plain words: "nothing yet", "a concept", "a concept with some rules written down", "written rules", "a prototype" (worked out, never asked)
+- "stands": where the game stands, in a few plain words: "nothing yet", "a concept", "a concept with some rules written down", "written rules", "a finished game: written rules, played", "a prototype" (worked out, never asked)
+- "finished": true when it's a finished game as above, else false
 - "name": the game's name if the material gives one, else ""
 Nothing shared and no idea yet: "sofar" holds open questions that help find one (in "1", "4" and "3").

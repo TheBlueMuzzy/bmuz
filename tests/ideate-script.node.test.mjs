@@ -25,7 +25,7 @@ test('the pipeline is the script\'s Stage 1: 1.1–1.7 in order, every Ideate li
   assert.deepEqual(titled, [['1.1', 'Your Idea'], ['1.2', 'Your Material'], ['1.3', 'The Game So Far'], ['1.4', 'Feelings & Hopes'], ['1.5', 'Open Ideas'], ['1.6', 'Sketch List'], ['1.7', 'Your Project Page']])
   const said = new Set(P.steps.flatMap(s => s.lines || []))
   // ideate.sofar and ideate.page are composed by the script steps (shown word for word), not said by Claude
-  for (const id of Object.keys(script.lines).filter(id => id.startsWith('ideate.') && !['ideate.sofar', 'ideate.page'].includes(id))) assert.ok(said.has(id), id)
+  for (const id of Object.keys(script.lines).filter(id => id.startsWith('ideate.') && !['ideate.sofar', 'ideate.sofar.rules', 'ideate.page'].includes(id))) assert.ok(said.has(id), id)
   const step = id => P.steps.find(s => s.id === id)
   assert.deepEqual(step('idea').opening, ['ideate.welcome', 'ideate.idea'])
   assert.deepEqual(step('material').opening, ['ideate.material'])

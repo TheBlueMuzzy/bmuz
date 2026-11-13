@@ -68,6 +68,22 @@ Here's your game as I understand it, from your idea[[ and the {files} you shared
 **Where it stands:** {stands}.[[ I couldn't read: {unread}.]]
 The full version is on your project page: {link}
 
+## ideate.sofar.rules · say · added
+**The Game So Far**
+Here's your game as I understand it, from your idea[[ and the {files} you shared]]. It's a finished game, so what your rules say is fixed: I won't ask you to decide it again. Quotes are your own words, with where they came from; anything I've worked out myself is marked "my reading".
+
+**Fixed by your rules**
+{clear}
+
+[[**Your ideas**
+{ideas}
+
+]]**What your rules leave open**
+{open}
+
+**Where it stands:** {stands}.[[ I couldn't read: {unread}.]]
+The full version is on your project page: {link}
+
 ## ideate.next · box
 ? What next?
 header: What next
