@@ -102,6 +102,7 @@
       "id": "feelings-gdd",
       "kind": "script",
       "needs": ["feelings"],
+      "when": "{fresh}",
       "description": "Your feelings, hopes and fears, into the GDD",
       "run": ["node", "{plugin}/scripts/ideate.mjs", "add", "feelings"],
       "writes": [".planning/GDD.md", ".planning/project-page.html"]
@@ -126,6 +127,7 @@
       "id": "open-gdd",
       "kind": "script",
       "needs": ["open-ideas"],
+      "when": "{fresh}",
       "description": "Your answers, into the GDD",
       "run": ["node", "{plugin}/scripts/ideate.mjs", "add", "open-ideas"],
       "writes": [".planning/GDD.md", ".planning/project-page.html"]
@@ -150,6 +152,7 @@
       "id": "rules-gdd",
       "kind": "script",
       "needs": ["rules-open"],
+      "when": "{convert}",
       "description": "Your answers, into the GDD",
       "run": ["node", "{plugin}/scripts/ideate.mjs", "add", "rules-open"],
       "writes": [".planning/GDD.md", ".planning/project-page.html"]

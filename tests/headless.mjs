@@ -434,7 +434,8 @@ const scenarios = {
     const js = journalOf(dir)
     check('F232 (define): Ideate finished and "On to Define" moved the project on (its record kept)', ideate.some(j => j.ev === 'pipeline.done') && JSON.parse(read('bmuz.json') || '{}').pipeline === 'define' && js[0]?.ev === 'stage.enter' && js[0]?.from === 'ideate', trailOf(js.slice(0, 6)))
     const starts = [...new Set(js.filter(j => j.ev === 'step.start').map(j => j.step))]
-    const UP_TO_LOCK = ['welcome', 'feelings', 'feelings-gdd', 'pillars', 'pillars-gdd', 'pitch-ask', 'pitch', 'pitch-gdd', 'loop', 'loop-gdd', 'platform', 'platform-gdd', 'clash', 'clash-review', 'clashes', 'clashes-gdd', 'scope', 'scope-gdd', 'slice', 'slice-gdd', 'change-gdd', 'lock-show', 'lock']
+    // (F233: Define's first step, "path", works out which path from Ideate's reading — a new idea here)
+    const UP_TO_LOCK = ['path', 'welcome', 'feelings', 'feelings-gdd', 'pillars', 'pillars-gdd', 'pitch-ask', 'pitch', 'pitch-gdd', 'loop', 'loop-gdd', 'platform', 'platform-gdd', 'clash', 'clash-review', 'clashes', 'clashes-gdd', 'scope', 'scope-gdd', 'slice', 'slice-gdd', 'change-gdd', 'lock-show', 'lock']
     check('F232 (define): Define ran 2.0–2.8 in order to the lock gate; research skipped on "No"; "change" only on a "Not yet"', JSON.stringify(starts) === JSON.stringify(UP_TO_LOCK) && js.some(j => j.ev === 'step.skip' && j.step === 'prior-art') && js.some(j => j.ev === 'step.skip' && j.step === 'change'), trailOf(js))
     check('F232 (define): an auto run never locks: the gate asked the script\'s box and stopped', js.some(j => j.ev === 'gate.pending' && j.step === 'lock' && j.question === 'Lock the concept?' && JSON.stringify(j.options) === JSON.stringify(['Not yet: change something', 'Lock it: on to Design'])) && !js.some(j => j.ev === 'step.done' && j.step === 'locked'), trailOf(js.slice(-6)))
     scriptChecks(dir, out, 'define', js, ['define.welcome', 'define.feelings', 'define.feelings.own', 'define.feelings.match', 'define.feelings.right', 'define.feelings.know', 'define.feelings.not', 'define.pillars', 'define.pillars.take', 'define.pillars.test', 'define.pitch', 'define.pitch.research', 'define.pitch.take', 'define.pitch.mine', 'define.pitch.how', 'define.pitch.breath', 'define.loop', 'define.loop.here', 'define.loop.ok', 'define.platform', 'define.platform.where', 'define.platform.first', 'define.platform.someday', 'define.platform.who', 'define.clash', 'define.scope', 'define.scope.smallest', 'define.scope.idea', 'define.scope.chart', 'define.scope.slice', 'define.scope.slice.ok', 'define.scope.report'])
@@ -520,6 +521,69 @@ const scenarios = {
     check('F232 (ideate): the rulebook was read and the art listed by what it appears to be, not read', /\n- rules\.md \(\d+ characters/.test(shared) && /\n- art\/lamp\.psd — a Photoshop file \(art\)/.test(shared), shared.slice(0, 700))
     const so = existsSync(join(dir, '.planning/research/ideate-so-far.md')) ? readFileSync(join(dir, '.planning/research/ideate-so-far.md'), 'utf8') : ''
     check('F232 (ideate): the game so far counts the file shared and says what couldn\'t be read', /from your idea and the \d+ files? you shared\./.test(so) && /I couldn't read: 1 Photoshop file/.test(so), so.slice(0, 900))
+  },
+
+  // F233 — Finished games come in as fixed: a finished, played game (tests/fixtures/finished-game/rules.md, a short
+  // made-up rulebook, "played over 50 times", and an art file) goes through Ideate and Define on the conversion path,
+  // taken without asking: the rules in as fixed with their source, "What Your Rules Leave Open" in place of the
+  // feelings and open ideas, Define's "What Your Rulebook Decides" in one pass, then Platform & Play, scope and the
+  // slice, to the lock gate (an auto run never locks). No question asks what the rules already say.
+  async 'ideate-finished'() {
+    const dir = scratch('bmuz-ideate-finished')
+    writeFileSync(join(dir, 'rules.md'), readFileSync(join(here, 'fixtures', 'finished-game', 'rules.md'), 'utf8'))
+    mkdirSync(join(dir, 'art'), { recursive: true })
+    writeFileSync(join(dir, 'art', 'board.psd'), Buffer.from([56, 66, 80, 83, 0, 1, 0, 0]))
+    const answers = {
+      idea: { 'Your Idea': "It's Moonmarket, a board game I finished years ago: we've played it loads. I want to turn it into a digital version." },
+      material: { 'Your Material (share your links)': 'rules.md and the art folder' },
+      next: { 'What next?': 'Carry on in Ideate (Recommended)' },
+      'rules-open': { 'What Your Rules Leave Open (answer all in one message)': 'If the deck runs out, shuffle the discards back in. On a computer first. Online, taking turns, and against the computer. The computer should do all the bookkeeping, and a short tutorial would be nice.' },
+      sketches: { 'Which of these should we sketch? Pick any.': 'the first two', 'Anything else?': "that's all" },
+      ready: { 'Ready for Define?': 'On to Define (Recommended)' },
+      'welcome-rules': {},
+      decides: { 'Is that your game?': "Yes, that's it" },
+      'platform-rules': { 'Keep? (each answer from Ideate)': 'Keep', 'Which one platform first?': 'The web', 'Must the computer be able to play it?': 'Yes, and it has to be good' },
+      scope: {
+        'The smallest version that still gives the feeling': 'Two players against each other online, the base game only.',
+        'Each idea: must, should, could or won\'t?': 'The board, goods and orders: Must. The moon track: Must. Online, taking turns: Must. A computer opponent: Should. A tutorial: Could. Expansions: Won\'t.',
+        'A reason for each won\'t': 'Expansions: the base game first.',
+      },
+      slice: { 'Anything in the wrong box?': 'No, it looks right.', 'Does that slice feel like the game?': 'Yes' },
+    }
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'ideate', testAnswers: answers }, null, 2))
+    const out = runIn(dir, 'bmuz go', `${TOOLS} ToolSearch mcp__bmuz__say`, true)
+    writeFileSync(join(dir, 'run-output.txt'), out)
+    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : '')
+    const ideate = stageJournal(dir, 'ideate')
+    const define = journalOf(dir)
+    const both = [...ideate, ...define]
+    // 1. the conversion path, taken without asking
+    const iStarts = [...new Set(ideate.filter(j => j.ev === 'step.start').map(j => j.step))]
+    check('F233 (ideate): the conversion path was taken without asking: "What Your Rules Leave Open" ran, Feelings & Hopes and Open Ideas were skipped', iStarts.includes('rules-open') && !iStarts.some(s => ['feelings', 'open-ideas'].includes(s)) && ['feelings', 'open-ideas'].every(s => ideate.some(j => j.ev === 'step.skip' && j.step === s)) && JSON.parse(read('.planning/research/ideate-so-far.json') || '{}').path === 'convert', iStarts.join(' '))
+    const so = read('.planning/research/ideate-so-far.md')
+    check('F233 (ideate): the game so far says the rules are fixed, never "Nothing here is decided yet"; the flavour text isn\'t "your ideas"', /\*\*Fixed by your rules\*\*\n/.test(so) && !/Nothing here is decided yet/.test(so) && !/\*\*Your ideas\*\*[^*]*Welcome to the Moonmarket/.test(so), so.slice(0, 1200))
+    const gdd = read('.planning/GDD.md')
+    check('F233 (ideate): the rules are in the GDD as fixed, with their source', (gdd.match(/^- Fixed: .*\(from [^)]*rules\.md\)$/gm) || []).length >= 3, (gdd.split('### 8 ·')[1] || '').slice(0, 800))
+    // 2. no question asks what the rules answer: every question that touches a fact the rules settle names what they say
+    const asked = both.filter(j => j.ev === 'line' && (j.kind === 'free' || j.kind === 'box')).map(j => (j.kind === 'box' ? `${j.box.question} ${j.box.options.map(o => `${o.label} ${o.description}`).join(' ')}` : j.text))
+    const FACTS = [/how (is|do you|does it) (get )?set ?up|the setup/i, /how does (a|the|one) game end|when does (a|the) game end/i, /who wins|how do(es)? (you|a player|someone) win/i, /\btie\b/i, /how many players/i, /\b(secret|hidden)\b/i, /what('s| is) (in|on) (an|each) order/i, /how (far|many stalls) (do|can) you move/i]
+    const bad = asked.flatMap(t => t.split('\n')).filter(l => FACTS.some(re => re.test(l)) && !/Your rules (say|are for)/.test(l))
+    check('F233: no question asks about something the rulebook answers (each one that touches a rule says what the rules say first)', asked.length > 0 && bad.length === 0, bad.join(' | ') || `${asked.length} questions`)
+    const NEW_ONLY = ['ideate.feelings', 'ideate.open', 'ideate.pool.mentioned', 'ideate.pool.remember', 'ideate.pool.end', 'ideate.pool.skill', 'ideate.pool.first', 'ideate.round', 'define.welcome', 'define.feelings', 'define.feelings.moments', 'define.feelings.own', 'define.feelings.know', 'define.feelings.not', 'define.pillars', 'define.pillars.take', 'define.pillars.own', 'define.pillars.test', 'define.pitch', 'define.pitch.research', 'define.pitch.take', 'define.pitch.write', 'define.loop', 'define.loop.steps', 'define.loop.time', 'define.clash']
+    const newSaid = both.filter(j => j.ev === 'line' && NEW_ONLY.includes(j.line)).map(j => j.line)
+    check('F233: none of the new-idea questions were asked (feelings, hopes, "ideas for it, even half-formed", pillars, pitch, loop)', newSaid.length === 0, newSaid.join(', '))
+    check('F233: every free question ended with "Type your answer below."', both.filter(j => j.ev === 'line' && j.kind === 'free').every(j => /Type your answer below\.$/.test(j.text)), both.filter(j => j.ev === 'line' && j.kind === 'free' && !/Type your answer below\.$/.test(j.text)).map(j => j.line).join(', '))
+    // 3. Define on the conversion path reaches its lock
+    const dStarts = [...new Set(define.filter(j => j.ev === 'step.start').map(j => j.step))]
+    check('F233 (define): Define took the conversion path: What Your Rulebook Decides, Platform & Play, scope, the slice, to the lock gate', JSON.stringify(dStarts) === JSON.stringify(['path', 'welcome-rules', 'decides', 'decides-gdd', 'platform-rules', 'platform-rules-gdd', 'scope', 'scope-gdd', 'slice', 'slice-gdd', 'change-gdd', 'lock-show', 'lock']) && define.some(j => j.ev === 'gate.pending' && j.step === 'lock') && !define.some(j => j.ev === 'step.done' && j.step === 'locked'), `${dStarts.join(' ')} | ${trailOf(define.slice(-6))}`)
+    const lock = read('.planning/research/define-lock.md')
+    check('F233 (define): the concept lock page has its six ✓ lines; GDD Part 1 written as chosen the same way', (lock.match(/^✓ /gm) || []).length === 6 && [1, 2, 3, 4, 5, 6].every(n => levelsOf(dir)[n] === 'chosen'), `${JSON.stringify(levelsOf(dir))} | ${lock.slice(0, 600)}`)
+    const said = both.filter(j => j.ev === 'line' && j.kind !== 'box').filter(kept(both))
+    const missing = said.filter(j => !plain(out).includes(plain(j.text)))
+    check('F233: every fixed line the engine handed out is in Claude\'s words word for word', said.length > 0 && missing.length === 0, missing.map(j => `${j.line}: ${plain(j.text).slice(0, 120)}`).join(' | '))
+    const ids = new Set(both.filter(j => j.ev === 'line').map(j => j.line))
+    const must = ['ideate.rules', 'ideate.open.ask', 'ideate.added', 'define.welcome.rules', 'define.rules', 'define.rules.ok', 'define.platform', 'define.platform.first', 'define.scope', 'define.scope.slice', 'define.scope.report']
+    check('F233: the conversion path\'s lines were all said', must.every(id => ids.has(id)), `not said: ${must.filter(id => !ids.has(id)).join(', ')}`)
   },
 
 

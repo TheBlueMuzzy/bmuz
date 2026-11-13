@@ -58,6 +58,7 @@
       "id": "decides-gdd",
       "kind": "script",
       "needs": ["decides"],
+      "when": "{convert}",
       "description": "What your rulebook decides, chosen, into the GDD (chapters 1–4)",
       "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "decides", "chosen"],
       "writes": [".planning/GDD.md", ".planning/project-page.html"]
@@ -81,6 +82,7 @@
       "id": "feelings-gdd",
       "kind": "script",
       "needs": ["feelings"],
+      "when": "{fresh}",
       "description": "The Feelings, chosen, into the GDD",
       "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "feelings", "chosen"],
       "writes": [".planning/GDD.md", ".planning/project-page.html"]
@@ -104,6 +106,7 @@
       "id": "pillars-gdd",
       "kind": "script",
       "needs": ["pillars"],
+      "when": "{fresh}",
       "description": "The 3 Pillars, chosen, into the GDD",
       "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "pillars", "chosen"],
       "writes": [".planning/GDD.md", ".planning/project-page.html"]
@@ -163,6 +166,7 @@
       "id": "pitch-gdd",
       "kind": "script",
       "needs": ["pitch"],
+      "when": "{fresh}",
       "description": "The Pitch, chosen, into the GDD",
       "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "pitch", "chosen"],
       "writes": [".planning/GDD.md", ".planning/project-page.html"]
@@ -186,6 +190,7 @@
       "id": "loop-gdd",
       "kind": "script",
       "needs": ["loop"],
+      "when": "{fresh}",
       "description": "The Core Loop, chosen, into the GDD",
       "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "loop", "chosen"],
       "writes": [".planning/GDD.md", ".planning/project-page.html"]
@@ -209,6 +214,7 @@
       "id": "platform-gdd",
       "kind": "script",
       "needs": ["platform"],
+      "when": "{fresh}",
       "description": "Platform & Play, chosen, into the GDD",
       "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "platform", "chosen"],
       "writes": [".planning/GDD.md", ".planning/project-page.html"]
@@ -232,6 +238,7 @@
       "id": "platform-rules-gdd",
       "kind": "script",
       "needs": ["platform-rules"],
+      "when": "{convert}",
       "description": "Platform & Play, chosen, into the GDD",
       "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "platform-rules", "chosen"],
       "writes": [".planning/GDD.md", ".planning/project-page.html"]
@@ -281,6 +288,7 @@
       "id": "clashes-gdd",
       "kind": "script",
       "needs": ["clashes"],
+      "when": "{fresh}",
       "description": "What you decided about each clash, into the GDD (risks, changes, ideas for later)",
       "run": ["node", "{plugin}/scripts/gdd.mjs", "step", "clashes", "chosen"],
       "writes": [".planning/GDD.md", ".planning/project-page.html"]
