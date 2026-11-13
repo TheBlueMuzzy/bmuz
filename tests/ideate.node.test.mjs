@@ -121,10 +121,10 @@ test('the engine: "show" shows a script step\'s file in a turn of its own; "when
 test('the ideate pipeline (F232: the script\'s 1.1–1.7): idea → material → fetch → read → so-far (shown) → next → … → page (shown) → ready, then Define on the creative\'s pick; no research', () => {
   const p = JSON.parse(readFileSync(join(here, '..', 'plugin', 'pipelines', 'ideate.json'), 'utf8'))
   assert.deepEqual(E.checkPipeline(p), [])
-  assert.deepEqual(p.steps.map(s => s.id), ['idea', 'material', 'fetch', 'read', 'so-far', 'next', 'next-gdd', 'feelings', 'feelings-gdd', 'open-ideas', 'open-gdd', 'rules-open', 'rules-gdd', 'sketches', 'sketch-gdd', 'page', 'ready', 'ready-gdd'])
+  assert.deepEqual(p.steps.map(s => s.id), ['idea', 'material', 'fetch', 'read', 'so-far', 'rules-ask', 'rules-fetch', 'rules-read', 'rules-so-far', 'next', 'next-gdd', 'feelings', 'feelings-gdd', 'open-ideas', 'open-gdd', 'rules-open', 'rules-gdd', 'sketches', 'sketch-gdd', 'page', 'ready', 'ready-gdd'])
   // (F233: a finished game's "rules-open" in place of feelings and open-ideas, decided by the so-far step's path)
-  assert.deepEqual(p.steps.filter(s => s.when).map(s => [s.id, s.when]), [['feelings', '{fresh}'], ['feelings-gdd', '{fresh}'], ['open-ideas', '{fresh}'], ['open-gdd', '{fresh}'], ['rules-open', '{convert}'], ['rules-gdd', '{convert}']])
-  assert.deepEqual(p.steps.filter(s => s.show).map(s => s.id), ['so-far', 'page'])
+  assert.deepEqual(p.steps.filter(s => s.when).map(s => [s.id, s.when]), [['rules-ask', '{rulesask}'], ['rules-fetch', '{more}'], ['rules-read', '{more}'], ['rules-so-far', '{more}'], ['next', '{fresh}'], ['next-gdd', '{fresh}'], ['feelings', '{fresh}'], ['feelings-gdd', '{fresh}'], ['open-ideas', '{fresh}'], ['open-gdd', '{fresh}'], ['rules-open', '{convert}'], ['rules-gdd', '{convert}']])
+  assert.deepEqual(p.steps.filter(s => s.show).map(s => s.id), ['so-far', 'rules-so-far', 'page'])
   assert.ok(!p.steps.some(s => s.kind === 'flow')) // research is on demand (F229), never a default step
   assert.ok(!E.stepById(p, 'read').tools.includes('AskUserQuestion')) // the reading step can't ask
   assert.equal(p.next.pipeline, '{onward}')

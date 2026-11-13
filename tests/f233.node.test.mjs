@@ -98,8 +98,9 @@ test('the so-far step hands the path back for the steps that run only on it ({co
     const step = JSON.parse(readFileSync(join(plugin, 'pipelines', 'ideate.json'), 'utf8')).steps.find(s => s.id === 'so-far')
     return E.scriptResults(step, r.stdout)
   }
-  assert.deepEqual(run(MOON_READ).result, { convert: 'yes', fresh: 'no' })
-  assert.deepEqual(run({ ...MOON_READ, finished: false }).result, { convert: 'no', fresh: 'yes' })
+  // (F234: and whether to ask for the rules once: only for a game said to be played whose rules weren't read)
+  assert.deepEqual(run(MOON_READ).result, { convert: 'yes', fresh: 'no', rulesask: 'no' })
+  assert.deepEqual(run({ ...MOON_READ, finished: false }).result, { convert: 'no', fresh: 'yes', rulesask: 'no' })
 })
 
 test('Ideate on the conversion path: "What Your Rules Leave Open" runs in place of Feelings & Hopes and Open Ideas; the new-idea path is unchanged', () => {

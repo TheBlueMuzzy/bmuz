@@ -639,6 +639,18 @@ async function registerAll($: any) {
     isDeferred: false,
   })
   await $.tool.register({
+    name: 'decided',
+    description: 'BMUZ engine (Ideate, Define; any talk step with script lines): the creative answered the question just asked with "already decided". Give what was decided, in their words or from the design document, and that question\'s line id: {"answer": "...", "line": "define.platform.first"}. It settles that one question only. Returns the line to say word for word and what to do next.',
+    inputSchema: { type: 'object', properties: { answer: { type: 'string' }, line: { type: 'string' } } },
+    isDeferred: false,
+  })
+  await $.tool.register({
+    name: 'reopen',
+    description: 'BMUZ engine: the creative said "reopen <number or name>" for something the stage\'s end listed as not asked. Give their words: {"which": "2"}. That step runs again. Returns the line to say word for word.',
+    inputSchema: { type: 'object', properties: { which: { type: 'string' } }, required: ['which'] },
+    isDeferred: false,
+  })
+  await $.tool.register({
     name: 'run',
     description: 'BMUZ engine (Develop\'s builder): run one of a fixed list in the project folder, and see its output: {"what": "test"} (the project\'s tests; add "file": "tests/x.test.mjs" for one file), {"what": "check"} (npm run check:fast), {"what": "install"} (npm install), {"what": "screenshot", "url": "http://localhost:5173/", "out": ".planning/screens/F01-main-phone.png", "size": "phone" | "desktop"} (when the project has Playwright). Nothing else runs: no git, no other commands.',
     inputSchema: { type: 'object', properties: { what: { type: 'string', enum: E.RUN_WHAT }, file: { type: 'string' }, url: { type: 'string' }, out: { type: 'string' }, size: { type: 'string' } }, required: ['what'] },
@@ -929,6 +941,37 @@ async function offerNext($: any, go: boolean) {
   return true
 }
 
+// ---- F234 — Steps ask only what's still open ----
+// What the engine reads before a step: the evidence file and the GDD (both in the project; a missing one is empty).
+async function evidence($: any) {
+  let fields: any = {}
+  try { fields = JSON.parse((await readText($, `${ctx.dir}/${E.FIELDS_FILE}`)) || '{}') } catch (err) { fields = {} }
+  const gdd = (await readText($, `${ctx.dir}/.planning/GDD.md`)) || ''
+  return { fields, gdd }
+}
+
+// The plan for a talk step that names what it collects (null when it names nothing).
+async function planFor($: any, step: any, only: string[] | null = null) {
+  if (!step.collects) return null
+  const { fields, gdd } = await evidence($)
+  return E.askPlan(step, fields, gdd, { forced: (ctx.state.forced || []).includes(step.id), only })
+}
+
+// Rule 3: the fields of a step a path turns off that a later stage needs and nothing else asks (the later stages'
+// own "collects" count: the stages after this one, as far as their pipelines are on the engine).
+async function stillNeeded($: any, step: any) {
+  const { fields, gdd } = await evidence($)
+  const i = E.STAGES.findIndex(s => s.id === ctx.pipeline.id)
+  const later: string[] = []
+  for (const st of i >= 0 ? E.STAGES.slice(i + 1) : []) {
+    try {
+      const lp = JSON.parse(String(await $.fs.read(`${ctx.root}/pipelines/${st.id}.json`)))
+      if (lp && Array.isArray(lp.steps)) for (const s of lp.steps) for (const c of s.collects || []) later.push(c.field)
+    } catch (err) { /* a stage not on the engine collects nothing */ }
+  }
+  return E.neededMissing(ctx.pipeline, ctx.state, step, fields, gdd, vars(), later)
+}
+
 async function startTalk($: any, step: any, why: string) {
   const craft = await craftOf($, step)
   // A hand-off step is told what is already decided, so it doesn't ask it again.
@@ -956,6 +999,14 @@ async function startTalk($: any, step: any, why: string) {
   }
   // (F216: in Develop a new idea is noted, never built now)
   if (['develop', 'feature'].includes(ctx.pipeline.id)) hiddenNotes += `\n${E.IDEA_RULE}`
+  // F234: what the design document already holds for this step's questions (the plan made when it started), "already
+  // decided" for any step with script lines, and, once the stage's end listed what wasn't asked, how to reopen one
+  const rec = ctx.state.asked && ctx.state.asked[step.id]
+  const plan = step.collects ? await planFor($, step, rec && rec.only ? rec.only : null) : null
+  if (plan) hiddenNotes += `\n${E.planNote(step, plan)}`
+  if (step.lines) hiddenNotes += `\n${E.DECIDED_RULE}`
+  const skipped = E.skipItems(ctx.pipeline, ctx.state)
+  if (skipped.length && ctx.pipeline.steps.some((s: any) => s.stageEnd && ctx.state.finished.includes(s.id))) hiddenNotes += `\n${E.reopenRule(skipped)}`
   // A resume (a new window, "bmuz go") while a free question is open: Claude says the same question again.
   const open = E.askOpen(ctx.state)
   if (open) hiddenNotes += `\n${E.askResumeLine(open)}`
@@ -1138,12 +1189,34 @@ async function advance($: any, resume: boolean, opts: { timer?: boolean, go?: bo
     // A step with "when" runs only when the earlier result it names says yes (research offered, never forced):
     // otherwise it is skipped like a wrapped-up step, journaled, and the run goes on.
     // (F232: an "onBack" step runs only when a gate sent the creative back to it)
-    if (!isRestart && (!E.isWanted(step, vars()) || E.onBackSkips(step, ctx.state))) {
+    // F234 rule 3: a step a path's "when" turns off still runs, asking only the fields a later stage needs that nothing
+    // else asks (neededMissing)
+    const offPath = !isRestart && !E.isWanted(step, vars())
+    const only = offPath && step.kind === 'talk' && step.collects && !E.onBackSkips(step, ctx.state) ? await stillNeeded($, step) : null
+    if (!isRestart && ((offPath && !only) || E.onBackSkips(step, ctx.state))) {
       const empties = E.wrapEmpties(ctx.pipeline, ctx.state, [step.id])
       ctx.state = E.applyWrap(ctx.state, [step.id], empties)
       await journal($, { ev: 'step.skip', step: step.id, ...(step.when ? { when: step.when } : { onBack: true }), empties })
       await save($)
       continue
+    }
+    // F234: before a talk step that names what it collects, the engine reads the design document: every answer already
+    // there = the step is skipped (journaled, listed at the stage's end); otherwise it runs, told what to confirm and ask
+    if (!isRestart && step.kind === 'talk' && step.collects) {
+      const plan = await planFor($, step, only)
+      if (plan) {
+        const rec = { ...E.planRecord(plan, step), ...(only ? { only } : {}) }
+        ctx.state = { ...ctx.state, asked: { ...(ctx.state.asked || {}), [step.id]: rec } }
+        await journal($, { ev: plan.decision, step: step.id, fields: E.planJournal(plan), plan: rec, ...(only ? { only } : {}) })
+        if (plan.decision === 'skip') {
+          const result = E.skippedResult(ctx.pipeline, ctx.state, step, plan)
+          ctx.state = E.applyWrap(ctx.state, [step.id], { [step.id]: result })
+          await journal($, { ev: 'step.skip', step: step.id, by: 'fields', empties: { [step.id]: result } })
+          await save($)
+          continue
+        }
+        await save($)
+      }
     }
     // F229 review fix 6: one crew of helpers at a time — a flow step waits while the creative's research runs (whose
     // helper is calling can't be told apart); it starts when the research is back, or dropped
@@ -1444,6 +1517,12 @@ async function sayTool($: any, e: any) {
   // (the lines handed out in this step, for its "must"; saved with the rest of this call below)
   const had = ctx.state.said && ctx.state.said.step === step.id && Array.isArray(ctx.state.said.lines) ? ctx.state.said.lines : []
   ctx.state = { ...ctx.state, said: { step: step.id, lines: [...new Set([...had, ...ids])] } }
+  // (F234: the question just asked — its lines, and a question list's own pool lines — for "already decided")
+  const asks = rendered.filter((r: any) => r.kind === 'free' || r.kind === 'box').map((r: any) => r.id)
+  if (asks.length) {
+    const pool = Array.isArray(slots.questions) ? slots.questions.map((q: any) => q && q.line).filter((l: any) => typeof l === 'string') : []
+    ctx.state = { ...ctx.state, lastAsk: { step: step.id, lines: [...new Set([...asks, ...pool])] } }
+  }
   if (words.length) {
     if (turnSaid.step !== step.id) turnSaid = { step: step.id, lines: [] }
     // (F230 item 9a: a line said again in this turn replaces its earlier words — only the latest must be written; the
@@ -1547,6 +1626,77 @@ async function ideaTool($: any, e: any) {
   const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
   const talkOpen = !!step && step.kind === 'talk' && ctx.state.status === 'working'
   return { result: JSON.stringify({ say: line.text, then: `Write exactly the "say" text now, as text in your reply.${talkOpen ? ` Then carry on with step "${step.id}" exactly where it was.` : ' Then end your turn.'}` }) }
+}
+
+// ---- F234: "already decided" and "reopen" (step-ins) ----
+// "Already decided" settles exactly the question just asked (Muzzy's rule 1): its fields get a decided record and a
+// "Fixed: … (you said it's already decided)" line in their chapter (fields.mjs), the must for that line is met, and the
+// step carries on. Nothing after it is marked.
+async function decidedTool($: any, e: any) {
+  const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
+  if (!step || step.kind !== 'talk' || ctx.state.status !== 'working' || !step.lines) return { deny: 'BMUZ engine: no talk step is asking anything now, so nothing is settled. Carry on.' }
+  const target = E.decidedTarget(step, ctx.state, String(e.line ?? '').trim())
+  if (target.error) return { deny: `BMUZ engine: ${target.error}.` }
+  const answer = String(e.answer ?? '').replace(/\s+/g, ' ').trim()
+  if (!answer) {
+    // (their words and the design document don't say what was decided: ask it, one free line, never a guess)
+    const r = E.renderLine(ctx.script, 'any.decided.what', {})
+    if (r.error) return { deny: `BMUZ engine: ${r.error}` }
+    const typeLine = ctx.script.lines[E.TYPE_LINE] ? String(ctx.script.lines[E.TYPE_LINE].text) : ''
+    const text = typeLine ? `${r.text}\n\n${typeLine}` : r.text
+    if (!ctx.auto) ctx.state = { ...ctx.state, ask: { step: step.id, line: 'any.decided.what', text } }
+    await journal($, { ev: 'line', step: step.id, line: 'any.decided.what', kind: 'free', text })
+    if (turnSaid.step !== step.id) turnSaid = { step: step.id, lines: [] }
+    turnSaid.lines.push({ id: 'any.decided.what', text })
+    await save($)
+    return { result: JSON.stringify({ say: text, then: `Write exactly the "say" text as your whole reply and end your turn. Their next message says what was decided: then call ${E.DECIDED_TOOL} again with it as "answer" and "line": "${target.line}".` }) }
+  }
+  const wrote: string[] = []
+  for (const f of target.fields) {
+    const ran = await $.process.run(['node', `${ctx.root}/scripts/fields.mjs`, 'decided', f.field, String(f.chapter), step.id, answer], { cwd: ctx.dir, timeoutMs: 60000 })
+    if (ran.exitCode !== 0) return { deny: `BMUZ engine: couldn't write it down: ${String(ran.stdout || ran.stderr || '').trim().slice(0, 200)}` }
+    wrote.push(f.field)
+  }
+  const what = target.fields.length ? target.fields.map((f: any) => f.what.charAt(0).toLowerCase() + f.what.slice(1)).join(' and ') : 'that'
+  const r = E.renderLine(ctx.script, 'any.decided', { what, answer: answer.replace(/[.]+$/, '') })
+  if (r.error) return { deny: `BMUZ engine: ${r.error}` }
+  const had = ctx.state.said && ctx.state.said.step === step.id ? ctx.state.said.lines : []
+  ctx.state = { ...ctx.state, said: { step: step.id, lines: [...new Set([...had, target.line])] } }
+  await journal($, { ev: 'decided', step: step.id, line: target.line, fields: wrote, answer })
+  await journal($, { ev: 'line', step: step.id, line: 'any.decided', kind: 'say', text: r.text })
+  if (turnSaid.step !== step.id) turnSaid = { step: step.id, lines: [] }
+  turnSaid.lines = [...turnSaid.lines.filter(l => l.id !== 'any.decided'), { id: 'any.decided', text: r.text }]
+  await save($)
+  return { result: JSON.stringify({ say: r.text, then: `Write exactly the "say" text, then carry on with this step's next question (only that one question is settled; take "${answer}" as their answer to it in the result).` }) }
+}
+
+// "reopen <n>" at the stage's end: that step runs again with every question asked, then the stage's end again.
+async function doReopen($: any, which: string) {
+  const items = E.skipItems(ctx.pipeline, ctx.state)
+  if (!items.length) return { error: 'nothing was left out in this stage, so there is nothing to reopen' }
+  const id = E.reopenTarget(items, which)
+  if (!id) return { error: `"${which}" isn't on the list (${items.map((i: any) => `${i.n}. ${i.what}`).join('; ')})` }
+  const busy = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
+  if (busy && busy.kind === 'flow' && ctx.state.status === 'working') return { error: `the "${busy.id}" helpers are still working; say it again once they're done` }
+  const out = E.reopenStep(ctx.pipeline, ctx.state, id)
+  if (out.error) return { error: out.error }
+  const step = E.stepById(ctx.pipeline, id)
+  const r = E.renderLine(ctx.script, 'any.reopen', { title: step.title || step.description || id })
+  if (r.error) return { error: r.error }
+  ctx.state = out.state
+  await journal($, { ev: 'reopen', step: id, dropped: out.dropped, which })
+  await save($)
+  pending = 'advance'
+  return { line: r }
+}
+
+async function reopenTool($: any, e: any) {
+  const out = await doReopen($, String(e.which ?? ''))
+  if (out.error) return { deny: `BMUZ engine: ${out.error}.` }
+  quietTurn = true
+  await journal($, { ev: 'line', step: null, line: 'any.reopen', kind: 'say', text: out.line.text })
+  turnSaid = { step: '', lines: [{ id: 'any.reopen', text: out.line.text }] }
+  return { result: JSON.stringify({ say: out.line.text, then: 'Write exactly the "say" text as your whole reply and end your turn: the engine starts that step itself.' }) }
 }
 
 // ---- F229: research, callable anywhere ----
@@ -2004,6 +2154,8 @@ export const register: Register = on => {
     if (call.tool === E.SAY_TOOL) return sayTool($, e)
     if (call.tool === E.BUG_TOOL) return bugTool($, e)
     if (call.tool === E.IDEA_TOOL) return ideaTool($, e)
+    if (call.tool === E.DECIDED_TOOL) return decidedTool($, e)
+    if (call.tool === E.REOPEN_TOOL) return reopenTool($, e)
     if (call.tool === E.RESEARCH_TOOL) return researchTool($, e)
     if (call.tool === E.RUN_TOOL) return runTool($, e)
     // F229: the creative's research flow, launched: its name and args are the engine's, whatever Claude sent
@@ -2263,6 +2415,12 @@ export const register: Register = on => {
       for (const l of ok) await journal($, { ev: 'line', step: ctx.state.current ?? null, line: l.id, kind: l.kind, text: l.text })
       turnSaid = { step: ctx.state.current || '', lines: ok.map((l: any) => ({ id: l.id, text: l.text })) }
       return say(ok.map((l: any) => l.text).join('\n\n'))
+    }
+    // F234: "reopen 2" typed at the stage's end (with no question open): that step runs again
+    if (!ctx.broken && /^\s*(bmuz\s+)?reopen\b/i.test(text) && E.skipItems(ctx.pipeline, ctx.state).length) {
+      const out = await doReopen($, text)
+      if (out.error) return say(`BMUZ engine: can't reopen: ${out.error}.`)
+      return sayLines([out.line])
     }
     if (/^\s*bmuz new\s*$/i.test(text)) return say(`BMUZ engine: this folder is already a BMUZ project (bmuz.json says "${ctx.cfg?.pipeline ?? '?'}"). "bmuz go" carries on; "bmuz stage <stage>" moves to another stage.`)
     // "bmuz stage <stage> [step]": move to any stage (the current one's record is kept in .bmuz/stages/). Works while a

@@ -15,6 +15,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as E from '../hooks/engine.js'
 import * as G from './gdd.mjs'
+import * as F from './fields.mjs'
 import { isVerbatim, normalise } from './material.mjs'
 
 // The creative's answers as the engine journaled them (ev "answer": a typed answer to a free line, or a question box's
@@ -55,7 +56,9 @@ function checkItem(x, src) {
   if (!text) return null
   const theirs = it.his && (isVerbatim(text, src.material) || isVerbatim(text, src.answers))
   const from = it.source ? ` (from ${it.source})` : ''
-  return { text, theirs, shown: theirs ? `"${text}"${from}` : `${text} (my reading${it.source ? `, from ${it.source}` : ''})`, claimed: it.his, source: it.source || '' }
+  // (F234: the field an item answers, when the step said: the engine reads it before a later step asks the same)
+  const field = x && typeof x === 'object' && E.FIELD_RE.test(clean(x.field)) ? clean(x.field) : ''
+  return { text, theirs, shown: theirs ? `"${text}"${from}` : `${text} (my reading${it.source ? `, from ${it.source}` : ''})`, claimed: it.his, source: it.source || '', field }
 }
 
 // A reading by chapter ({ "5": { fixed, ideas, open } }), checked. Returns { chapters: { n: { fixed, ideas, open } },
@@ -183,15 +186,30 @@ function by(state, step) {
 }
 
 // ---- 1.3 The Game So Far ----
-export function soFar(project, state, script = loadScript()) {
+// (F234, from F233 task 11) The creative says it's finished or played ("played" from the reading), but no rules were
+// read: Ideate asks once for them (rules-ask), before carrying on. Only after the first reading, never twice.
+export function wantsRules(read, finished, readStep) {
+  const p = read && read.played
+  const said = p === true || (typeof p === 'string' && /^\s*(yes|true)\b/i.test(p))
+  return readStep === 'read' && said && !finished
+}
+
+export function soFar(project, state, script = loadScript(), readStep = 'read') {
   const { shared, src } = sources(project, state)
-  const read = (state.resultsBy || {}).read || {}
+  const read = (state.resultsBy || {})[readStep] || {}
   const { chapters, notQuoted } = checkReading(read.sofar, src)
   const finished = isFinished(read, chapters)
   let doc = G.readFileIn(project, G.GDD) || G.newGdd(read.name)
   if (read.name && !G.gameName(doc)) doc = G.setName(doc, read.name)
-  const b = by(state, 'read')
+  const b = by(state, readStep)
   for (const [n, c] of Object.entries(chapters)) doc = addLines(doc, Number(n), chapterLines(c, finished), b)
+  // (F234: a finished game's rules that answer a question a later step asks are recorded for the engine; only on that
+  // path, so a new idea's notes never stand in for a question)
+  if (finished) {
+    const recs = []
+    for (const [n, c] of Object.entries(chapters)) for (const x of c.fixed) if (x.field) recs.push({ field: x.field, chapter: Number(n), line: `Fixed: ${x.shown}`, kind: F.kindOf('Fixed', x.theirs), step: readStep })
+    F.addRecords(project, recs)
+  }
   // The open questions go on the GDD's running list, each with its chapter.
   const open = GAP_ORDER.flatMap(n => (chapters[n] ? chapters[n].open.map(q => ({ n, q })) : []))
   doc = G.addToList(doc, 'Open Questions', open.map(o => `${o.q} (${G.chapterName(o.n)})`)).text
@@ -228,8 +246,9 @@ export function soFar(project, state, script = loadScript()) {
   // (their own words, checked: my reading of their notes doesn't count as their notes covering it)
   const covered = [1, 3, 4].filter(n => chapters[n] && chapters[n].fixed.some(x => x.theirs))
   const jump = covered.length === 3
-  writeFile(project, SO_FAR_JSON, JSON.stringify({ jump, covers: jump ? 'your notes already cover the feelings, pitch and core loop' : '', stands: slots.stands, path: finished ? 'convert' : 'new', chapters: Object.keys(chapters).map(Number), notQuoted }, null, 2) + '\n')
-  return { chapters, notQuoted, jump, finished, text: r.text }
+  const rulesAsk = wantsRules(read, finished, readStep)
+  writeFile(project, SO_FAR_JSON, JSON.stringify({ jump, covers: jump ? 'your notes already cover the feelings, pitch and core loop' : '', stands: slots.stands, path: finished ? 'convert' : 'new', chapters: Object.keys(chapters).map(Number), notQuoted, ...(rulesAsk ? { rulesAsk } : {}) }, null, 2) + '\n')
+  return { chapters, notQuoted, jump, finished, rulesAsk, text: r.text }
 }
 
 // ---- 1.4–1.7: what a step gathered, added to its chapters ----
@@ -242,6 +261,9 @@ export function addStep(project, state, step) {
   const b = by(state, step)
   let notQuoted = 0
   const touched = []
+  const recs = []
+  // (F234: on the conversion path only — a new idea's answers stay ideas for Define to choose between)
+  const convert = E.isWanted({ when: '{convert}' }, state.results || {})
   const chapters = r.chapters && typeof r.chapters === 'object' && !Array.isArray(r.chapters) ? r.chapters : {}
   for (const [k, v] of Object.entries(chapters)) {
     const n = Number(k)
@@ -255,11 +277,14 @@ export function addStep(project, state, step) {
       if (it.claimed && !it.theirs) notQuoted++
       const kind = label ? label[1][0].toUpperCase() + label[1].slice(1).toLowerCase() : 'Idea'
       lines.push(kind === 'Open' ? `Open: ${it.text}` : `${kind}: ${it.shown}`)
+      // (an answer is "said", to confirm, never "fixed": only a rule read from their material is)
+      if (convert && it.field && kind !== 'Open') recs.push({ field: it.field, chapter: n, line: `${kind}: ${it.shown}`, kind: F.kindOf('Clear', it.theirs), step })
     }
     const before = doc
     doc = addLines(doc, n, lines, b)
     if (doc !== before) touched.push(n)
   }
+  F.addRecords(project, recs)
   const out = G.applyResult(doc, { sketches: r.sketches, questions: r.questions, ideas: r.ideas, name: r.name }, null, b)
   writeFile(project, G.GDD, out.text)
   G.writePage(project)
@@ -280,8 +305,10 @@ export function page(project, state, script = loadScript(), env = process.env) {
   const opened = G.openPage(project, env)
   const r = E.renderLine(script, 'ideate.page', { loose: String(loose), sketches: String(sketches), top: top.length ? top : ['none: the game so far covers what Define needs first'] })
   if (r.error) throw new Error(r.error)
-  writeFile(project, PAGE_MD, r.text + '\n')
-  return { loose, sketches, top, opened, text: r.text }
+  // (F234 rule 4: never a silent skip — what this stage didn't ask, each reopenable with one word)
+  const skipped = F.skipList(state, script)
+  writeFile(project, PAGE_MD, r.text + (skipped ? `\n\n${skipped}` : '') + '\n')
+  return { loose, sketches, top, opened, text: r.text, skipped }
 }
 
 function writeFile(dir, rel, text) {
@@ -297,10 +324,12 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
   if (!state) { console.log('✘ no .bmuz/state.json: this runs inside an ideate run'); process.exit(1) }
   try {
     if (mode === 'so-far') {
-      const r = soFar(project, state)
-      console.log(`✔ ${G.GDD}: version 1 — chapters ${Object.keys(r.chapters).join(', ') || 'none'} loose${r.notQuoted ? ` (${r.notQuoted} given as quotes but not found in their words: kept as my reading)` : ''}; ${SO_FAR}${r.jump ? ' · Jump to Define offered' : ''}${r.finished ? ' · a finished game: its rules are fixed' : ''}`)
-      // (F233: the path, for the steps that run only on it: "when": "{convert}" / "{fresh}")
-      console.log(JSON.stringify({ results: { convert: r.finished ? 'yes' : 'no', fresh: r.finished ? 'no' : 'yes' } }))
+      // (F234: "so-far rules-read" is the second reading, after the rules were asked for)
+      const readStep = /^[a-z][a-z0-9-]*$/.test(String(step || '')) ? step : 'read'
+      const r = soFar(project, state, loadScript(), readStep)
+      console.log(`✔ ${G.GDD}: version 1 — chapters ${Object.keys(r.chapters).join(', ') || 'none'} loose${r.notQuoted ? ` (${r.notQuoted} given as quotes but not found in their words: kept as my reading)` : ''}; ${SO_FAR}${r.jump ? ' · Jump to Define offered' : ''}${r.finished ? ' · a finished game: its rules are fixed' : ''}${r.rulesAsk ? ' · played, but no rules read: asking for them once' : ''}`)
+      // (F233: the path, for the steps that run only on it: "when": "{convert}" / "{fresh}"; F234: rulesask)
+      console.log(JSON.stringify({ results: { convert: r.finished ? 'yes' : 'no', fresh: r.finished ? 'no' : 'yes', rulesask: r.rulesAsk ? 'yes' : 'no' } }))
     } else if (mode === 'add' && /^[a-z][a-z0-9-]*$/.test(String(step || ''))) {
       const r = addStep(project, state, step)
       console.log(`✔ ${G.GDD}: ${step} — chapters ${r.touched.join(', ') || 'none'}${Object.entries(r.added).map(([l, a]) => `; ${a.length} on ${l}`).join('')}${r.notQuoted ? ` (${r.notQuoted} quotes not found in their words: kept as my reading)` : ''}`)

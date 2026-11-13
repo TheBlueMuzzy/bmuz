@@ -90,7 +90,9 @@ const STEP_KEYS = {
   common: ['id', 'kind', 'needs', 'description', 'timeoutMs', 'always', 'retries', 'when', 'no', 'title', 'onBack'],
   // lines (F232): the script lines the step may say (plugin/script.md); opening: the ones it must say first;
   // must: the ones it always says, so step_done is refused until each was handed out (the rest depend on the game)
-  talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results', 'wrapTo', 'recap', 'lines', 'opening', 'must', 'mustIf'],
+  // collects (F234): what the step asks for — [{ field, what, chapter, line, neededBy }]; the engine reads the GDD first
+  // and asks only what is still open (askPlan)
+  talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results', 'wrapTo', 'recap', 'lines', 'opening', 'must', 'mustIf', 'collects'],
   // line (F232): the gate's question and options come from that script box
   gate: ['question', 'options', 'approve', 'backTo', 'line', 'auto'],
   // show: a .md file the script wrote; after the step passes, the engine shows it to the creative word for word
@@ -98,7 +100,9 @@ const STEP_KEYS = {
   // loop (F216): the step runs another pipeline once per item its script names, each run a kept side trip (Develop's
   // feature runs); the step finishes when the script names none
   // results (F216 review fix 11): keys the script hands back in its last line of JSON ({"results": {…}}), for a later "when"
-  script: ['run', 'writes', 'done', 'show', 'loop', 'results'],
+  // stageEnd (F234): the step that shows the stage's end, with its "I didn't ask about …" list: a reopen redoes it and
+  // everything after it
+  script: ['run', 'writes', 'done', 'show', 'loop', 'results', 'stageEnd'],
   // stuck (F216): a .md file the done-check writes when the step is stuck twice; said before the last try
   // protect (F216 review fix 2b): true = its helpers can't change the plan files, package.json's scripts, or empty a test
   flow: ['workflow', 'args', 'agentTools', 'writes', 'craft', 'done', 'stuck', 'protect'],
@@ -215,6 +219,8 @@ export function checkPipeline(p) {
     if (s.no !== undefined && !(typeof s.no === 'string' && /^\d+\.\d+$/.test(s.no))) problems.push(`${at}: "no" must be the script's step number, like "2.3"`)
     if (s.title !== undefined && !(typeof s.title === 'string' && s.title.trim())) problems.push(`${at}: "title" must be the step's name, like "The Pitch"`)
     if (s.onBack !== undefined && typeof s.onBack !== 'boolean') problems.push(`${at}: "onBack" must be true or false`)
+    problems.push(...collectsProblems(s, at))
+    if (s.stageEnd !== undefined && s.stageEnd !== true) problems.push(`${at}: "stageEnd" must be true (or left out)`)
     if (s.lines !== undefined && !(isList(s.lines) && s.lines.every(id => /^[a-z][a-z0-9.-]*$/.test(id)))) problems.push(`${at}: "lines" must be a list of script line ids, like ["define.pitch"]`)
     if (s.opening !== undefined && !(isList(s.opening) && s.opening.length)) problems.push(`${at}: "opening" must be a list of the line ids the step says first`)
     if (s.must !== undefined) {
@@ -1076,6 +1082,8 @@ export function judgeTool(p, state, call, opts = {}) {
   if (call.tool === BUG_TOOL && !call.agentId) return { allow: true }
   // F216: so may a new idea, noted on the roadmap's Ideas (Develop)
   if (call.tool === IDEA_TOOL && !call.agentId) return { allow: true }
+  // F234: "already decided" and "reopen" are step-ins too (the motor checks what each may touch)
+  if ((call.tool === DECIDED_TOOL || call.tool === REOPEN_TOOL) && !call.agentId) return { allow: true }
   // F229: a research flow's helper may run the source check's own link test (check-sources.mjs --dead '<url>' …), the
   // one command it needs before its report is checked; the plugin's path is outside the project, so it is let through
   // here, exactly that command, only while research runs (a research step, or the creative's own research).
@@ -1308,7 +1316,10 @@ export function begin(state, step, now) {
 export function mustProblem(step, state, result = {}) {
   const had = state && state.said && state.said.step === step.id && Array.isArray(state.said.lines) ? state.said.lines : []
   const ifs = step.mustIf && typeof step.mustIf === 'object' ? Object.entries(step.mustIf).filter(([, when]) => isWanted({ when }, result || {})).map(([id]) => id) : []
-  const left = [...(isList(step.must) ? step.must : []), ...ifs].filter(id => !had.includes(id))
+  // (F234: a must whose answers the design document already holds — there, or confirmed with any.keep — is lifted)
+  const plan = state && state.asked && state.asked[step.id]
+  const lifted = plan && Array.isArray(plan.fields) ? liftedMusts(step, plan) : []
+  const left = [...(isList(step.must) ? step.must : []), ...ifs].filter(id => !had.includes(id) && !lifted.includes(id))
   if (!left.length) return null
   const many = left.length > 1
   return `the step isn't finished: the script's line${many ? 's' : ''} ${left.map(id => `"${id}"`).join(', ')} ${many ? 'were' : 'was'} never said. Say ${many ? 'each' : 'it'} with ${SAY_TOOL} {"line": "<id>"} the way the craft note says (an auto run too: take the answer from the test answers), then call ${ENGINE_TOOL} again`
@@ -1398,6 +1409,13 @@ export function rebuildFromJournal(pipelineId, lines) {
     if (j.ev === 'step.done') s = finish(s, { id: j.step }, j.result || null)
     if (j.ev === 'wrap') s = applyWrap(s, j.skipped || [], j.empties || {})
     if (j.ev === 'step.skip') s = applyWrap(s, [j.step], j.empties || {})
+    // (F234: the engine's plan for a step, and a reopen at the stage's end)
+    if (['skip', 'confirm', 'ask'].includes(j.ev) && j.step && j.plan) s = { ...s, asked: { ...(s.asked || {}), [j.step]: j.plan } }
+    if (j.ev === 'reopen' && j.step) {
+      const asked = { ...(s.asked || {}) }
+      delete asked[j.step]
+      s = { ...dropSteps(s, new Set(j.dropped || [])), current: null, status: 'idle', startedAt: null, back: null, asked, forced: [...new Set([...(s.forced || []), j.step])] }
+    }
     if (j.ev === 'retry') s = { ...s, retries: { ...s.retries, [j.step]: (s.retries[j.step] || 0) + 1 } }
     if (j.ev === 'gate.back') s = { ...dropSteps(s, new Set(j.dropped || [])), current: null, status: 'idle', startedAt: null, ...(j.back ? { back: j.back } : {}) }
     if (j.ev === 'undo') s = { ...dropSteps(s, new Set(j.redo || [])), current: null, status: 'idle', startedAt: null, blocked: null }
@@ -2062,4 +2080,214 @@ export function protectProblem(rel, before, after) {
   }
   if (isTestFile(f) && before !== null && String(after ?? '').trim() === '') return `this empties the existing test ${f}: a test is never deleted to make the build pass`
   return null
+}
+
+// ---- F234 — Steps ask only what's still open (framework research/bmuz-vision/skip-research.md) ----
+// Each Ideate and Define talk step names what it collects ("collects": the GDD chapter, the field, the script line that
+// asks for it, who needs it later). Before the step the engine reads the design document itself and decides per field:
+// THERE (a rule quoted from the creative's own material, or a question they said is already decided: don't ask it),
+// UNSURE (something read in, or an earlier answer: confirm it, one tap to keep) or MISSING (ask it). The step is skipped
+// only when every field is there; a field a later stage needs is never skipped while it's missing (Muzzy's rules 2, 3, 5).
+// The evidence lives in .planning/research/fields.json ({ "<field>": [{ chapter, line, kind, step }] }, written by the
+// scripts that write the GDD and by the "already decided" step-in), and a record counts only while its line is still
+// in its chapter of the GDD: an undo or a hand edit that takes the line out makes the field open again.
+export const FIELDS_FILE = '.planning/research/fields.json'
+export const NEEDED_BY = ['design', 'build', 'store']
+export const FIELD_RE = /^[a-z]+(\.[a-z]+)*$/
+export const FIELD_KINDS = ['fixed', 'decided', 'said', 'read']
+export const THERE_KINDS = ['fixed', 'decided']
+export const DECIDED_TOOL = 'mcp__bmuz__decided'
+export const REOPEN_TOOL = 'mcp__bmuz__reopen'
+
+// What is wrong with a step's "collects" (empty = fine).
+export function collectsProblems(s, at) {
+  if (s.collects === undefined) return []
+  if (s.kind !== 'talk') return [`${at}: only a talk step asks, so "collects" can't be on a ${s.kind} step`]
+  if (!Array.isArray(s.collects) || !s.collects.length) return [`${at}: "collects" must be a list of {"field", "what", "chapter", "line", "neededBy"}`]
+  const out = []
+  const seen = new Set()
+  s.collects.forEach((c, i) => {
+    const w = `${at}: collects ${i + 1}`
+    if (!c || typeof c !== 'object' || Array.isArray(c)) { out.push(`${w} is not an object`); return }
+    for (const k of Object.keys(c)) if (!['field', 'what', 'chapter', 'line', 'neededBy'].includes(k)) out.push(`${w} has an unknown setting "${k}"`)
+    if (typeof c.field !== 'string' || !FIELD_RE.test(c.field)) out.push(`${w}: "field" must be lower case words joined by dots, like "platform.first"`)
+    else if (seen.has(c.field)) out.push(`${w}: field "${c.field}" is listed twice`)
+    else seen.add(c.field)
+    if (typeof c.what !== 'string' || !c.what.trim()) out.push(`${w}: "what" must name the answer in plain words, like "Which platform first"`)
+    if (!(Number.isInteger(c.chapter) && c.chapter >= 1 && c.chapter <= 14)) out.push(`${w}: "chapter" must be the GDD chapter it lives in, 1 to 14`)
+    if (c.line !== undefined && !(typeof c.line === 'string' && (s.lines || []).includes(c.line))) out.push(`${w}: "line" must be one of the step's "lines" (the one that asks for it)`)
+    if (!(Array.isArray(c.neededBy) && c.neededBy.every(x => NEEDED_BY.includes(x)))) out.push(`${w}: "neededBy" must list the later stages that rely on it without asking it themselves (${NEEDED_BY.join(', ')}), or be []`)
+  })
+  return out
+}
+
+// A line as it is compared: case, quotes, bullets and spacing don't count.
+export const fieldText = t => String(t == null ? '' : t).toLowerCase().replace(/[“”"‘’'`*_]/g, '').replace(/^\s*-\s*/, '').replace(/\s+/g, ' ').trim()
+
+// The GDD's chapters as { n: { level, text } }, read from its "### n · Name" headings (the whole section, the
+// creative's own text included).
+export function gddChapters(text) {
+  const out = {}
+  const parts = String(text || '').split(/^### (\d+) · [^\n]*$/m)
+  for (let i = 1; i < parts.length; i += 2) {
+    const body = String(parts[i + 1] || '').split(/^## /m)[0]
+    const level = (body.match(/^Level: (.+)$/m) || [])[1] || ''
+    out[Number(parts[i])] = { level: level.trim(), text: body }
+  }
+  return out
+}
+
+// One field's status from its records and the GDD: { status: there | unsure | missing, evidence }.
+export function fieldStatus(records, chapters) {
+  const live = (Array.isArray(records) ? records : []).filter(r => r && typeof r.line === 'string' && r.line.trim() && chapters && chapters[r.chapter] && fieldText(chapters[r.chapter].text).includes(fieldText(r.line)))
+  const there = live.filter(r => THERE_KINDS.includes(r.kind)).pop()
+  if (there) return { status: 'there', evidence: there }
+  if (live.length) return { status: 'unsure', evidence: live[live.length - 1] }
+  return { status: 'missing', evidence: null }
+}
+
+// Why a field wasn't asked, in the creative's terms (for the stage's "I didn't ask about …" list).
+export function whyThere(ev) {
+  if (!ev) return ''
+  const words = String(ev.line || '').replace(/^\s*-?\s*(Fixed|Clear|Idea):\s*/i, '').replace(/\s*\(you said it's already decided\)\s*$/, '').trim()
+  if (ev.kind === 'decided') return `you said it's already decided${words ? `: ${words}` : ''}`
+  return `your rules say ${words}`
+}
+
+// The plan for one talk step: { decision: skip | confirm | ask, fields: [{ field, what, chapter, line, neededBy,
+// status, why, evidence }] }. opts.forced (a reopened step): every field is asked. opts.only: the fields a
+// path-skipped step must still ask (rule 3); the rest are "path" (not on this path).
+export function askPlan(step, fieldsDoc, gddText, opts = {}) {
+  if (!step || !Array.isArray(step.collects) || !step.collects.length) return null
+  const chapters = gddChapters(gddText)
+  const doc = fieldsDoc && typeof fieldsDoc === 'object' && !Array.isArray(fieldsDoc) ? fieldsDoc : {}
+  const fields = step.collects.map(c => {
+    if (opts.only && !opts.only.includes(c.field)) return { ...c, status: 'path', why: 'not on this path', evidence: null }
+    if (opts.forced) return { ...c, status: 'missing', why: 'reopened: asked again', evidence: null }
+    const st = fieldStatus(doc[c.field], chapters)
+    const why = st.status === 'there' ? whyThere(st.evidence) : st.status === 'unsure' ? `the design document has "${st.evidence.line}", not settled` : 'not in the design document yet'
+    return { ...c, status: st.status, why, evidence: st.evidence }
+  })
+  const asked = fields.filter(f => f.status !== 'path')
+  const decision = asked.length && asked.every(f => f.status === 'there') && !opts.only ? 'skip' : fields.some(f => f.status === 'there' || f.status === 'unsure') ? 'confirm' : 'ask'
+  return { decision, fields }
+}
+
+// What a step's plan journals and keeps in the state (state.asked[step]): each field with its status and reason (never
+// the whole evidence record).
+export const planJournal = plan => (plan ? plan.fields.map(f => ({ field: f.field, what: f.what, line: f.line || null, status: f.status, why: f.why })) : [])
+export const planRecord = (plan, step) => (plan ? { decision: plan.decision, title: step.title || step.description || step.id, fields: planJournal(plan) } : null)
+
+// A step every field of which is there: what it hands back (the result keys empty, its chapters the lines already in the
+// GDD, so the script step after it writes them as the step's own).
+export function skippedResult(p, state, step, plan) {
+  const empties = wrapEmpties(p, state, [step.id])[step.id] || {}
+  const chapters = {}
+  for (const f of plan.fields) if (f.status === 'there' && f.evidence) (chapters[f.evidence.chapter] = chapters[f.evidence.chapter] || []).push(f.evidence.line)
+  return { ...empties, ...(resultKeysOf(step).includes('chapters') ? { chapters } : {}) }
+}
+
+// Rule 3 for a step a path's "when" turns off: its fields that are missing, that a later stage relies on, and that no
+// other step collects — one of this pipeline that ran for real or may still run, or one of a later stage (laterFields:
+// the field ids later stages collect). null when there are none (the step is skipped as before).
+export function neededMissing(p, state, step, fieldsDoc, gddText, vars, laterFields = []) {
+  const plan = askPlan(step, fieldsDoc, gddText)
+  if (!plan) return null
+  const finished = state.finished || []
+  const skipped = state.skipped || []
+  const known = k => vars && Object.prototype.hasOwnProperty.call(vars, k)
+  const mayRun = s => {
+    if (s.id === step.id) return false
+    if (finished.includes(s.id)) return !skipped.includes(s.id)
+    const m = typeof s.when === 'string' ? s.when.match(/^\{(\w+)\}$/) : null
+    return !m || !known(m[1]) || isWanted(s, vars)
+  }
+  const covered = new Set([...laterFields, ...p.steps.filter(s => Array.isArray(s.collects) && mayRun(s)).flatMap(s => s.collects.map(c => c.field))])
+  const left = plan.fields.filter(f => f.status === 'missing' && f.neededBy.length && !covered.has(f.field)).map(f => f.field)
+  return left.length ? left : null
+}
+
+// The plan in the step's hidden instructions: what not to ask, what to confirm, what to ask.
+export function planNote(step, plan) {
+  if (!plan || !plan.fields.length) return ''
+  const keep = (step.lines || []).includes('any.keep')
+  const lineOf = f => (f.line ? ` (${f.line})` : '')
+  const out = ['What the design document already holds for this step\'s questions (the engine read it before the step: F234 — ask only what is still open):']
+  for (const f of plan.fields) {
+    if (f.status === 'there') out.push(`- ${f.what}${lineOf(f)}: already there, so don't ask it (${f.why}). Use it as it stands.`)
+    else if (f.status === 'unsure') out.push(`- ${f.what}${lineOf(f)}: the document has "${f.evidence.line}" (read from their material or an earlier answer, not settled). ${keep ? 'Confirm it with "any.keep" {"question": "<that question\'s words>", "answer": "<what the document says, short>"} in place of its own question (never both)' : 'Ask it, saying first what the document has'}.`)
+    else if (f.status === 'path') out.push(`- ${f.what}${lineOf(f)}: not on this path: don't ask it.`)
+    else out.push(`- ${f.what}${lineOf(f)}: not in the document yet: ask it${f.neededBy.length ? ` (${f.neededBy.join(', ')} need${f.neededBy.length > 1 ? '' : 's'} it)` : ''}.`)
+  }
+  return out.join('\n')
+}
+
+// "Already decided", told to every step with "collects" (F234 rule 1).
+export const DECIDED_RULE = `Already decided: if the creative answers one of this step's questions with "already decided" (or "we decided that", "that's settled"), that is a step-in for that ONE question: call ${DECIDED_TOOL} {"answer": "what was decided, in their words or from the design document", "line": "<that question's line id>"}, write the line it returns word for word, take the answer as theirs and carry on with the next question. It settles that one question, never the ones after it.`
+
+// How to reopen a question the stage's end listed as not asked (told to the steps after it).
+export function reopenRule(items) {
+  return `Reopen: the stage's end listed what wasn't asked (${items.map(i => `${i.n}. ${i.what}`).join('; ')}). If the creative says "reopen" with a number or a name from that list, call ${REOPEN_TOOL} {"which": "their words"}, write the line it returns word for word and end your turn: the engine runs that step again.`
+}
+
+// The must lines a plan lifts: a line whose every field is there, unsure (confirmed with any.keep instead) or off the path.
+export function liftedMusts(step, plan) {
+  if (!plan) return []
+  const byLine = {}
+  for (const f of plan.fields) if (f.line) (byLine[f.line] = byLine[f.line] || []).push(f)
+  return Object.entries(byLine).filter(([, fs]) => fs.every(f => f.status !== 'missing')).map(([l]) => l)
+}
+
+// The stage's "I didn't ask about …" list: every field a finished step of this run didn't ask (whole steps skipped,
+// and fields already there inside steps that ran), each with the step that asks it. [{ n, step, title, what, why }]
+export function skipItems(p, state) {
+  const out = []
+  const asked = (state && state.asked) || {}
+  for (const s of p.steps) {
+    const a = asked[s.id]
+    if (!a || !(state.finished || []).includes(s.id)) continue
+    for (const f of a.fields || []) if (f.status === 'there') out.push({ n: out.length + 1, step: s.id, title: s.title || s.description || s.id, what: f.what, why: f.why })
+  }
+  return out
+}
+
+// Which step "reopen <words>" names: a number from the list, or a step's or an item's name. null when none.
+export function reopenTarget(items, words) {
+  const w = fieldText(words).replace(/^(bmuz\s+)?reopen\s*/, '').replace(/[.!]+$/, '').trim()
+  if (!w) return null
+  const n = Number((w.match(/^#?(\d+)\b/) || [])[1])
+  if (n) return (items.find(i => i.n === n) || {}).step || null
+  const hit = items.find(i => fieldText(i.title) === w || fieldText(i.what) === w) || items.find(i => fieldText(i.title).includes(w) || fieldText(i.what).includes(w))
+  return hit ? hit.step : null
+}
+
+// Reopening a step at the stage's end: that step and the script steps that write it down run again, then the stage's
+// end (from its "stageEnd" step on) comes back; nothing else is redone. The step is "forced": every field asked.
+export function reopenStep(p, state, stepId) {
+  const step = stepById(p, stepId)
+  if (!step) return { error: `"${stepId}" isn't a step of ${p.id}` }
+  const drop = new Set([stepId])
+  for (const s of p.steps) if (s.kind === 'script' && (s.needs || []).includes(stepId)) drop.add(s.id)
+  const end = p.steps.findIndex(s => s.stageEnd)
+  if (end >= 0) for (const s of p.steps.slice(end)) drop.add(s.id)
+  if (state.current) drop.add(state.current)
+  // (an onBack step the creative came back to is done with: the reopen is their change)
+  for (const s of p.steps) if (s.onBack && state.back && state.back.step === s.id) drop.add(s.id)
+  const dropped = [...drop].filter(id => (state.finished || []).includes(id) || id === state.current)
+  const asked = { ...(state.asked || {}) }
+  delete asked[stepId]
+  const out = { ...dropSteps(state, drop), current: null, status: 'idle', startedAt: null, back: null, asked, forced: [...new Set([...(state.forced || []), stepId])] }
+  return { state: out, dropped }
+}
+
+// The question "already decided" answers: the line(s) of the last question handed out in this step (state.lastAsk),
+// narrowed to `line` when one was named. Returns { line, fields } or { error }.
+export function decidedTarget(step, state, line = '') {
+  const last = state && state.lastAsk && state.lastAsk.step === step.id ? state.lastAsk.lines : []
+  if (!last.length) return { error: 'no question of this step was asked yet: "already decided" settles the question just asked' }
+  const pick = line ? last.filter(l => l === line) : last
+  if (!pick.length) return { error: `"${line}" isn't the question just asked (${last.join(', ')})` }
+  if (pick.length > 1) return { error: `several questions were asked together (${pick.join(', ')}): name the one it answers with "line"` }
+  const fields = (step.collects || []).filter(c => c.line === pick[0])
+  return { line: pick[0], fields }
 }

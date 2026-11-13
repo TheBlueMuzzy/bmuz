@@ -57,15 +57,64 @@
       "needs": ["read"],
       "description": "The game so far: the GDD, version 1 (your quotes checked against your words), shown to you; a finished game's rules go in as fixed, and it takes the conversion path (convert: yes)",
       "run": ["node", "{plugin}/scripts/ideate.mjs", "so-far"],
-      "results": ["convert", "fresh"],
-      "writes": [".planning/GDD.md", ".planning/project-page.html", ".planning/research/ideate-so-far.md", ".planning/research/ideate-so-far.json"],
+      "results": ["convert", "fresh", "rulesask"],
+      "writes": [".planning/GDD.md", ".planning/project-page.html", ".planning/research/ideate-so-far.md", ".planning/research/ideate-so-far.json", ".planning/research/fields.json"],
+      "show": ".planning/research/ideate-so-far.md",
+      "done": { "type": "file-contains", "path": ".planning/research/ideate-so-far.md", "text": "**The Game So Far**" }
+    },
+    {
+      "id": "rules-ask",
+      "kind": "talk",
+      "needs": ["so-far"],
+      "when": "{rulesask}",
+      "no": "1.3",
+      "title": "The Game So Far",
+      "description": "A finished, played game whose rules weren't in what you shared (F234, from F233 task 11): asked once for them, a link or a file",
+      "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
+      "lines": ["ideate.rules.link"],
+      "opening": ["ideate.rules.link"],
+      "craft": "craft/ideate-rules-ask.md",
+      "results": ["links", "files", "more"]
+    },
+    {
+      "id": "rules-fetch",
+      "kind": "script",
+      "needs": ["rules-ask"],
+      "when": "{more}",
+      "description": "Reading the rules you pointed to, added to what you shared",
+      "run": ["node", "{plugin}/scripts/ideate-fetch.mjs", "more", "rules-ask"],
+      "writes": [".planning/research/shared.md", ".planning/research/shared.json"],
+      "done": { "type": "file-contains", "path": ".planning/research/shared.md", "text": "## The text" }
+    },
+    {
+      "id": "rules-read",
+      "kind": "talk",
+      "needs": ["rules-fetch"],
+      "when": "{more}",
+      "no": "1.3",
+      "title": "The Game So Far",
+      "description": "Sorting it all again, the rules with it (nothing asked)",
+      "tools": ["Read", "Glob", "Grep"],
+      "craft": "craft/ideate-read.md",
+      "results": ["sofar", "stands"]
+    },
+    {
+      "id": "rules-so-far",
+      "kind": "script",
+      "needs": ["rules-read"],
+      "when": "{more}",
+      "description": "The game so far again, with your rules: a finished game's rules go in as fixed, and it takes the conversion path",
+      "run": ["node", "{plugin}/scripts/ideate.mjs", "so-far", "rules-read"],
+      "results": ["convert", "fresh", "rulesask"],
+      "writes": [".planning/GDD.md", ".planning/project-page.html", ".planning/research/ideate-so-far.md", ".planning/research/ideate-so-far.json", ".planning/research/fields.json"],
       "show": ".planning/research/ideate-so-far.md",
       "done": { "type": "file-contains", "path": ".planning/research/ideate-so-far.md", "text": "**The Game So Far**" }
     },
     {
       "id": "next",
       "kind": "talk",
-      "needs": ["so-far"],
+      "needs": ["rules-so-far"],
+      "when": "{fresh}",
       "no": "1.3",
       "title": "The Game So Far",
       "description": "What next: carry on, jump to Define (when your notes cover it), or correct something",
@@ -80,6 +129,7 @@
       "id": "next-gdd",
       "kind": "script",
       "needs": ["next"],
+      "when": "{fresh}",
       "description": "Your corrections, into the GDD",
       "run": ["node", "{plugin}/scripts/ideate.mjs", "add", "next"],
       "writes": [".planning/GDD.md", ".planning/project-page.html"]
@@ -96,7 +146,12 @@
       "lines": ["ideate.feelings"],
       "opening": ["ideate.feelings"],
       "craft": "craft/ideate-feelings.md",
-      "results": ["chapters", "moments"]
+      "results": ["chapters", "moments"],
+      "collects": [
+        { "field": "feel.moment", "what": "A moment you'd love a player to have", "chapter": 1, "line": "ideate.feelings", "neededBy": [] },
+        { "field": "feel.tell", "what": "What a player would tell a friend", "chapter": 1, "line": "ideate.feelings", "neededBy": [] },
+        { "field": "feel.hopes", "what": "Your hopes and fears for it", "chapter": 7, "line": "ideate.feelings", "neededBy": [] }
+      ]
     },
     {
       "id": "feelings-gdd",
@@ -146,7 +201,13 @@
       "must": ["ideate.added"],
       "craft": "craft/ideate-rules.md",
       "results": ["chapters"],
-      "recap": ["sofar"]
+      "recap": ["sofar"],
+      "collects": [
+        { "field": "rules.gaps", "what": "What your rules leave open", "chapter": 8, "line": "ideate.rules.gap", "neededBy": [] },
+        { "field": "platform.where", "what": "Where people play it", "chapter": 5, "line": "ideate.pool.where", "neededBy": [] },
+        { "field": "players.who", "what": "Who plays on a screen", "chapter": 5, "line": "ideate.digital.who", "neededBy": [] },
+        { "field": "computer.does", "what": "What the computer does for the players", "chapter": 14, "line": "ideate.digital.computer", "neededBy": [] }
+      ]
     },
     {
       "id": "rules-gdd",
@@ -155,7 +216,7 @@
       "when": "{convert}",
       "description": "Your answers, into the GDD",
       "run": ["node", "{plugin}/scripts/ideate.mjs", "add", "rules-open"],
-      "writes": [".planning/GDD.md", ".planning/project-page.html"]
+      "writes": [".planning/GDD.md", ".planning/project-page.html", ".planning/research/fields.json"]
     },
     {
       "id": "sketches",
@@ -190,6 +251,7 @@
       "run": ["node", "{plugin}/scripts/ideate.mjs", "page"],
       "writes": [".planning/project-page.html", ".planning/research/ideate-page.md"],
       "show": ".planning/research/ideate-page.md",
+      "stageEnd": true,
       "done": { "type": "file-contains", "path": ".planning/research/ideate-page.md", "text": "**Your Project Page**" }
     },
     {

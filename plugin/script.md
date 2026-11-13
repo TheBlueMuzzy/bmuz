@@ -84,6 +84,10 @@ Here's your game as I understand it, from your idea[[ and the {files} you shared
 **Where it stands:** {stands}.[[ I couldn't read: {unread}.]]
 The full version is on your project page: {link}
 
+## ideate.rules.link · free · added
+**Your Rules**
+You said the game is finished and played, but I didn't find its rules in what you shared. Paste a link to them (a Google Doc, a Drive file, a GitHub file) or the file's path, and I'll read them before we go on. If they aren't written down, say "no rules" and we'll carry on.
+
 ## ideate.next · box
 ? What next?
 header: What next
@@ -1020,6 +1024,20 @@ header: Keep?
 
 ## any.type · say · added
 Type your answer below.
+
+## any.decided · say · added
+Noted: {what} is already decided ({answer}). I won't ask about it again.
+
+## any.decided.what · free · added
+What was decided? Tell me in a line and I'll write it down.
+
+## any.skipped · say · added
+**What I didn't ask about**
+{skipped#}
+To bring one back, say "reopen" and its number.
+
+## any.reopen · say · added
+Back to {title}, so you can answer it yourself.
 
 # Any time · when the creative steps in (F215)
 

@@ -52,7 +52,15 @@
       "must": ["define.rules", "define.rules.ok"],
       "opening": ["define.rules"],
       "craft": "craft/define-rules.md",
-      "results": ["chapters", "feelings", "feeling", "pillars", "oneliner", "loop"]
+      "results": ["chapters", "feelings", "feeling", "pillars", "oneliner", "loop"],
+      "collects": [
+        { "field": "feel.target", "what": "The feelings", "chapter": 1, "line": "define.rules.ok", "neededBy": ["design"] },
+        { "field": "feel.know", "what": "How we'll know a player feels it", "chapter": 1, "line": "define.rules.ok", "neededBy": ["design"] },
+        { "field": "pillars", "what": "The 3 pillars", "chapter": 2, "line": "define.rules.ok", "neededBy": ["design"] },
+        { "field": "pitch.oneliner", "what": "The one-liner", "chapter": 3, "line": "define.rules.ok", "neededBy": ["design", "store"] },
+        { "field": "pitch.lines", "what": "The pitch, in a few lines", "chapter": 3, "line": "define.rules.ok", "neededBy": ["store"] },
+        { "field": "loop", "what": "The core loop", "chapter": 4, "line": "define.rules.ok", "neededBy": ["design", "build"] }
+      ]
     },
     {
       "id": "decides-gdd",
@@ -76,6 +84,11 @@
       "opening": ["define.feelings"],
       "craft": "craft/define-feelings.md",
       "results": ["chapters", "feelings", "feeling"],
+      "collects": [
+        { "field": "feel.target", "what": "The feelings", "chapter": 1, "line": "define.feelings.right", "neededBy": ["design"] },
+        { "field": "feel.know", "what": "How we'll know a player feels it", "chapter": 1, "line": "define.feelings.know", "neededBy": ["design"] },
+        { "field": "feel.not", "what": "What it deliberately won't have", "chapter": 1, "line": "define.feelings.not", "neededBy": [] }
+      ],
       "when": "{fresh}"
     },
     {
@@ -100,6 +113,9 @@
       "opening": ["define.pillars"],
       "craft": "craft/define-pillars.md",
       "results": ["chapters", "pillars"],
+      "collects": [
+        { "field": "pillars", "what": "The 3 pillars", "chapter": 2, "line": "define.pillars.take", "neededBy": ["design"] }
+      ],
       "when": "{fresh}"
     },
     {
@@ -159,6 +175,10 @@
       "must": ["define.pitch.take", "define.pitch.breath"],
       "craft": "craft/define-pitch.md",
       "results": ["chapters", "oneliner"],
+      "collects": [
+        { "field": "pitch.oneliner", "what": "The one-liner", "chapter": 3, "line": "define.pitch.breath", "neededBy": ["design", "store"] },
+        { "field": "pitch.lines", "what": "The pitch, in a few lines", "chapter": 3, "line": "define.pitch.take", "neededBy": ["store"] }
+      ],
       "recap": ["research"],
       "when": "{fresh}"
     },
@@ -184,6 +204,9 @@
       "opening": ["define.loop"],
       "craft": "craft/define-loop.md",
       "results": ["chapters", "loop"],
+      "collects": [
+        { "field": "loop", "what": "The core loop", "chapter": 4, "line": "define.loop.ok", "neededBy": ["design", "build"] }
+      ],
       "when": "{fresh}"
     },
     {
@@ -208,6 +231,13 @@
       "opening": ["define.platform"],
       "craft": "craft/define-platform.md",
       "results": ["chapters", "platform"],
+      "collects": [
+        { "field": "platform.where", "what": "Where the player is, and what they hold", "chapter": 5, "line": "define.platform.where", "neededBy": ["design", "build"] },
+        { "field": "platform.first", "what": "Which one platform first", "chapter": 5, "line": "define.platform.first", "neededBy": ["build", "store"] },
+        { "field": "platform.someday", "what": "Which platforms are someday", "chapter": 5, "line": "define.platform.someday", "neededBy": ["store"] },
+        { "field": "players.who", "what": "Who else is playing", "chapter": 5, "line": "define.platform.who", "neededBy": ["design", "build"] },
+        { "field": "computer.ai", "what": "Whether the computer must play it", "chapter": 5, "line": "define.platform.ai", "neededBy": ["design"] }
+      ],
       "when": "{fresh}"
     },
     {
@@ -232,7 +262,14 @@
       "must": ["define.platform.first"],
       "opening": ["define.platform"],
       "craft": "craft/define-platform-rules.md",
-      "results": ["chapters", "platform"]
+      "results": ["chapters", "platform"],
+      "collects": [
+        { "field": "platform.where", "what": "Where the player is, and what they hold", "chapter": 5, "line": "define.platform.where", "neededBy": ["design", "build"] },
+        { "field": "platform.first", "what": "Which one platform first", "chapter": 5, "line": "define.platform.first", "neededBy": ["build", "store"] },
+        { "field": "platform.someday", "what": "Which platforms are someday", "chapter": 5, "line": "define.platform.someday", "neededBy": ["store"] },
+        { "field": "players.who", "what": "Who else is playing", "chapter": 5, "line": "define.platform.who", "neededBy": ["design", "build"] },
+        { "field": "computer.ai", "what": "Whether the computer must play it", "chapter": 5, "line": "define.platform.ai", "neededBy": ["design"] }
+      ]
     },
     {
       "id": "platform-rules-gdd",
@@ -305,7 +342,11 @@
       "must": ["define.scope.smallest"],
       "opening": ["define.scope"],
       "craft": "craft/define-scope.md",
-      "results": ["chapters", "musts"]
+      "results": ["chapters", "musts"],
+      "collects": [
+        { "field": "scope.smallest", "what": "The smallest version that still gives the feeling", "chapter": 6, "line": "define.scope.smallest", "neededBy": ["design"] },
+        { "field": "scope.musts", "what": "Must, should, could or won't for each idea", "chapter": 6, "line": "define.scope.idea", "neededBy": ["design", "build"] }
+      ]
     },
     {
       "id": "scope-gdd",
@@ -327,7 +368,10 @@
       "must": ["define.scope.slice", "define.scope.slice.ok", "define.scope.report"],
       "opening": ["define.scope.chart"],
       "craft": "craft/define-slice.md",
-      "results": ["chapters", "slice"]
+      "results": ["chapters", "slice"],
+      "collects": [
+        { "field": "scope.slice", "what": "The vertical slice", "chapter": 6, "line": "define.scope.slice.ok", "neededBy": ["design", "build"] }
+      ]
     },
     {
       "id": "slice-gdd",
@@ -368,6 +412,7 @@
       "run": ["node", "{plugin}/scripts/define.mjs", "lock-show"],
       "writes": [".planning/research/define-lock.md", ".planning/project-page.html"],
       "show": ".planning/research/define-lock.md",
+      "stageEnd": true,
       "done": { "type": "file-contains", "path": ".planning/research/define-lock.md", "text": "**Concept Lock**" }
     },
     {

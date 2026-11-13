@@ -10,6 +10,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as E from '../hooks/engine.js'
 import * as G from './gdd.mjs'
+import * as F from './fields.mjs'
 
 export const LOCK_MD = '.planning/research/define-lock.md'
 const here = dirname(fileURLToPath(import.meta.url))
@@ -69,8 +70,10 @@ export function lockShow(project, state, script = loadScript()) {
   }
   const out = E.renderLine(script, 'define.lock', slots)
   if (out.error) throw new Error(out.error)
+  // (F234 rule 4: what Define didn't ask, each reopenable with one word, before the lock)
+  const skipped = F.skipList(state, script)
   mkdirSync(dirname(join(project, LOCK_MD)), { recursive: true })
-  writeFileSync(join(project, LOCK_MD), out.text + '\n')
+  writeFileSync(join(project, LOCK_MD), out.text + (skipped ? `\n\n${skipped}` : '') + '\n')
   G.writePage(project)
   return { text: out.text, slots }
 }
