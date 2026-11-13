@@ -1,6 +1,7 @@
 Craft note (define, step "platform" — the script's 2.5 Platform & Play: one platform first: Tim Ryan; game course templates · decide multiplayer early, since it touches everything: Unity's netcode guidance).
 
 Read .planning/GDD.md (chapter 5) first.
+(F234) The engine's note "What the design document already holds" comes first: a question it says is already there is left out of its call (it goes into the chapter as it stands); one it says to confirm is asked as "any.keep" in its place; the rest as below.
 1. Open with mcp__bmuz__say {"line": "define.platform"}, then in a separate call the two boxes together: {"line": ["define.platform.where", "define.platform.first"]}. Ask both in one AskUserQuestion call.
 2. Say "define.platform.someday" (free).
 3. Then the boxes "define.platform.who" and "define.platform.ai" together in one call (leave out "define.platform.ai" when it's solo and nothing in the GDD mentions an opponent).

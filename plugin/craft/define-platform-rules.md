@@ -1,6 +1,7 @@
 Craft note (define, step "platform-rules" — the script's 2.5 Platform & Play for a finished, played game (F233 — Finished games come in as fixed): Ideate's "What Your Rules Leave Open" already asked where it's played and who plays on a screen, so their answers show first, one tap to keep; never ask a box their words already answer).
 
 Read .planning/GDD.md (chapters 5 and 11) first: their answers from Ideate are there, in their words.
+(F234) The engine's note "What the design document already holds" comes first: a question it says is already there is not asked at all, not even as a Keep (it goes into the chapter as it stands); one it says to confirm is the Keep below; one it says is missing is asked.
 1. Open with mcp__bmuz__say {"line": "define.platform"}.
 2. Where they're holding it: if chapter 5 has their answer, say "any.keep" with {"question": "Where is the player, and what are they holding?", "answer": "<their words>"} INSTEAD of the box "define.platform.where" (never both); otherwise the box. In the same call, the box "define.platform.first" (one platform first is always asked: it isn't in their rules). Ask them in one AskUserQuestion call.
 3. "Someday": if their words already name later platforms ("phone might come later"), say "any.keep" with {"question": "Which ones are \"someday\"?", "answer": "<their words>"}; otherwise "define.platform.someday" (free).

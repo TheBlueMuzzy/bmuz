@@ -441,6 +441,9 @@ const scenarios = {
     scriptChecks(dir, out, 'define', js, ['define.welcome', 'define.feelings', 'define.feelings.own', 'define.feelings.match', 'define.feelings.right', 'define.feelings.know', 'define.feelings.not', 'define.pillars', 'define.pillars.take', 'define.pillars.test', 'define.pitch', 'define.pitch.research', 'define.pitch.take', 'define.pitch.mine', 'define.pitch.how', 'define.pitch.breath', 'define.loop', 'define.loop.here', 'define.loop.ok', 'define.platform', 'define.platform.where', 'define.platform.first', 'define.platform.someday', 'define.platform.who', 'define.clash', 'define.scope', 'define.scope.smallest', 'define.scope.idea', 'define.scope.chart', 'define.scope.slice', 'define.scope.slice.ok', 'define.scope.report'])
     const lock = read('.planning/research/define-lock.md') || ''
     check('F232 (define): the concept lock page: the script\'s words, the ✓ lines filled, on the project page', /^\*\*Concept Lock\*\*\nHere's the concept, one page, on your project page now: file:\/\/\//.test(lock) && (lock.match(/^✓ /gm) || []).length === 6 && /Locking means Design builds on this page\./.test(lock), lock.slice(0, 700))
+    // F234: on the new-idea path every Define step that names what it collects asks it all
+    const planned = js.filter(j => ['ask', 'confirm', 'skip'].includes(j.ev))
+    check('F234 (define): a new idea gets every question: each step\'s plan is "ask" (feelings, pillars, pitch, loop, platform, scope, slice), nothing skipped', JSON.stringify(planned.map(j => `${j.ev}:${j.step}`)) === JSON.stringify(['feelings', 'pillars', 'pitch', 'loop', 'platform', 'scope', 'slice'].map(s => `ask:${s}`)) && !(read('.planning/research/define-lock.md') || '').includes("What I didn't ask about"), planned.map(j => `${j.ev}:${j.step}`).join(' '))
     check('F232 (define): the clash check ran as separate reviewers and wrote its report', js.some(j => j.ev === 'flow.launched' && j.workflow === 'bmuz:clash-flow') && /## Clashes/.test(read('.planning/research/define-clash.md') || ''), (read('.planning/research/define-clash.md') || '').slice(0, 500))
   },
 
@@ -496,6 +499,8 @@ const scenarios = {
     check('F232 (ideate): the sketch list is in the GDD (S01…)', /\n- S01 .+ — answers: /.test(gdd), (gdd.split('## Sketches')[1] || '').slice(0, 300))
     check('F232 (ideate): the project page was built and opened (a test run says it would)', existsSync(join(dir, '.planning/project-page.html')) && js.some(j => j.ev === 'script.ran' && j.step === 'page' && /would open file:\/\//.test(j.stdout || '')), JSON.stringify(js.find(j => j.ev === 'script.ran' && j.step === 'page')))
     check('F232 (ideate): with no answer for "Ready for Define?" an auto run stays in Ideate', JSON.parse(read('bmuz.json') || '{}').pipeline === 'ideate', read('bmuz.json'))
+    // F234: a new idea's document holds only ideas and open questions, so every step asks everything
+    check('F234 (ideate): a new idea gets every question: Feelings & Hopes planned "ask", nothing skipped or confirmed, no rules asked for', js.some(j => j.ev === 'ask' && j.step === 'feelings') && !js.some(j => j.ev === 'skip' || j.ev === 'confirm' || (j.ev === 'step.skip' && j.by === 'fields')) && !js.some(j => j.ev === 'step.start' && j.step === 'rules-ask') && !existsSync(join(dir, '.planning/research/fields.json')), trailOf(js.filter(j => ['ask', 'skip', 'confirm'].includes(j.ev))))
   },
 
   // F232: "I'm not sure yet" → the spark questions; a rulebook file and an art folder shared → read, the art listed by
@@ -593,6 +598,64 @@ const scenarios = {
     check('F233: the conversion path\'s lines were all said', must.every(id => ids.has(id)), `not said: ${must.filter(id => !ids.has(id)).join(', ')}`)
   },
 
+
+  // F234 — Steps ask only what's still open: a finished game (Moonmarket) in Define, at Platform & Play, its rules
+  // already saying where it's played and who plays (the GDD's chapter 5 and .planning/research/fields.json, as Ideate's
+  // reading records them). Proves, in one run: what the rules say is not asked (and is listed at the stage's end, to
+  // reopen); what they leave open that a later stage needs is still asked (the first platform); "already decided" on
+  // that one question settles it alone (the questions after it are still asked); the lock gate waits (auto run).
+  async 'ideate-decided'() {
+    const dir = scratch('bmuz-ideate-decided')
+    const G = await import('../plugin/scripts/gdd.mjs')
+    const WHERE = 'Fixed: "Played on a computer, with a mouse." (from rules.md)'
+    const WHO = 'Fixed: "Two players online, taking turns." (from rules.md)'
+    const RULES = ['Each player puts their cart on any stall and draws 3 goods cards.', 'Move your cart one or two stalls around the ring.', 'When it reaches space 8 the market closes and the game ends.', 'The most points wins. A tie is a shared win.'].map(r => `Fixed: "${r}" (from rules.md)`)
+    let doc = G.newGdd('Moonmarket')
+    doc = G.writeChapter(doc, 8, RULES, 'loose', {}).text
+    doc = G.writeChapter(doc, 5, [WHERE, WHO], 'loose', {}).text
+    mkdirSync(join(dir, '.planning', 'research'), { recursive: true })
+    writeFileSync(join(dir, '.planning/GDD.md'), doc)
+    writeFileSync(join(dir, 'rules.md'), readFileSync(join(here, 'fixtures', 'finished-game', 'rules.md'), 'utf8'))
+    writeFileSync(join(dir, '.planning/research/ideate-so-far.json'), JSON.stringify({ path: 'convert' }))
+    writeFileSync(join(dir, '.planning/research/fields.json'), JSON.stringify({ 'platform.where': [{ chapter: 5, line: WHERE, kind: 'fixed', step: 'read' }], 'players.who': [{ chapter: 5, line: WHO, kind: 'fixed', step: 'read' }] }))
+    const define = JSON.parse(readFileSync(join(plugin, 'pipelines', 'define.json'), 'utf8'))
+    const given = { convert: 'yes', fresh: 'no', feelings: ['the tension of a close market'], feeling: 'tension', pillars: [{ name: 'Every stall matters', settles: 'what to cut' }], oneliner: 'Race your cart round the moonlit market before it closes.', loop: 'Move, buy, sell, score.' }
+    const entered = E.enterAt(define, E.freshState('define'), 'platform-rules', given).state
+    mkdirSync(join(dir, '.bmuz'), { recursive: true })
+    writeFileSync(join(dir, '.bmuz/state.json'), JSON.stringify(entered, null, 2))
+    const answers = {
+      'platform-rules': { 'Which one platform first?': 'Already decided: the web.', 'Which ones are "someday"?': 'Phone app stores, someday.', 'Must the computer be able to play it?': 'Yes, and it has to be good' },
+      scope: {
+        'The smallest version that still gives the feeling': 'Two players against each other online, the base game only.',
+        'Each idea: must, should, could or won\'t?': 'Online, taking turns: Must. A computer opponent: Should. A tutorial: Could. Expansions: Won\'t.',
+        'A reason for each won\'t': 'Expansions: the base game first.',
+      },
+      slice: { 'Anything in the wrong box?': 'No, it looks right.', 'Does that slice feel like the game?': 'Yes' },
+    }
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'define', testAnswers: answers }, null, 2))
+    const out = runIn(dir, 'bmuz go', `${TOOLS} ToolSearch mcp__bmuz__say mcp__bmuz__decided`, true)
+    writeFileSync(join(dir, 'run-output.txt'), out)
+    const read = f => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : '')
+    const js = journalOf(dir)
+    const plan = js.find(j => j.ev === 'confirm' && j.step === 'platform-rules')
+    const st = plan ? Object.fromEntries(plan.fields.map(x => [x.field, x.status])) : {}
+    check('F234: before Platform & Play the engine read the document: where and who are there (the rules say), the first platform, someday and the computer missing', JSON.stringify(st) === JSON.stringify({ 'platform.where': 'there', 'platform.first': 'missing', 'platform.someday': 'missing', 'players.who': 'there', 'computer.ai': 'missing' }), JSON.stringify(plan || trailOf(js.slice(0, 12))))
+    const plat = js.filter(j => j.ev === 'line' && j.step === 'platform-rules')
+    const askedThere = plat.filter(j => ['define.platform.where', 'define.platform.who'].includes(j.line) || (j.line === 'any.keep' && /^(Where is the player|Who else is playing)/.test(j.box?.question || '')))
+    check('F234 rule 2: what the rules already say was not asked (no where / who box, no Keep for them)', plat.length > 0 && askedThere.length === 0, askedThere.map(j => j.line).join(', ') || plat.map(j => j.line).join(', '))
+    check('F234 rule 3: what the rules leave open and a later stage needs was still asked (Which one platform first?)', plat.some(j => j.line === 'define.platform.first'), plat.map(j => j.line).join(', '))
+    const dec = js.filter(j => j.ev === 'decided')
+    const decAt = js.indexOf(dec[0])
+    const after = js.slice(decAt + 1).filter(j => j.ev === 'line' && j.step === 'platform-rules' && ['define.platform.someday', 'define.platform.ai'].includes(j.line))
+    const fields = (() => { try { return JSON.parse(read('.planning/research/fields.json')) } catch (e) { return {} } })()
+    check('F234 rule 1: "already decided" settled exactly that one question (platform.first, written into chapter 5), and the next questions were still asked', dec.length === 1 && JSON.stringify(dec[0].fields) === '["platform.first"]' && /you said it's already decided/.test((G.readGdd(read('.planning/GDD.md'))[5] || {}).text || '') && (fields['platform.first'] || []).some(r => r.kind === 'decided') && after.length >= 1 && js.some(j => j.ev === 'line' && j.line === 'any.decided'), `${JSON.stringify(dec)} | after: ${after.map(j => j.line).join(', ')}`)
+    const lock = read('.planning/research/define-lock.md')
+    check('F234 rule 4: the stage\'s end lists what wasn\'t asked, with why, and how to bring one back', /\*\*What I didn't ask about\*\*\n1\. Where the player is, and what they hold \(Platform & Play\): your rules say "Played on a computer, with a mouse\." \(from rules\.md\)\n2\. Who else is playing \(Platform & Play\): your rules say/.test(lock) && /To bring one back, say "reopen" and its number\./.test(lock), lock.slice(-600))
+    check('F234: Define went on to the lock gate (an auto run never locks)', js.some(j => j.ev === 'gate.pending' && j.step === 'lock') && !js.some(j => j.ev === 'step.done' && j.step === 'locked'), trailOf(js.slice(-6)))
+    const said = js.filter(j => j.ev === 'line' && j.kind !== 'box').filter(kept(js))
+    const missing = said.filter(j => !plain(out).includes(plain(j.text)))
+    check('F234: every fixed line the engine handed out is in Claude\'s words word for word', said.length > 0 && missing.length === 0, missing.map(j => `${j.line}: ${plain(j.text).slice(0, 120)}`).join(' | '))
+  },
 
   // F215: the bug pipeline on a tiny game with a planted bug (tests/fixtures/bug-garden: the final score skips the first
   // row; the full-row bonus copies the same mistake), its Design waiting at the Blueprint Review. Run 1, the creative
