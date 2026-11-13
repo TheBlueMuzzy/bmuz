@@ -17,7 +17,7 @@ if (service !== 'drive' || resource !== 'files' || !['get', 'list', 'export'].in
 process.stderr.write('Using keyring backend: keyring\n')
 if (method === 'list') {
   const parent = (params.q.match(/^'([^']+)' in parents/) || [])[1]
-  const files = Object.entries(world.files).filter(([, f]) => f.parent === parent && visible(f)).map(([id, f]) => ({ id, name: f.name, mimeType: f.mimeType, size: f.size }))
+  const files = Object.entries(world.files).filter(([, f]) => f.parent === parent && visible(f)).map(([id, f]) => ({ id, name: f.name, mimeType: f.mimeType, size: f.size, modifiedTime: f.modifiedTime }))
   process.stdout.write(JSON.stringify({ files }))
   process.exit(0)
 }

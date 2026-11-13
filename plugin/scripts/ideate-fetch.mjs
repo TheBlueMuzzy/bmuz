@@ -109,19 +109,34 @@ export function readTree(full, name, c) {
   let st
   try { st = statSync(full) } catch (e) { c.fail(name, "couldn't be opened"); return }
   if (!st.isDirectory()) return readOneFile(full, name, c)
-  let seen = 0
+  // (F234 task 6, from F233 task 10: a folder of 200+ old art files never reached its rulebook. The whole tree is listed
+  // first, then documents are read before art, newest first; the cap counts files in that order.)
+  const files = []
   const walk = (dirAbs, dirRel, depth) => {
     let entries
     try { entries = readdirSync(dirAbs, { withFileTypes: true }) } catch (e) { c.fail(dirRel, "couldn't be opened"); return }
     for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-      if (seen >= MAX_FILES) { c.fail(`${dirRel}/…`, `more than ${MAX_FILES} files: the rest weren't looked at`); return }
+      if (files.length >= MAX_LISTED) return
       if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name) && !SECRET_DIRS.has(e.name) && depth < 4) walk(join(dirAbs, e.name), `${dirRel}/${e.name}`, depth + 1); continue }
-      if (!e.isFile()) continue
-      seen++
-      readOneFile(join(dirAbs, e.name), `${dirRel}/${e.name}`, c)
+      if (!e.isFile() || /\.meta$/i.test(e.name)) continue
+      let time = 0
+      try { time = statSync(join(dirAbs, e.name)).mtimeMs } catch (err) { time = 0 }
+      files.push({ full: join(dirAbs, e.name), name: `${dirRel}/${e.name}`, base: e.name, time })
     }
   }
   walk(full, name, 0)
+  const ordered = docsFirst(files, f => isDocName(f.base))
+  for (const f of ordered.slice(0, MAX_FILES)) readOneFile(f.full, f.name, c)
+  if (ordered.length > MAX_FILES || files.length >= MAX_LISTED) c.fail(`${name}/…`, `more than ${MAX_FILES} files: the rest weren't looked at`)
+}
+
+// (F234 task 6) Documents (text, Docs, PDFs, word-processor files) before everything else, each group newest first
+// (then by name). isDoc tells a document; each item has "time" (ms, 0 when unknown) and "name".
+const MAX_LISTED = 5000 // files listed in one folder tree before the order is worked out
+export const isDocName = name => isText(name) || /\.(pdf|docx?|odt|rtf|pages)$/i.test(name)
+export function docsFirst(items, isDoc) {
+  const rank = x => (isDoc(x) ? 0 : 1)
+  return items.slice().sort((a, b) => rank(a) - rank(b) || (b.time || 0) - (a.time || 0) || String(a.name).localeCompare(String(b.name)))
 }
 
 function readOneFile(full, name, c) {
@@ -153,6 +168,23 @@ function main() {
   }
   const intake = json('.planning/research/intake.json') || {}
   const c = collector()
+  // (F234, from F233 task 11: "more <step>" — the rules asked for once, read and added to what was shared before)
+  const [mode, from] = process.argv.slice(2)
+  if (mode === 'more') {
+    const prev = json(SHARED_JSON) || {}
+    for (const s of listOf(prev.sources)) { c.sources.push(s); c.used += String((s && s.text) || '').length }
+    c.listed.push(...listOf(prev.listed))
+    c.unread.push(...listOf(prev.unread))
+    const r = by[from] || {}
+    const seen = new Set()
+    readPointers(project, listOf(r.files), c, { files: true, seen })
+    readPointers(project, listOf(r.links), c, { seen })
+    const date = new Date().toLocaleDateString('en-CA')
+    writeFileSync(join(project, SHARED_JSON), JSON.stringify({ version: 1, date, sources: c.sources, listed: c.listed, unread: c.unread }, null, 2) + '\n')
+    writeFileSync(join(project, SHARED_MD), sharedMd({ date, ...c }))
+    console.log(`✔ ${SHARED_MD}: ${c.sources.length - listOf(prev.sources).length} more read (${c.sources.length} in all)`)
+    return
+  }
   // 1. Their own words: the one-breath answer and anything pasted (here and at the start).
   listOf(show.breath).forEach((x, i, all) => c.add(all.length > 1 ? `your one-breath answer ${i + 1}` : 'your one-breath answer', typeof x === 'string' ? x : x && x.text))
   // (a "pasted" item that is only links and paths is a list of things to read, not text)
@@ -272,7 +304,7 @@ export function gwsRunner(cmd = gwsCommand(), accounts = gwsAccounts()) {
       const files = []
       let pageToken
       for (let page = 0; page < 10; page++) {
-        const params = { q: `'${folderId}' in parents and trashed = false`, fields: 'files(id,name,mimeType,size),nextPageToken', pageSize: 200, supportsAllDrives: true, includeItemsFromAllDrives: true, ...(pageToken ? { pageToken } : {}) }
+        const params = { q: `'${folderId}' in parents and trashed = false`, fields: 'files(id,name,mimeType,size,modifiedTime),nextPageToken', pageSize: 200, supportsAllDrives: true, includeItemsFromAllDrives: true, ...(pageToken ? { pageToken } : {}) }
         const r = run(['drive', 'files', 'list', '--params', JSON.stringify(params)])
         if (!r.ok) return { ok: false, why: r.why, files }
         files.push(...((r.json && r.json.files) || []))
@@ -328,19 +360,27 @@ export function readLink(link, c, gws = null, gh = null) {
     else if (t.binary) c.list(name, kindOf(file.name), where)
     else c.fail(name, `Google Drive said no (${t.why})`)
   }
+  // (F234 task 6, from F233 task 10: the rerun's Drive folder stopped at 200 files, most of them old art in Archive/,
+  // before its rulebook. The tree is listed first; then Docs, PDFs and text are read before art, newest first.)
+  const files = []
   const walk = (folderId, path, depth) => {
     const l = g.list(folderId)
     if (!l.ok) { c.fail(`Drive · ${path}`, `couldn't list the folder (${l.why})`); return }
     for (const f of l.files.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)))) {
-      if (seen >= MAX_FILES) { c.fail(`Drive · ${path}/…`, `more than ${MAX_FILES} files: the rest weren't looked at`); return }
+      if (files.length >= MAX_LISTED) return
       if (!f || !ID_RE.test(String(f.id || ''))) continue // (an id from Drive is re-checked before it goes into a command)
       if (f.mimeType === FOLDER) { if (depth < 3) walk(f.id, `${path}/${f.name}`, depth + 1); continue }
-      seen++
-      one(f, `${path}/${f.name}`)
+      if (/\.meta$/i.test(String(f.name))) continue
+      files.push({ file: f, name: `${path}/${f.name}`, time: Date.parse(f.modifiedTime || '') || 0 })
     }
   }
-  if (m.file.mimeType === FOLDER) walk(id, m.file.name, 0)
-  else one(m.file, m.file.name)
+  if (m.file.mimeType === FOLDER) {
+    walk(id, m.file.name, 0)
+    const isDoc = x => !!GOOGLE_TYPES[x.file.mimeType] || /^text\//.test(x.file.mimeType || '') || x.file.mimeType === 'application/pdf' || isDocName(String(x.file.name))
+    const ordered = docsFirst(files, isDoc)
+    for (const x of ordered.slice(0, MAX_FILES)) { seen++; one(x.file, x.name) }
+    if (ordered.length > MAX_FILES || files.length >= MAX_LISTED) c.fail(`Drive · ${m.file.name}/…`, `more than ${MAX_FILES} files: the rest weren't looked at`)
+  } else one(m.file, m.file.name)
 }
 
 // ---- GitHub (live look round 5): through the gh CLI, read-only ----

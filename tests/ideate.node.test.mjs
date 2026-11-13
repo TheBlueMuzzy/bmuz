@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -270,7 +270,12 @@ test('live look round 5: GitHub and a folder outside the project, end to end (a 
     writeFileSync(join(outside, 'lamp notes.md'), 'The lamp must never go out.')
     writeFileSync(join(outside, '.env'), 'TOKEN=secret')
     writeFileSync(join(outside, 'cover.png'), Buffer.from([0, 1, 2]))
-    for (let i = 0; i < 210; i++) writeFileSync(join(outside, 'many', `n${String(i).padStart(3, '0')}.txt`), `note ${i}`)
+    // (F234 task 6: 210 old pictures in a folder of their own — documents are read first, newest first, so the notes are
+    // still read; the cap counts the pictures after them)
+    for (let i = 0; i < 210; i++) {
+      writeFileSync(join(outside, 'many', `n${String(i).padStart(3, '0')}.png`), Buffer.from([0, 1, 2]))
+      utimesSync(join(outside, 'many', `n${String(i).padStart(3, '0')}.png`), new Date('2020-01-01'), new Date('2020-01-01'))
+    }
     const before = readdirSync(outside).sort()
     const data = join(dir, 'gh-world.json')
     const log = join(dir, 'gh-calls.jsonl')
@@ -294,7 +299,7 @@ test('live look round 5: GitHub and a folder outside the project, end to end (a 
     assert.ok(j.listed.some(l => l.name === `${name}/.env` && /password or key/.test(l.kind)))
     assert.ok(j.listed.some(l => l.name === `${name}/cover.png` && l.kind === 'an image'))
     // the cap: 200 files looked at in one folder, the rest said
-    assert.ok(j.unread.some(u => u.what === `${name}/many/…` && /more than 200 files/.test(u.why)))
+    assert.ok(j.unread.some(u => u.what === `${name}/…` && /more than 200 files/.test(u.why)))
     assert.ok(j.unread.some(u => u.what === 'github.com/TheBlueMuzzy/missing' && /^GitHub said no/.test(u.why)))
     assert.ok(j.unread.some(u => /nowhere\/x\.md$/.test(u.what.replace(/\\/g, '/')) && u.why === 'not found'))
     // read-only: only "repo clone … -- --depth 1" and "api -H Accept: raw"; the outside folder unchanged; temp copies gone

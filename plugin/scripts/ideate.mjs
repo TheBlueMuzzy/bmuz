@@ -140,8 +140,12 @@ export function plural(kind, n) {
   if (n === 1) return kind
   const pair = kind.match(/^(\w+) or (\w+)$/)
   if (pair) return `${pair[1]}s or ${pair[2]}s`
-  return NOUNS.test(kind) ? kind.replace(NOUNS, w => `${w}s`) : /s$/.test(kind) ? kind : `${kind}s`
+  // (F234 task 6, review fix from F233 task 9: "214 Unity bookkeepings", "2 Google files that has no text form" — a word
+  // with no plural gets "files", and the verb after "that" agrees)
+  const many = NOUNS.test(kind) ? kind.replace(NOUNS, w => `${w}s`) : MASS.test(kind) ? `${kind} files` : /s$/.test(kind) ? kind : `${kind}s`
+  return many.replace(/\bthat (has|is|was)\b/, (m, v) => `that ${{ has: 'have', is: 'are', was: 'were' }[v]}`)
 }
+const MASS = /\b(bookkeeping|art|text|data|code|music|audio|information)$/i
 export function unreadLine(shared) {
   const kinds = {}
   for (const l of listOf(shared && shared.listed)) {
