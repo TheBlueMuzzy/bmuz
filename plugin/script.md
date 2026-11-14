@@ -37,19 +37,28 @@ A few things to know:
 
 Let's start with your idea.
 
-## ideate.idea · free
-**Your Idea**
+## ideate.idea · box · added
+? **Your Idea**
 Tell me about your game in your own words: what it is, what you love about it, anything you remember. Half an idea is fine. If you're not sure yet, just say so.
+header: Your idea
+- Not sure yet — help me find a spark first
+- It's in my notes — read what I share next instead
 
-## ideate.spark · free
-No problem: lots of games start that way. Three quick questions to find a spark. Answer one, two or all three, in one message:
+## ideate.spark · box · added
+? No problem: lots of games start that way. Three quick questions to find a spark. Answer one, two or all three, in one message:
 1. What kind of game do you love playing lately, and why?
 2. A moment from a game, a film or your life that you'd love to turn into play?
 3. A theme, a mechanism or a feeling you keep coming back to?
+header: A spark
+- Surprise me — suggest a few sparks I can react to
+- Nothing yet — carry on, and we'll find it as we go
 
-## ideate.material · free
-**Your Material**
+## ideate.material · box · added
+? **Your Material**
 Share your links — paste them with Alt+V. I can read Google Drive folder and/or doc links, GitHub links, and even folder and file links from your computer. If you don't want to share any links, just say "never mind".
+header: Material
+- Never mind — no links to share, carry on
+- In this folder — read what I put in this project's folder
 
 ## ideate.reading · say
 Reading {what}…
@@ -86,9 +95,12 @@ Here's your game as I understand it, from your idea[[ and the {files} you shared
 **Where it stands:** {stands}.[[ I couldn't read: {unread}.]]
 The full version is on your project page: {link}
 
-## ideate.rules.link · free · added
-**Your Rules**
+## ideate.rules.link · box · added
+? **Your Rules**
 You said the game is finished and played, but I didn't find its rules in what you shared. Paste a link to them (a Google Doc, a Drive file, a GitHub file) or the file's path, and I'll read them before we go on. If they aren't written down, say "no rules" and we'll carry on.
+header: Your rules
+- No rules — they aren't written down, carry on
+- In this folder — read the rules I put in this project's folder
 
 ## ideate.next · box
 ? What next?
@@ -97,23 +109,32 @@ header: What next
 - [if jump] Jump to Define — {covers}
 - I need to correct something — next, tell me what I got wrong
 
-## ideate.correct · free
-What did I get wrong? Tell me in your next message.
+## ideate.correct · box · added
+? What did I get wrong? Tell me in your next message.
+header: Correct
+- Never mind, it's right — carry on in Ideate
+- Read it all again — you missed something in my material
 
-## ideate.feelings · free
-**Feelings & Hopes**
+## ideate.feelings · box · added
+? **Feelings & Hopes**
 Now, how playing it should feel. I'm only collecting here; Define is where you choose. Answer any of these in one message, and skip any you like:
 1. Describe a moment you'd love a player to have. Not a feature: a situation they find themselves in.[[ You mentioned "{quote}": is that the moment, or is there another?]]
 2. After a game, what would a player tell a friend about it?
 3. What do you hope this game becomes, and what would disappoint you?
+header: Feelings
+- Not sure yet — skip these, Define asks again
+- Show me your take — from what I've shared, for me to react to
 
 ## ideate.open · say
 **Open Ideas**
 A few questions about the parts of your idea that are still half-formed. I start with what's hardest to change later: in past games, how and where a game is played, and the shape of its rules, caused the most rework. "Not sure yet" is always a fine answer.
 
-## ideate.open.ask · free
-{questions#}
+## ideate.open.ask · box · added
+? {questions#}
 Answer in one message, in any order.
+header: Open ideas
+- Not sure yet — leave these open for now
+- Show me your take — ideas for each, for me to react to
 
 ## ideate.pool.mentioned · say
 You mentioned {thing}: what ideas do you have for it, even half-formed?
@@ -171,8 +192,11 @@ header: Sketches
 many: yes
 - [each sketches] {name} — answers: {question}
 
-## ideate.sketch.more · free
-Anything else you're unsure about, or torn between two ways of doing? Tell me and I'll add it, or say "that's all".
+## ideate.sketch.more · box · added
+? Anything else you're unsure about, or torn between two ways of doing? Tell me and I'll add it, or say "that's all".
+header: More?
+- That's all — the list is complete
+- You pick — add anything you think is risky
 
 ## ideate.sketch.added · say
 Added to your sketch list: {list}.
@@ -248,8 +272,11 @@ header: The moment
 many: yes
 - [each moments] "{.}"
 
-## define.feelings.own · free
-In your own words: what's the main feeling?[[ For example: {example}.]]
+## define.feelings.own · box · added
+? In your own words: what's the main feeling?[[ For example: {example}.]]
+header: Feeling
+- Show me your take — from what we gathered in Ideate
+- Not sure — help me with the eight kinds of fun
 
 ## define.feelings.match · say
 That sounds closest to **{fun}**: {meaning}. Game designers often name eight kinds of fun: the senses, make-believe, drama, challenge, being together, discovery, self-expression, and simply passing time.
@@ -260,14 +287,23 @@ header: Kind of fun
 - Yes, that's it
 - Closer to another one — next, I'll show the eight to pick from
 
-## define.feelings.eight · free · added
-Which of the eight is closest: the senses, make-believe, drama, challenge, being together, discovery, self-expression, or simply passing time?
+## define.feelings.eight · box · added
+? Which of the eight is closest: the senses, make-believe, drama, challenge, being together, discovery, self-expression, or simply passing time?
+header: Closest
+- Show me your take — the one or two closest, from what I said
+- None of them — it's something else
 
-## define.feelings.know · free
-How would we know a player feels it? What would you see them do or say? For example: "they ask for a rematch straight away".
+## define.feelings.know · box · added
+? How would we know a player feels it? What would you see them do or say? For example: "they ask for a rematch straight away".
+header: How we know
+- Show me your take — signs you'd see in a playtest
+- Not sure yet — we find out in playtests
 
-## define.feelings.not · free
-Last one: what would a game like this usually have that you deliberately don't want? Things that would be tempting to add, but aren't this game. "None I can think of" is fine.
+## define.feelings.not · box · added
+? Last one: what would a game like this usually have that you deliberately don't want? Things that would be tempting to add, but aren't this game. "None I can think of" is fine.
+header: Not this
+- None I can think of — nothing to leave out
+- Show me your take — what games like this usually have
 
 ## define.pillars · say
 **The 3 Pillars**
@@ -282,14 +318,24 @@ header: Pillars
 - Show me your take — built from your feelings and the game so far
 - I'll write my own — next, in your own words
 
-## define.pillars.own · free
-What are the three things {game} is really about? One to three words each, and a line on what each means here.[[ For example: {example}.]]
+## define.pillars.own · box · added
+? What are the three things {game} is really about? One to three words each, and a line on what each means here.[[ For example: {example}.]]
+header: Pillars
+- Show me your take — three pillars from what we gathered
+- Not sure yet — help me find them one at a time
 
-## define.pillars.test · free
-If we took away "{pillar}", would it still be {game}? And finish this: "When we argue about ___, this pillar says ___."
+## define.pillars.test · box · added
+? If we took away "{pillar}", would it still be {game}? And finish this: "When we argue about ___, this pillar says ___."
+header: Pillar test
+- It's needed — without it, it isn't {game}
+- It could go — it's still {game} without it
 
-## define.pillars.slogan · free
-"{pillar}" doesn't settle anything yet; it's more of a slogan. Want to sharpen it, or swap it for another?
+## define.pillars.slogan · box · added
+? "{pillar}" doesn't settle anything yet; it's more of a slogan. Want to sharpen it, or swap it for another?
+header: Slogan
+- Sharpen it — show me a sharper version
+- Swap it — show me other pillars
+- Keep it — it means enough to me
 
 ## define.pitch · say
 **The Pitch**
@@ -310,8 +356,11 @@ header: The pitch
 - Show me your take
 - I'll write it — next, in your own words
 
-## define.pitch.write · free
-Write it in 3–5 lines, as if the reader is the player: "You…". Then one line: who am I, what am I doing, and why is it cool?
+## define.pitch.write · box · added
+? Write it in 3–5 lines, as if the reader is the player: "You…". Then one line: who am I, what am I doing, and why is it cool?
+header: The pitch
+- Show me your take — a pitch from what we've decided
+- Help me start — give me the first line
 
 ## define.pitch.mine · say
 Here's my take:
@@ -324,30 +373,51 @@ header: The pitch
 - Keep it
 - Change something — next, tell me what
 
-## define.pitch.different · free
-What's the one thing that makes it different from the nearest game you'd compare it to?[[ For example: {example}.]]
+## define.pitch.different · box · added
+? What's the one thing that makes it different from the nearest game you'd compare it to?[[ For example: {example}.]]
+header: Different
+- Show me your take — what stands out from the research
+- Not sure yet — let's find it together
 
-## define.pitch.meets · free
-What exactly do you take from {x}, and what from {y}?
+## define.pitch.meets · box · added
+? What exactly do you take from {x}, and what from {y}?
+header: X meets Y
+- Show me your take — what I'd take from each
+- Drop the comparison — it doesn't fit
 
-## define.pitch.breath · free
-Last check: read the one-liner out loud. Can you say it in one breath? If not, what would you cut?
+## define.pitch.breath · box · added
+? Last check: read the one-liner out loud. Can you say it in one breath? If not, what would you cut?
+header: One breath
+- Yes, one breath — keep it as it is
+- Too long — show me a shorter version
 
-## define.loop · free
-**The Core Loop**
+## define.loop · box · added
+? **The Core Loop**
 The core loop is what players do over and over: the heartbeat of the game. We'll say it in plain words first. Later it becomes the "Flow" section of your rulebook.
 
 1. What does the player do most often? One verb.
 2. Fill in: "You ___, then ___, so you can ___."
+header: Core loop
+- Show me your take — the loop from what we've decided
+- Not sure yet — help me with the verb first
 
-## define.loop.steps · free
-For each step: what's in your way, what do you do about it, and what do you get? And how does that set up the next round?[[ For example: {example}.]]
+## define.loop.steps · box · added
+? For each step: what's in your way, what do you do about it, and what do you get? And how does that set up the next round?[[ For example: {example}.]]
+header: Loop steps
+- Show me your take — each step from the rules so far
+- Not sure yet — Design works it out
 
-## define.loop.time · free
-What happens in 3 seconds, in 30 seconds, and in 3 minutes? And what's different the next time round, so it doesn't feel the same?[[ For example: {example}.]]
+## define.loop.time · box · added
+? What happens in 3 seconds, in 30 seconds, and in 3 minutes? And what's different the next time round, so it doesn't feel the same?[[ For example: {example}.]]
+header: Over time
+- Show me your take — from the loop so far
+- Not sure yet — Design works it out
 
-## define.loop.verbs · free
-For {verb}: is it fun on its own? What does a good player do with it that a new player doesn't?[[ For example: {example}.]]
+## define.loop.verbs · box · added
+? For {verb}: is it fun on its own? What does a good player do with it that a new player doesn't?[[ For example: {example}.]]
+header: The verb
+- Show me your take — what a good player does with it
+- Not on its own — it's fun with the rest
 
 ## define.loop.here · say
 Here's your core loop:
@@ -440,9 +510,12 @@ Time to see the size of what we're building, in three quick parts:
 
 This is a first pass. The rulebook will add a lot, and we'll redo it in Design.
 
-## define.scope.first · free · added
-**The first piece to play**
+## define.scope.first · box · added
+? **The first piece to play**
 Before the whole game, we build one small piece you can play and share: a vertical slice, with a bit of everything that matters, at close to final quality. What's the smallest version that still gives "{feeling}"? For example: {example}.
+header: First piece
+- Show me your take — the slice I'd build first
+- Not sure — show me two or three to pick from
 
 ## define.scope.need · box · added
 ? {idea}: how much does the game need it?
@@ -463,12 +536,18 @@ header: Scope
 - Could
 - Won't
 
-## define.scope.wont · free
-For each "won't", a quick reason, so we remember why: {wonts}
+## define.scope.wont · box · added
+? For each "won't", a quick reason, so we remember why: {wonts}
+header: Won't: why
+- Show me your take — a reason for each, from what I said
+- No reason needed — just keep them as won'ts
 
-## define.scope.someday · free · added
-**Platforms later**
+## define.scope.someday · box · added
+? **Platforms later**
 It starts on {first}. Now that the features are sorted: anywhere else you'd like it someday, once the musts are built? For example: {example}. Or say "none".
+header: Later
+- None — only {first} for now
+- Show me your take — where it could go next
 
 ## define.scope.chart · free
 Here's the effort vs impact chart, on your project page now. Effort is my estimate from research; impact is yours to correct. Anything in the wrong box?
@@ -476,11 +555,14 @@ Here's the effort vs impact chart, on your project page now. Effort is my estima
 ## define.scope.slice · say
 Here's the vertical slice I'd build first: {slice}.
 
-## define.scope.chart.here · free · added
-**Effort vs impact**
+## define.scope.chart.here · box · added
+? **Effort vs impact**
 {chart}
 
 It's drawn on your project page too, as a real chart: {link}. Effort is my estimate from research; impact is yours to correct. Anything in the wrong box?
+header: The chart
+- All right — every idea is in the right box
+- Move some — next, tell me which
 
 ## define.scope.slice.list · say · added
 Here's the vertical slice I'd build first:
@@ -609,9 +691,12 @@ header: Research
 - Yes, research first (Recommended) — about 5 minutes, sources on your project page
 - No, start now
 
-## design.rulebook.flow · free
-We start with the heart: the Flow. Your core loop was: **{loop}**.
+## design.rulebook.flow · box · added
+? We start with the heart: the Flow. Your core loop was: **{loop}**.
 Walk me through one turn, step by step, as if you were teaching a friend at the table.
+header: The Flow
+- Show me your take — a turn, step by step, from the loop
+- From my rules — read the turn from the rules I shared
 
 ## design.rulebook.flow.here · say
 Here's the Flow as I've written it:
@@ -624,26 +709,47 @@ header: The Flow
 - Yes
 - Change something — next, tell me what
 
-## design.rulebook.win · free
-How do you win, and how does a game end?[[ For example: {example}.]]
+## design.rulebook.win · box · added
+? How do you win, and how does a game end?[[ For example: {example}.]]
+header: Winning
+- Show me your take — from the rules so far
+- Not decided yet — leave it open for a sketch
 
-## design.rulebook.setup · free
-How is the game set up, before the first turn?[[ For example: {example}.]]
+## design.rulebook.setup · box · added
+? How is the game set up, before the first turn?[[ For example: {example}.]]
+header: Setup
+- Show me your take — from the rules so far
+- Not decided yet — leave it open for a sketch
 
-## design.rulebook.pieces · free
-What are all the pieces? Here's what I have so far: {pieces}. Anything missing?
+## design.rulebook.pieces · box · added
+? What are all the pieces? Here's what I have so far: {pieces}. Anything missing?
+header: Pieces
+- That's all — nothing is missing
+- Some are missing — next, tell me which
 
-## design.rulebook.action · free
-For {action}: what exactly happens, and what can't you do?[[ For example: {example}.]]
+## design.rulebook.action · box · added
+? For {action}: what exactly happens, and what can't you do?[[ For example: {example}.]]
+header: The action
+- Show me your take — from the rules so far
+- Not decided yet — leave it open for a sketch
 
-## design.rulebook.edge · free
-What happens when {edge}?[[ For example: {example}.]]
+## design.rulebook.edge · box · added
+? What happens when {edge}?[[ For example: {example}.]]
+header: Edge case
+- Show me your take — what most games do here
+- Not decided yet — leave it open for a sketch
 
-## design.rulebook.secret · free
-What's secret, from whom, and until when?
+## design.rulebook.secret · box · added
+? What's secret, from whom, and until when?
+header: Secrets
+- Nothing is secret — everyone sees everything
+- Show me your take — from the rules so far
 
-## design.rulebook.names · free
-What do players call each thing and each action? I'll keep one name per thing, everywhere.
+## design.rulebook.names · box · added
+? What do players call each thing and each action? I'll keep one name per thing, everywhere.
+header: Names
+- Show me your take — one name per thing, from what we've said
+- Keep the rules' words — the names my rules already use
 
 ## design.rulebook.section · say · added
 Here's {section} as I've written it:
@@ -664,31 +770,46 @@ You can read and edit it any time, on your project page or in Obsidian. I keep y
 **Content & Balance**
 Every card, unit, ability, level and number, in tables: the second document beside the rulebook. One table per kind of thing, one row each. In the finished game these tables are the files the game reads, so you can tune them live later.
 
-## design.content.kinds · free
-From the rulebook, the game has these kinds of things: {kinds}. Anything missing?
+## design.content.kinds · box · added
+? From the rulebook, the game has these kinds of things: {kinds}. Anything missing?
+header: Kinds
+- That's all — nothing is missing
+- Some are missing — next, tell me which
 
-## design.content.columns · free
-For {kind}, here are the columns I'd use: {columns}. Change any, then tell me the ones you already have in mind, even rough.
+## design.content.columns · box · added
+? For {kind}, here are the columns I'd use: {columns}. Change any, then tell me the ones you already have in mind, even rough.
+header: Columns
+- These are fine — fill them in for me to check
+- Change some — next, tell me which
 
-## design.content.balance · free
-I've worked out a balance value for each row, from {basis}. These stand out:
+## design.content.balance · box · added
+? I've worked out a balance value for each row, from {basis}. These stand out:
 {standouts}
 Want me to suggest fixes, or would you rather adjust them yourself?
+header: Balance
+- Suggest fixes — show me what you'd change
+- I adjust them — in the content tables myself
 
 ## design.content.playtest · say
 There's also a Playtesting table for every test game: date, players, start, end, length, scores. I'll fill it in as you play.
 
-## design.time · free
-**Change Over Time**
+## design.time · box · added
+? **Change Over Time**
 What changes during a game and between games, and how fast. This is what keeps the hundredth game from feeling like the first.
 
 1. What's different at the end of a game compared with the start?
 2. What changes from one game to the next, if anything?
 3. If there's a longer journey (levels, unlocks, ranks): how long is it, and does each step bring something new?
 4. What decides when a player moves up?
+header: Over time
+- Show me your take — from the rules and the loop
+- Nothing changes — every game is the same, and that's the point
 
-## design.time.trap · free
-I checked for the common traps. {trap} Want to keep that, or soften it?
+## design.time.trap · box · added
+? I checked for the common traps. {trap} Want to keep that, or soften it?
+header: The trap
+- Soften it — show me how
+- Keep it — it's part of the game
 
 ## design.time.notrap · say · added
 I checked for the common traps and didn't find one: {why}.
@@ -718,8 +839,11 @@ Now the digital game around the rules, starting with who you play with and again
 ## design.players.read · say
 I read how similar games handle this first: {found}.
 
-## design.players.ai · free
-How should the computer opponent play: what does it go for, how does it change by difficulty, and how does it still try to win?
+## design.players.ai · box · added
+? How should the computer opponent play: what does it go for, how does it change by difficulty, and how does it still try to win?
+header: Computer
+- Show me your take — how it plays, by difficulty
+- Like a good player — it plays to win, as I would
 
 ## design.players.online · free
 Online: what happens when someone leaves, goes quiet, comes back or joins late? Can the room play again?
@@ -734,9 +858,12 @@ header: Leaving
 - The game waits for them — paused a few minutes, then the computer plays their seat
 - The game ends for everyone — nobody wins that one
 
-## design.players.long · free · added
-**One game**
+## design.players.long · box · added
+? **One game**
 How long is one game, roughly? For example: {example}. If it just ends when someone wins, say so.
+header: One game
+- It ends when someone wins — no set length
+- Show me your take — from the rules so far
 
 ## design.players.defaults · say · added
 The rest is mine to build, the way every BMUZ game does it, so there's nothing to decide:
@@ -755,8 +882,11 @@ many: yes
 **Look & Sound**
 The style of the game, tested at the size it'll actually be played, before the full build.
 
-## design.look.refs · free
-Share any pictures or games whose look you love: paste links, or describe them.
+## design.look.refs · box · added
+? Share any pictures or games whose look you love: paste links, or describe them.
+header: References
+- None yet — show me some to react to
+- In this folder — the pictures I put in this project's folder
 
 ## design.look.sketches · say
 From your references, here are {n} look sketches, side by side at real phone size: {link}.
@@ -767,27 +897,47 @@ header: The look
 - [each looks] {.}
 - None yet — next, tell me what's missing
 
-## design.look.motion · free
-How do the pieces move: slide, snap, fly, bounce?
+## design.look.motion · box · added
+? How do the pieces move: slide, snap, fly, bounce?
+header: Motion
+- Slide — smooth and calm
+- Snap — quick and crisp
+- Bounce — playful, with a little overshoot
+- Show me your take — what fits the look
 
-## design.look.sound · free
-What should it sound like? And is a simple placeholder sound good enough for the first playable version? Most games start that way.
+## design.look.sound · box · added
+? What should it sound like? And is a simple placeholder sound good enough for the first playable version? Most games start that way.
+header: Sound
+- Placeholders are fine — simple sounds for the first version
+- Show me your take — what it should sound like
 
 ## design.screens · say
 **Screens & Menus**
 Every screen in the game, and what's on each one.
 
-## design.screens.map · free
-Here's the screen map: {map}. Anything missing?
+## design.screens.map · box · added
+? Here's the screen map: {map}. Anything missing?
+header: Screens
+- That's all — nothing is missing
+- Some are missing — next, tell me which
 
-## design.screens.eyes · free
-During play, where are the player's eyes? What must they see at a glance?
+## design.screens.eyes · box · added
+? During play, where are the player's eyes? What must they see at a glance?
+header: At a glance
+- Show me your take — from the rules so far
+- Not sure yet — the screens sketch shows it
 
-## design.screens.choose · free
-What do players choose before a game, and what's a setting they change once?
+## design.screens.choose · box · added
+? What do players choose before a game, and what's a setting they change once?
+header: Choices
+- Show me your take — from the rules so far
+- Nothing to choose — straight into a game
 
-## design.screens.end · free
-At the end of a game, what does the screen show, and what does it celebrate?
+## design.screens.end · box · added
+? At the end of a game, what does the screen show, and what does it celebrate?
+header: Game end
+- Show me your take — from the feelings we picked
+- Just the winner — and a button to play again
 
 ## design.screens.style · box
 ? Which UI style fits? (all seven shown side by side on your project page)
@@ -857,8 +1007,11 @@ The game needs: {needs}. Most of it I can do myself. These need you to log in: {
 ## develop.setup.nologin · say · added
 The game needs: {needs}. I can do all of it myself: nothing needs you to log in.
 
-## develop.setup.step · free
-Step {n} of {total}: {what}. Say "done" when you're in.
+## develop.setup.step · box · added
+? Step {n} of {total}: {what}. Say "done" when you're in.
+header: Setup
+- Done — I'm in
+- Stuck — help me with this step
 
 ## develop.roadmap · say
 **The Roadmap**
@@ -920,9 +1073,14 @@ header: Approve?
 ## develop.waiting · say · added
 Every feature of this sprint I could build is built. Waiting for your OK on: {features}. Say "bmuz go" when you're back, and I'll show you each one.
 
-## develop.tune · free
-**Tune & Revise**
+## develop.tune · box · added
+? **Tune & Revise**
 Let's find what feels off. In your words, what's wrong with it?
+header: Tune
+- Too slow — it drags
+- Too hard — I can't keep up
+- Too easy — nothing to think about
+- Show me your take — what you see in it
 
 ## develop.tune.try · say
 I think it's {cause}. One setting to try: {setting}. I expect {expect}. It's in the Dev Kit's Tuning tab, so you can move it while the game runs.
@@ -930,13 +1088,19 @@ I think it's {cause}. One setting to try: {setting}. I expect {expect}. It's in 
 ## develop.tune.keep · say
 Values you save in the Dev Kit are decisions: I'll keep them.
 
-## develop.tune.rule · free
-No setting will fix this; it's the rule itself. Want to look at the rule together? It goes back to the rulebook, with a dev log entry.
+## develop.tune.rule · box · added
+? No setting will fix this; it's the rule itself. Want to look at the rule together? It goes back to the rulebook, with a dev log entry.
+header: The rule
+- Yes, look at the rule — back to the rulebook, with a dev log entry
+- Not now — keep the rule, note it for later
 
-## develop.lookback · free
-**Sprint {n} done** · {milestone} is {pct} done.
+## develop.lookback · box · added
+? **Sprint {n} done** · {milestone} is {pct} done.
 Three lines on how it went: what went well, what went wrong, and what we change next time. Here's my draft; your words win:
 {draft}
+header: Look back
+- Keep the draft — those three lines are right
+- Change some — next, tell me what
 
 ## develop.lookback.updated · say
 I've updated the GDD, the rulebook and the technical plan to match what we built. Next sprint: {next}.
@@ -945,10 +1109,13 @@ I've updated the GDD, the rulebook and the technical plan to match what we built
 **Teaching**
 Now that the game plays and people have tried it, we can design how a new player learns it. Studios do this late on purpose: you can only teach well once you've seen where people get stuck.
 
-## develop.teaching.ask · free
-1. In the playtests, where did people get stuck, or ask "what do I do?"
+## develop.teaching.ask · box · added
+? 1. In the playtests, where did people get stuck, or ask "what do I do?"
 2. What must a new player understand in the first minute?
 3. Could the first game teach it with no text at all?
+header: Teaching
+- Show me your take — from the playtest notes
+- No playtests yet — skip to what you'd teach first
 
 ## develop.teaching.plan · say
 Here's the tutorial I'd build: {steps}. Each one teaches one thing, in the order players meet it.
@@ -1014,9 +1181,12 @@ It's live: {link} (version {version}).
 ## deliver.back · say · added
 Back to Develop to {what}.
 
-## deliver.notes · free
-**Playtest Notes**
+## deliver.notes · box · added
+? **Playtest Notes**
 Once people have played it, tell me what happened: what they did, what they said, where they got stuck. Paste notes, links or messages, any way you have them.
+header: Playtests
+- No playtests yet — carry on without notes
+- In this folder — the notes I put in this project's folder
 
 ## deliver.notes.feelings · say
 Against the feelings you chose:
@@ -1046,8 +1216,11 @@ many: yes
 Here's what {platform} needs today: {needs}.
 Done: {done} · Needs you: {you}.
 
-## release.page · free
-The store page, written from your pitch: {draft}. Change anything?
+## release.page · box · added
+? The store page, written from your pitch: {draft}. Change anything?
+header: Store page
+- Keep it — the page is right
+- Change some — next, tell me what
 
 ## release.gate.box · box
 ? Release {game} on {platform}?
@@ -1061,9 +1234,12 @@ header: Release
 ## release.notyet · say · added
 {platform} waits until this is done: {what}. It's on the roadmap. When it's ready, say "bmuz stage release platform" and we'll pick {platform} up again.
 
-## release.walk · free · added
-**{platform}, step {n} of {all}:** {step}
+## release.walk · box · added
+? **{platform}, step {n} of {all}:** {step}
 Say "done" when it's done, or ask me anything about it.
+header: This step
+- Done — that step is finished
+- Stuck — help me with this step
 
 ## release.walk.live.box · box · added
 ? Is {game} live on {platform}?
@@ -1071,21 +1247,30 @@ header: Live?
 - Not yet — it isn't showing there yet
 - Yes, it's live — next, I'll paste its link
 
-## release.walk.link · free · added
-When {platform} shows {game} live, paste its link here. I'll check it from outside before I mark it released.
+## release.walk.link · box · added
+? When {platform} shows {game} live, paste its link here. I'll check it from outside before I mark it released.
+header: Live link
+- Not live yet — wait until it is
+- Can't find it — help me find the link
 
-## release.reactions · free
-**First Reactions**
+## release.reactions · box · added
+? **First Reactions**
 Share what players are saying: reviews, comments, messages. Paste links or text.
+header: Reactions
+- Nothing yet — no reactions to share
+- In this folder — what I put in this project's folder
 
 ## release.reactions.read · say
 Against your feelings: {feelings}. Worth fixing in an update: {fixes}.[[ Added to the roadmap as {update}.]]
 
-## release.lookback · free
-**Look Back**
+## release.lookback · box · added
+? **Look Back**
 What did {game} teach us for the next game? Here's my list; change anything:
 · For this game: {forgame}
 · For BMUZ itself: {forbmuz} (sent to Muzzy as suggestions)
+header: Look back
+- Keep the list — it's right
+- Change some — next, tell me what
 
 ## release.none · say · added
 Nothing has gone out yet: {waiting}. Nothing is public. Back to "Where should it go?": pick again when it's ready, or say "stop" to leave it here.
@@ -1103,6 +1288,9 @@ header: Keep?
 
 ## any.type · say · added
 Type your answer below.
+
+## any.chat · say · added
+Go ahead: type or paste your answer as your next message.
 
 ## any.noted · say · added
 Noted in your design document: {decision}.

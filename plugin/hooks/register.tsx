@@ -2371,6 +2371,7 @@ export const register: Register = on => {
       // limits still hold) and the journal says it went unchecked.
       const cur = E.stepById(ctx.pipeline, ctx.state.current)
       let stepInAsk = false
+      let asked: any[] = [] // (the script boxes this call asks: { id, n, box })
       if (cur && cur.kind === 'talk' && ctx.state.status === 'working') {
         // An option standing in for typing ("I'll paste the link") never gets through (live look 2026-11-10).
         const fake = E.optionCountProblem((e as any).questions) || E.fakeTypeOptionProblem((e as any).questions)
@@ -2388,6 +2389,7 @@ export const register: Register = on => {
             await journal($, { ev: 'deviation', step: cur.id, tool: 'AskUserQuestion', agentId: null, why: m.why })
             return { deny: m.why }
           }
+          asked = (ctx.state.boxes || []).filter((b: any) => m.used.includes(`${b.id}#${b.n}`))
           ctx.state = { ...ctx.state, boxes: (ctx.state.boxes || []).filter((b: any) => !m.used.includes(`${b.id}#${b.n}`)) }
           await save($)
         }
@@ -2413,6 +2415,23 @@ export const register: Register = on => {
       if ((!res?.deny && !res?.isError) || E.isPersonDeclining(res)) await markActive($)
       if (!res?.deny && !res?.isError) { nudges = { key: '', n: 0 }; continues = { key: '', n: 0 }; quietWait = ''; askedThisTurn = true }
       if ((res?.deny || res?.isError) && E.isPersonDeclining(res)) quietWait = 'declined'
+      // F235 task 8: "Chat about this" picked (Claude Code: "The user wants to clarify these questions"): the answer comes
+      // as their next chat message — a long answer, a paste, links. The box's line is open as a free question then
+      // (state.ask), so that message is journaled as its answer, exactly as a free line's was.
+      if ((res?.deny || res?.isError) && E.isChatInstead(res) && asked.length && !ctx.auto) {
+        const last = asked[asked.length - 1]
+        ctx.state = { ...ctx.state, ask: { step: ctx.state.current, line: last.id, text: last.box.question } }
+        await journal($, { ev: 'ask.open', step: ctx.state.current, line: last.id, via: 'chat' })
+        await save($)
+        await markActive($)
+        const r = ctx.script && ctx.script.lines[E.CHAT_LINE] ? E.renderLine(ctx.script, E.CHAT_LINE, {}) : null
+        if (r && !r.error) {
+          await journal($, { ev: 'line', step: ctx.state.current, line: r.id, kind: 'say', text: r.text })
+          if (turnSaid.step !== ctx.state.current) turnSaid = { step: ctx.state.current || '', lines: [] }
+          turnSaid.lines = [...turnSaid.lines.filter(l => l.id !== r.id), { id: r.id, text: r.text }]
+        }
+        return { ...res, context: [...(res.context ?? []), E.chatNote(last.id, r && !r.error ? r.text : '')] }
+      }
       if ((res?.deny || res?.isError) && !E.isPersonDeclining(res)) {
         // F231: only "the tool can't be used here" means nobody can answer; a shape refusal (too few options) or any
         // other refusal is a failed ask, handed back to Claude as it is (it reads why and asks again).
@@ -2427,7 +2446,13 @@ export const register: Register = on => {
         // these (ideate-doc.mjs), so a quote Claude hands back as theirs is checked, not trusted.
         // (review fix 9: the step-in box's answer is the bug report's, never the step's own words)
         if (stepInAsk) await journal($, { ev: 'stepin.answer', during: ctx.state.current, text: E.answerText(res).slice(0, 600) })
-        else await journal($, { ev: 'answer', step: ctx.state.current, text: E.answerText(res).slice(0, 6000) })
+        else {
+          // (F235 task 8: the lines the box asked, so a script can find the answer to one line — release.walk.link)
+          const lines = [...new Set(asked.map((b: any) => b.id))]
+          await journal($, { ev: 'answer', step: ctx.state.current, ...(lines.length ? { lines, via: 'box' } : {}), text: E.answerText(res).slice(0, 6000) })
+          // (the ask for links, now a box: what they typed in it is their material, as the free line's answer was)
+          if (lines.includes(E.LINKS_LINE)) return { ...res, context: [...(res.context ?? []), E.answerNote({ line: E.LINKS_LINE }, E.answerText(res))] }
+        }
       }
       return res
     }

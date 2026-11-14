@@ -26,6 +26,8 @@ export function checkFile(file) {
   // F232: every script line its steps say is in the script, and the script itself reads
   const script = E.parseScript(existsSync(join(root, 'script.md')) ? readFileSync(join(root, 'script.md'), 'utf8') : '')
   problems.push(...script.problems.map(x => `script.md: ${x}`), ...E.checkLines(p, script))
+  // F235 task 8: a line that asks something is a question box, never a free line
+  problems.push(...E.freeQuestionProblems(p, script))
   // A fixed "next" with a fixed "at": that step must exist in the next stage's pipeline (when it's on the engine).
   const nx = p && p.next
   if (nx && typeof nx.pipeline === 'string' && E.NAME_RE.test(nx.pipeline) && typeof nx.at === 'string' && E.NAME_RE.test(nx.at)) {

@@ -958,7 +958,7 @@ export function fakeTypeOptionProblem(questions) {
       const label = String((o && o.label) || '')
       const desc = String((o && o.description) || '')
       if (FAKE_LABEL.some(r => r.test(label)) || FAKE_DESC.test(desc)) {
-        return `BMUZ engine: the option "${label}" stands in for typing, but picking an option ends the question with nothing typed — the creative gets asked again and never gets a field to paste into (live look: four screens of "I'll paste it"). Drop that option. For links or long text ask in the chat instead of the box (their next chat message is the answer); keep only options that are real answers — two is fine, no filler.`
+        return `BMUZ engine: the option "${label}" stands in for typing, but picking an option ends the question with nothing typed — the creative gets asked again and never gets a field to paste into (live look: four screens of "I'll paste it"). Drop that option: the box's own "Type something." takes a short answer and "Chat about this" a long or pasted one (links, notes). Keep only options that are real answers — two is fine, no filler.`
       }
     }
   }
@@ -1036,6 +1036,18 @@ export function endsWithCommand(text) {
 // What Claude is told beside such a message: no answer, the question (if any) still open.
 export function commandNote(command, open) {
   return `BMUZ engine: this message ends with the command "${command}", typed after other words, so Claude Code sent it as a plain message and the command did not run. It is not an answer${open ? ` to "${open.line}": that question is still open` : ''}. Tell the creative in one short line that a command only runs when it is typed alone at the start of an empty message${open ? ', then end your turn (their next message is the answer)' : ''}.`
+}
+
+// F235 task 8: "Chat about this" picked in a question box. Claude Code answers the call with an error result: "The user
+// wants to clarify these questions. … Start by asking them what they would like to clarify." (read in a headless run's
+// transcript, .scratch/bmuz-define-test). Their answer is their next chat message: a long one, a paste, links.
+export function isChatInstead(res) {
+  return /user wants to clarify these questions/i.test(JSON.stringify(res ?? ''))
+}
+export const CHAT_LINE = 'any.chat'
+// What Claude is told beside that result (it overrides Claude Code's "start by asking them what to clarify").
+export function chatNote(line, words) {
+  return `BMUZ engine: the creative picked "Chat about this": their answer to "${line}" comes as their next chat message (a long answer, a paste, links), and the engine takes it as the answer. Don't ask what they want to clarify and don't ask the question again: ${words ? `write exactly this line as your whole reply — ${words} — and end your turn.` : 'write one short line inviting them to type or paste it, and end your turn.'}`
 }
 
 // What Claude is told beside the creative's answer (prompt context: the creative never sees it).
@@ -1559,8 +1571,14 @@ export function parseScript(text) {
       if (!body.trim()) problems.push(`line "${cur.id}" has no words`)
     } else {
       const box = { question: '', header: '', many: false, options: [] }
+      // (F235 task 8: a question may run over several lines — a heading, its context, a numbered list — until the
+      // "header:" line; every question is a box now, so a free line's words move into the box as they were)
+      let inQuestion = false
       for (const l of body.split('\n')) {
-        if (/^\?\s/.test(l)) box.question = l.slice(2).trim()
+        const more = inQuestion && !/^(header:|many:|- )/.test(l)
+        if (!more) inQuestion = false
+        if (more) box.question = `${box.question}\n${l}`
+        else if (/^\?\s/.test(l)) { box.question = l.slice(2).trim(); inQuestion = true }
         else if (/^header:\s*/.test(l)) box.header = l.replace(/^header:\s*/, '').trim()
         else if (/^many:\s*yes\s*$/.test(l)) box.many = true
         else if (/^- /.test(l)) {
@@ -1568,6 +1586,7 @@ export function parseScript(text) {
           box.options.push({ label: m[3].trim(), description: (m[4] || '').trim(), ...(m[1] ? { [m[1]]: m[2] } : {}) })
         } else if (l.trim()) problems.push(`box "${cur.id}": the line "${l.slice(0, 60)}" isn't "? question", "header:", "many: yes" or "- option"`)
       }
+      box.question = box.question.replace(/^\n+|\s+$/g, '')
       if (!box.question) problems.push(`box "${cur.id}" has no "? question" line`)
       if (!box.header || box.header.length > 12) problems.push(`box "${cur.id}" needs a "header:" of 12 characters at most`)
       if (!box.options.length) problems.push(`box "${cur.id}" has no options`)
@@ -1657,8 +1676,9 @@ export function fileLink(path) {
 // example from THIS game, right above where they type. True when the line has the slot and it isn't given.
 export function needsExample(script, id, slots = {}) {
   const l = script && script.lines && script.lines[id]
-  if (!l || l.kind === 'box') return false
-  return /\{example\}/.test(String(l.text || '')) && !filled((slots || {}).example)
+  if (!l) return false
+  // (F235 task 8: a question asked in a box carries it in the box's question)
+  return /\{example\}/.test(String(l.kind === 'box' ? l.box.question : l.text || '')) && !filled((slots || {}).example)
 }
 
 // A line ready to say: { id, kind, text } or, for a box, { id, kind: 'box', box: { question, header, multiSelect,
@@ -1793,6 +1813,45 @@ export function checkLines(p, script) {
   return out
 }
 
+// ---- F235 task 8: every question is a question box (live look 4, Muzzy: "whenever you are asking questions, it might be
+// best to put it in a question box … it should be a building block for the entire process") ----
+// THE RULE: a line asks something when BMUZ waits for the creative's reply to it: every "free" line (the next chat
+// message answers it, by definition), and a "say" line whose words end with a question mark, ask for an {example}, or
+// tell them to type, answer or say something ("Type your answer below.", "Say "done"…", "in your next message"). Such a
+// line is a box: 2–4 options that are real answers; Claude Code adds "Type something." for a short typed answer and
+// "Chat about this" for a long or pasted one (the engine then takes their next chat message as the answer).
+// (Why not only the question mark: define.scope.someday ended with 'Or say "none".' and develop.setup.step with
+// 'Say "done" when you're in.': no "?", yet both wait for an answer.)
+export function asksSomething(line) {
+  if (!line) return false
+  if (line.kind === 'box' || line.kind === 'free') return true
+  const t = String(line.text || '')
+  const shown = t.replace(/\[\[[\s\S]*?\]\]/g, '').trim()
+  const last = (shown.split('\n').filter(x => x.trim()).pop() || '').trim()
+  return /\?["'”’)*]*$/.test(last) || /\{example\}/.test(t) || /type your answer|in your next message|\b(say|type) "[^"]+" when\b|\bor say "/i.test(shown)
+}
+
+// What breaks THE RULE in a pipeline (empty = fine; check-pipeline runs it on every real pipeline): a line a step says
+// that asks something but isn't a box. A question list's items ("{questions#}": Ideate's pool lines) are asked inside
+// their box, so they stay "say" lines.
+export function freeQuestionProblems(p, script) {
+  const out = []
+  for (const s of Array.isArray(p && p.steps) ? p.steps : []) {
+    const ids = isList(s.lines) ? s.lines : []
+    const pool = ids.some(id => {
+      const l = script.lines[id]
+      return l && /\{questions#?\}/.test(l.kind === 'box' ? l.box.question : String(l.text || ''))
+    })
+    for (const id of ids) {
+      const l = script.lines[id]
+      if (!l || l.kind === 'box' || !asksSomething(l)) continue
+      if (l.kind === 'say' && pool) continue
+      out.push(`step "${s.id}": the line "${id}" asks something but is a "${l.kind}" line: every question is a box (2–4 options that are real answers; "Type something." and "Chat about this" are added by Claude Code)`)
+    }
+  }
+  return out
+}
+
 // A gate's question and options: from its script box ("line") when it has one, else its own words.
 export function gateWords(step, script, vars = {}) {
   if (typeof step.line === 'string' && script && script.lines[step.line] && script.lines[step.line].kind === 'box') {
@@ -1803,7 +1862,7 @@ export function gateWords(step, script, vars = {}) {
 }
 
 // Every live talk step with script lines is told this, in place of ASK_RULE.
-export const SCRIPT_RULE = `The script: this step's fixed lines are BMUZ's own words, word for word, from its script. Never write one yourself and never reword one. To say a line, call ${SAY_TOOL} with {"line": "<id>", "slots": {…}} (a list of ids says several at once); it returns the exact words and what to do next. A line with an {example} slot gets one or two short examples from THIS game's own parts, and a list slot is a JSON list (bullet points), never a run of semicolons. Free answers go in the chat: a "free" line is your whole reply, then end your turn; the creative's next chat message is the answer (Ctrl+V / Alt+V work there). Choices go in a question box: a "box" line returns the box to ask with AskUserQuestion, exactly as given (the engine refuses any other box). Between lines you may add one short sentence of your own only where the script has nothing to say (an example, a pointer to their own words); never a question in plain text. If the creative closes a box without an answer, write ONE short line: "Nothing came through. Paste it as your next message, or say carry on." and end your turn.`
+export const SCRIPT_RULE = `The script: this step's fixed lines are BMUZ's own words, word for word, from its script. Never write one yourself and never reword one. To say a line, call ${SAY_TOOL} with {"line": "<id>", "slots": {…}} (a list of ids says several at once); it returns the exact words and what to do next. A line with an {example} slot gets one or two short examples from THIS game's own parts, and a list slot is a JSON list (bullet points), never a run of semicolons. Every question is a question box (F235): a "box" line returns the box to ask with AskUserQuestion, exactly as given (the engine refuses any other box). Claude Code adds "Type something." for a short typed answer and "Chat about this" for a long or pasted one; when they pick "Chat about this", the engine tells you what to write and takes their next chat message as the answer. An option that says "next, tell me …" picked: call ${SAY_TOOL} {"wait": true} and end your turn; their next message says it. An option "Show me your take" picked: draft it from the game so far (your reading, never quoted as their words) and show it; where the step has a box to check it (any.keep, a "… ok" box), ask that box, else carry on with it. (A "free" line, where one is left, is your whole reply, then end your turn; the creative's next chat message is the answer.) Between lines you may add one short sentence of your own only where the script has nothing to say (an example, a pointer to their own words); never a question in plain text. If the creative closes a box without an answer, write ONE short line: "Nothing came through. Paste it as your next message, or say carry on." and end your turn.`
 
 // The step's lines as its prompt lists them: id, kind, slots and the first words.
 export function linesList(script, ids) {
