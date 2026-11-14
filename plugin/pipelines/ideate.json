@@ -14,7 +14,7 @@
       "description": "Welcome to BMUZ, then your idea in your own words",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
       "lines": ["ideate.welcome", "ideate.idea", "ideate.spark"],
-      "opening": ["ideate.welcome", "ideate.idea"],
+      "opening": ["ideate.welcome"],
       "craft": "craft/ideate-idea.md",
       "results": ["idea", "unsure"]
     },

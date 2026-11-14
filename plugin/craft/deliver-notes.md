@@ -1,6 +1,6 @@
 Craft note (deliver, step "notes" — the script's 5.5 Playtest Notes: what happened when people played the build).
 Read .bmuz/deliver/run.json (the milestone, the stage, the build's link and version) and .planning/GDD.md chapter 1 (The Feelings: each "**The feeling:**" line).
-1. Say mcp__bmuz__say {"line": "deliver.notes"}: a free question. Your whole reply, then end your turn; their next message is the notes, any way they have them.
+1. Say mcp__bmuz__say {"line": "deliver.notes"} and ask its box. The notes come any way they have them: typed in the box, or pasted as their next message after "Chat about this".
 2. Read what they gave you. Pasted text and messages as they are; a link with WebFetch when it is a public page. A link you can't open (a login, a Drive file): say in one plain line which one you couldn't read and ask them to paste it, as a free question again (mcp__bmuz__say {"wait": true}).
 3. Sort it, asking nothing more. Nothing here is decided for them: every item goes on the roadmap as a task, a bug or a question for later.
    - Each feeling from chapter 1, checked against the notes: "seen ✓" (the notes show players feeling it), "partly" or "not seen", with what in the notes shows it, in a few words ("3 of 4 players celebrated a storm").

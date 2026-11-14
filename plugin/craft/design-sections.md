@@ -2,7 +2,7 @@ Craft note (design, step "sections" — the script's 3.2 The Rulebook: then outw
 
 Read .planning/design/RULEBOOK.md, .planning/GDD.md (every chapter) and .planning/research/design-rulebooks.md if it exists. Skip a question the rulebook or the GDD already answers fully; ask the rest.
 For each section below, in this order, one at a time:
-  a. Say its line (free): your whole reply; their next message is the answer.
+  a. Say its line and ask its box.
   b. Write that section from their answer, in their words, short rules. "TBD", "X" and "Rule A / Rule B, to test" are fine. Don't polish.
   c. Say "design.rulebook.section" with "section" = the section's name and "text" = what you wrote (at most 4 short lines; the rest is on the page); then, in a second call, the box "design.rulebook.ok" (a box never shares a call with a long line), and ask it. "Change something": {"wait": true}, change it, show it again.
 The sections and their lines:

@@ -1848,6 +1848,13 @@ export function freeQuestionProblems(p, script) {
       if (l.kind === 'say' && pool) continue
       out.push(`step "${s.id}": the line "${id}" asks something but is a "${l.kind}" line: every question is a box (2–4 options that are real answers; "Type something." and "Chat about this" are added by Claude Code)`)
     }
+    // (an opening is said in one call, and a box covers long words above it: a long opening line can't open with a box
+    // after it — Ideate's welcome is shown by the engine, then the box is asked)
+    const open = isList(s.opening) ? s.opening.map(id => script.lines[id]).filter(Boolean) : []
+    const firstBox = open.findIndex(l => l.kind === 'box')
+    if (firstBox > 0 && isLongSay(open.slice(0, firstBox).map(l => String(l.text || '')).join('\n\n'))) {
+      out.push(`step "${s.id}": its opening says a long line before the box "${open[firstBox].id}" in one call, which a box covers: open with the words only and ask the box after`)
+    }
   }
   return out
 }

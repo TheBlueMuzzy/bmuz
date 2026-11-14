@@ -2374,7 +2374,10 @@ export const register: Register = on => {
       let asked: any[] = [] // (the script boxes this call asks: { id, n, box })
       if (cur && cur.kind === 'talk' && ctx.state.status === 'working') {
         // An option standing in for typing ("I'll paste the link") never gets through (live look 2026-11-10).
-        const fake = E.optionCountProblem((e as any).questions) || E.fakeTypeOptionProblem((e as any).questions)
+        // (F235 task 8: the script's own boxes, asked exactly, are reviewed words — define.pillars.take's "I'll write my own —
+        // next, in your own words" is followed by its own box — so only Claude's own boxes are read for a fake option)
+        const scriptBox = !!cur.lines && !E.boxProblem(ctx.state.boxes || [], (e as any).questions).why
+        const fake = E.optionCountProblem((e as any).questions) || (scriptBox ? null : E.fakeTypeOptionProblem((e as any).questions))
         if (fake) {
           await journal($, { ev: 'deviation', step: cur.id, tool: 'AskUserQuestion', agentId: null, why: fake })
           return { deny: fake }

@@ -3,7 +3,7 @@ Read .planning/STATE.md (its Log and Key facts), .planning/archive/sprints/ (eac
 1. Draft two short lists, 2–4 lines each, from what actually happened (name the sprint, the bug, the platform):
    - For this game: what to keep doing or watch in its updates ("weather that hits both players kept games close").
    - For BMUZ itself: what the process should do differently next time, in any game ("ask for the capsule art at Design, not at Release").
-2. Say mcp__bmuz__say {"line": "release.lookback", "slots": {"game": "<the game's name>", "forgame": "<the first list, joined with ' · '>", "forbmuz": "<the second list, joined with ' · '>"}}: a free question. Your whole reply, then end your turn.
+2. Say mcp__bmuz__say {"line": "release.lookback", "slots": {"game": "<the game's name>", "forgame": "<the first list, joined with ' · '>", "forbmuz": "<the second list, joined with ' · '>"}}, and ask its box.
 3. Their answer: keep what they keep, change what they change, add what they add; their words win.
 Auto run (nobody is here): hand back your two lists as drafted. A test run's answers stand in for the creative: use them.
 

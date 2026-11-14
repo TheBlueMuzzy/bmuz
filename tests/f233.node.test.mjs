@@ -119,7 +119,7 @@ test('Ideate on the conversion path: "What Your Rules Leave Open" runs in place 
     { line: 'ideate.digital.who', slots: { players: '2 to 4 players' } },
     { line: 'ideate.digital.computer', slots: { chores: 'shuffle, deal, refill the stalls and count the points' } },
   ] })
-  assert.equal(r.text, [
+  assert.equal(r.box.question, [
     '1. Your rules say you refill an empty stall from the deck. What happens when the deck runs out?',
     '2. Where do you picture people playing it: on a phone, a computer, both?',
     '3. Your rules are for 2 to 4 players around a table. On a screen, who plays: people online (at the same time, or taking turns), friends on one screen, the computer, or a mix?',

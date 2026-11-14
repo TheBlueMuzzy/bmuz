@@ -110,8 +110,8 @@ test('task 2: the someday platforms are asked in Scope, after the features are s
   assert.ok(scope.must.includes('define.scope.someday'))
   assert.deepEqual(scope.collects.find(c => c.field === 'platform.someday').neededBy, ['store'])
   const r = E.renderLine(script, 'define.scope.someday', { first: 'the web', example: 'phones once the web version plays well · Steam with online play' })
-  assert.match(r.text, /It starts on the web\. Now that the features are sorted/)
-  assert.match(r.text, /For example: phones once the web version plays well · Steam with online play\./)
+  assert.match(r.box.question, /It starts on the web\. Now that the features are sorted/)
+  assert.match(r.box.question, /For example: phones once the web version plays well · Steam with online play\./)
   assert.match(readFileSync(join(plugin, 'craft', 'define-scope.md'), 'utf8'), /"define\.scope\.someday"/)
 })
 
@@ -122,7 +122,7 @@ test('task 2: saving and leaving are engineering calls with the framework\'s def
   assert.equal(leave.kind, 'box')
   assert.match(leave.box.options[0].label, /The computer plays their seat/)
   assert.match(leave.box.options[0].description, /BMUZ's usual way/)
-  assert.doesNotMatch(E.renderLine(script, 'design.players.long', { example: 'about 20 minutes' }).text, /sav/i)
+  assert.doesNotMatch(E.renderLine(script, 'design.players.long', { example: 'about 20 minutes' }).box.question, /sav/i)
   const note = readFileSync(join(plugin, 'craft', 'design-players.md'), 'utf8')
   assert.match(note, /"design\.players\.leave" \(a box\): only when people play online/)
   assert.match(note, /Saving and leaving are engineering calls, never questions/)
@@ -160,9 +160,9 @@ test('task 3: every Define question that asks them to make something carries an 
     assert.equal(E.needsExample(script, id, { example: 'two players, one seed deck' }), false, id)
   }
   const r = E.renderLine(script, 'define.feelings.own', { example: 'the sly glee of steering the Space Force onto a rival' })
-  assert.ok(r.text.endsWith("what's the main feeling? For example: the sly glee of steering the Space Force onto a rival."), r.text)
+  assert.ok(r.box.question.endsWith("what's the main feeling? For example: the sly glee of steering the Space Force onto a rival."), r.box.question)
   // the vertical slice is explained in the question itself, not only in an earlier list (finding 6)
-  const first = E.renderLine(script, 'define.scope.first', { feeling: 'cat-and-mouse tension', example: 'you against one computer smuggler, no card abilities yet' }).text
+  const first = E.renderLine(script, 'define.scope.first', { feeling: 'cat-and-mouse tension', example: 'you against one computer smuggler, no card abilities yet' }).box.question
   assert.match(first, /a vertical slice, with a bit of everything that matters, at close to final quality\. What's the smallest version that still gives "cat-and-mouse tension"\? For example: you against one computer smuggler, no card abilities yet\.$/)
   assert.doesNotMatch(E.renderLine(script, 'define.scope.intro', {}).text, /if it were missing, would the game be pointless/)
 })
@@ -222,7 +222,7 @@ test('task 4: a line that points at the project page is known, and the page\'s l
   assert.equal(E.pointsAtPage(script, 'define.scope.need'), false)
   assert.equal(E.fileLink('C:/Users/Muzzy/My Games/x/.planning/project-page.html'), 'file:///C:/Users/Muzzy/My%20Games/x/.planning/project-page.html')
   assert.equal(E.fileLink('/home/a/b.html'), 'file:///home/a/b.html')
-  const chat = E.renderLine(script, 'define.scope.chart.here', { chart: ['Quick wins (do first): Traps', 'Avoid: Undercover Agent'], link: 'file:///x (open in your browser now)' }).text
+  const chat = E.renderLine(script, 'define.scope.chart.here', { chart: ['Quick wins (do first): Traps', 'Avoid: Undercover Agent'], link: 'file:///x (open in your browser now)' }).box.question
   assert.match(chat, /\*\*Effort vs impact\*\*\n· Quick wins \(do first\): Traps\n· Avoid: Undercover Agent\n\nIt's drawn on your project page too, as a real chart: file:\/\/\/x \(open in your browser now\)\./)
 })
 
@@ -322,4 +322,78 @@ test('task 9: define.scope.need\'s tab is its idea, whole words cut to 12 charac
   for (const idea of ['Online play with friends', 'Tutorial with progressive hints', 'a very long name with many words']) assert.ok(tab(idea).length <= E.HEADER_MAX)
   // every box in the script still fits its tab
   for (const [id, l] of Object.entries(script.lines)) if (l.kind === 'box' && !/\{/.test(l.box.header)) assert.ok(l.box.header.length <= 12, id)
+})
+
+// ---- task 8: every question is a question box — a building block for the whole process ----
+const PIPES = ['ideate', 'define', 'design', 'develop', 'feature', 'deliver', 'release', 'bug', 'discover', 'start'].filter(id => existsSync(join(plugin, 'pipelines', `${id}.json`))).map(pipe)
+
+test('task 8 (a): THE RULE — a line asks something when BMUZ waits for the reply: free lines, and say lines ending with a question, asking for an example or telling them to type or say something', () => {
+  const say = text => ({ kind: 'say', text })
+  assert.equal(E.asksSomething({ kind: 'free', text: 'Anything else?' }), true)
+  assert.equal(E.asksSomething({ kind: 'box', box: { question: 'x?' } }), true)
+  for (const t of ['How does a game end?', 'It starts on {first}. Anywhere else someday? Or say "none".', 'Step {n} of {total}: {what}. Say "done" when you\'re in.', 'What did I get wrong? Tell me in your next message.', 'Type your answer below.', 'Name one. For example: {example}.', 'Is that the moment?**'])
+    assert.equal(E.asksSomething(say(t)), true, t)
+  for (const t of ['Reading {what}…', 'Noted in your design document: {decision}.', '**The 3 Pillars**\nLater, whenever we wonder "does this idea belong?", the pillars decide.\nTwo real examples:', 'Back to Develop to {what}.', '[[ Is it {x}?]]'])
+    assert.equal(E.asksSomething(say(t)), false, t)
+})
+
+test('task 8 (b): enforced — the pipeline check refuses a question written as a free line (define.scope.someday came back that way), and every real pipeline passes', () => {
+  const lines = { 'x.ask': { id: 'x.ask', kind: 'free', text: 'Anywhere else someday? Or say "none".' }, 'x.tell': { id: 'x.tell', kind: 'say', text: 'Noted.' }, 'x.q': { id: 'x.q', kind: 'say', text: 'How long is one game?' } }
+  const P = { id: 't', steps: [{ id: 'a', kind: 'talk', lines: ['x.tell', 'x.ask', 'x.q'] }] }
+  const out = E.freeQuestionProblems(P, { lines })
+  assert.equal(out.length, 2)
+  assert.match(out[0], /step "a": the line "x\.ask" asks something but is a "free" line: every question is a box/)
+  assert.match(out[1], /"x\.q" asks something but is a "say" line/)
+  // a question list's items are asked inside their box
+  const pool = { ...lines, 'x.list': { id: 'x.list', kind: 'box', box: { question: '{questions#}\nAnswer in one message.', header: 'Open', options: [] } } }
+  assert.deepEqual(E.freeQuestionProblems({ id: 't', steps: [{ id: 'a', kind: 'talk', lines: ['x.list', 'x.q'] }] }, { lines: pool }), [])
+  for (const p of PIPES) assert.deepEqual(E.freeQuestionProblems(p, script), [], p.id)
+  const ran = spawnSync(process.execPath, [join(plugin, 'scripts', 'check-pipeline.mjs')], { encoding: 'utf8' })
+  assert.equal(ran.status, 0, ran.stdout + ran.stderr)
+})
+
+test('task 8 (b): the script keeps no free question but the retired ones and the engine\'s two follow-ups — a new free line fails here', () => {
+  // retired: said by no step (their words stay for the approved-script check); any.decided.what / .which: the engine's
+  // follow-up to "already decided" (which of up to six answers, or what was decided), after the step's own box; deliver.
+  // notready: said inside Build & Share's composed message, right before its own box asks it
+  const LEFT = ['define.platform.someday', 'define.scope.smallest', 'define.scope.chart', 'design.players.online', 'design.players.length', 'deliver.notready', 'any.decided.what', 'any.decided.which']
+  assert.deepEqual(Object.values(script.lines).filter(l => l.kind === 'free').map(l => l.id).sort(), LEFT.sort())
+  for (const p of PIPES) for (const s of p.steps) for (const id of s.lines || []) assert.notEqual(script.lines[id].kind, 'free', `${p.id}.${s.id}: ${id}`)
+})
+
+test('task 8 (c): every converted question keeps the script\'s words in its box, 2–4 options, a tab of 12 at most; "Chat about this" is told, never an option', () => {
+  const converted = ['ideate.idea', 'ideate.material', 'define.scope.someday', 'design.time', 'develop.setup.step', 'deliver.notes', 'release.walk.link', 'release.lookback']
+  for (const id of converted) {
+    const l = script.lines[id]
+    assert.equal(l.kind, 'box', id)
+    assert.ok(l.added, id)
+    assert.ok(l.box.options.length >= 2 && l.box.options.length <= 4, id)
+    assert.ok(l.box.header.length <= 12, id)
+    assert.ok(!l.box.options.some(o => /chat about this|type something/i.test(o.label)), id)
+  }
+  // the words are the free line's, a heading and its lines kept in the box's question
+  assert.equal(E.renderLine(script, 'ideate.idea', {}).box.question, "**Your Idea**\nTell me about your game in your own words: what it is, what you love about it, anything you remember. Half an idea is fine. If you're not sure yet, just say so.")
+  assert.match(E.renderLine(script, 'design.time', {}).box.question, /\*\*Change Over Time\*\*\nWhat changes during a game[^\n]*\n\n1\. What's different at the end/)
+  // a box's {example} is still required
+  assert.ok(E.needsExample(script, 'define.scope.someday', { first: 'the web' }))
+  // every added box has no fake typing option (the approved "I'll write my own — next, in your own words" boxes are
+  // followed by their own question box, so the engine lets the script's boxes through as written)
+  for (const id of Object.keys(script.lines).filter(id => script.lines[id].kind === 'box' && script.lines[id].added)) {
+    const b = script.lines[id].box
+    assert.equal(E.fakeTypeOptionProblem([{ question: b.question, options: b.options.map(o => ({ label: o.label, description: o.description })) }]), null, id)
+  }
+  // the rule every script step is told
+  assert.match(E.SCRIPT_RULE, /Every question is a question box/)
+  assert.match(E.SCRIPT_RULE, /"Chat about this" for a long or pasted one/)
+})
+
+test('task 8: "Chat about this" is read from Claude Code\'s answer; Claude is told what to write and the next message is the answer', () => {
+  const res = { isError: true, result: 'The user wants to clarify these questions.\n    This means they may have additional information, context or questions for you.\n    Start by asking them what they would like to clarify.\n\n    Questions asked:\n- "Anything else?"\n  (No answer provided)' }
+  assert.equal(E.isChatInstead(res), true)
+  assert.equal(E.isChatInstead({ isError: true, result: "The user doesn't want to proceed with this tool use." }), false)
+  assert.equal(E.isPersonDeclining(res), false)
+  assert.equal(E.isNobodyToAsk(res), false)
+  const words = E.renderLine(script, E.CHAT_LINE, {}).text
+  assert.equal(words, 'Go ahead: type or paste your answer as your next message.')
+  assert.match(E.chatNote('ideate.material', words), /their answer to "ideate\.material" comes as their next chat message.*Don't ask what they want to clarify.*write exactly this line as your whole reply — Go ahead/)
 })

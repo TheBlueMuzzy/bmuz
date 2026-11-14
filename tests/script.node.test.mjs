@@ -88,7 +88,9 @@ test('lines not in the approved script are marked "added" (each one has an Ask M
   const F234 = ['ideate.rules.link', 'any.decided', 'any.decided.what', 'any.decided.which', 'any.skipped', 'any.reopen']
   // (F235 — Fixes from the Sirius Smugglers live look)
   const F235 = ['bug.engine', 'define.platform.now', 'define.scope.someday', 'define.lock.when', 'design.players.leave', 'design.players.long', 'design.players.defaults', 'define.scope.intro', 'define.scope.first', 'define.scope.need', 'define.scope.slice.list', 'define.scope.chart.here', 'any.noted']
-  assert.deepEqual(Object.values(script.lines).filter(l => l.added).map(l => l.id).sort(), [...F233, ...F234, ...F235,'any.keep', 'bug.fix.done', 'bug.fix.reproduced', 'bug.fix.start', 'bug.none', 'bug.now', 'bug.often', 'bug.verified', 'define.feelings.eight', 'deliver.back', 'deliver.live', 'deliver.notready.box', 'design.rulebook.ok', 'design.rulebook.section', 'design.sketches.none', 'design.time.notrap', 'develop.idea', 'develop.plan.one', 'develop.setup.nologin', 'develop.waiting', 'release.none', 'release.notyet', 'release.out', 'release.walk', 'release.walk.link', 'release.walk.live.box', 'research.busy', 'research.changed', 'research.lost', 'research.none', 'research.notstarted', 'research.wait'].sort())
+  // (F235 task 8 — every question is a box: a free question's words moved into its box unchanged, its options are new)
+  const F235_BOXES = ['ideate.idea', 'ideate.spark', 'ideate.material', 'ideate.correct', 'ideate.feelings', 'ideate.open.ask', 'ideate.sketch.more', 'define.feelings.own', 'define.feelings.know', 'define.feelings.not', 'define.pillars.own', 'define.pillars.test', 'define.pillars.slogan', 'define.pitch.write', 'define.pitch.different', 'define.pitch.meets', 'define.pitch.breath', 'define.loop', 'define.loop.steps', 'define.loop.time', 'define.loop.verbs', 'define.scope.wont', 'design.rulebook.flow', 'design.rulebook.win', 'design.rulebook.setup', 'design.rulebook.pieces', 'design.rulebook.action', 'design.rulebook.edge', 'design.rulebook.secret', 'design.rulebook.names', 'design.content.kinds', 'design.content.columns', 'design.content.balance', 'design.time', 'design.time.trap', 'design.players.ai', 'design.look.refs', 'design.look.motion', 'design.look.sound', 'design.screens.map', 'design.screens.eyes', 'design.screens.choose', 'design.screens.end', 'develop.setup.step', 'develop.tune', 'develop.tune.rule', 'develop.lookback', 'develop.teaching.ask', 'deliver.notes', 'release.page', 'release.reactions', 'release.lookback', 'any.chat']
+  assert.deepEqual(Object.values(script.lines).filter(l => l.added).map(l => l.id).sort(), [...F233, ...F234, ...F235, ...F235_BOXES, 'any.keep', 'bug.fix.done', 'bug.fix.reproduced', 'bug.fix.start', 'bug.none', 'bug.now', 'bug.often', 'bug.verified', 'define.feelings.eight', 'deliver.back', 'deliver.live', 'deliver.notready.box', 'design.rulebook.ok', 'design.rulebook.section', 'design.sketches.none', 'design.time.notrap', 'develop.idea', 'develop.plan.one', 'develop.setup.nologin', 'develop.waiting', 'release.none', 'release.notyet', 'release.out', 'release.walk', 'release.walk.link', 'release.walk.live.box', 'research.busy', 'research.changed', 'research.lost', 'research.none', 'research.notstarted', 'research.wait'].sort())
 })
 
 // F229: the research reply (the spec's "Any time: when the designer steps in"), word for word, the [slot] parts and the
@@ -123,10 +125,10 @@ test('filling a line: slots, lists as · lines, numbered lists, [[ … ]] only w
   assert.match(withFiles.text, /\*\*Where it stands:\*\* written\. I couldn't read: 2 Photoshop files \(pictures, not text\)\./)
   assert.match(E.renderLine(script, 'ideate.sofar', { clear: ['a'] }).error, /needs \{ideas\}, \{open\}, \{stands\}, \{link\}/)
   const fe = E.renderLine(script, 'ideate.feelings', { omit: [2], quote: 'a storm hits your best row' })
-  assert.match(fe.text, /themselves in\. You mentioned "a storm hits your best row": is that the moment, or is there another\?\n2\. What do you hope this game becomes/)
-  assert.ok(!/tell a friend/.test(fe.text))
+  assert.match(fe.box.question, /themselves in\. You mentioned "a storm hits your best row": is that the moment, or is there another\?\n2\. What do you hope this game becomes/)
+  assert.ok(!/tell a friend/.test(fe.box.question))
   const ask = E.renderLine(script, 'ideate.open.ask', { questions: [{ line: 'ideate.pool.mentioned', slots: { thing: 'weather cards' } }, { line: 'ideate.pool.end' }, { line: 'ideate.pool.where' }] })
-  assert.equal(ask.text, '1. You mentioned weather cards: what ideas do you have for it, even half-formed?\n2. How does a game end, as far as you know?\n3. Where do you picture people playing it: on a phone, a computer, both?\nAnswer in one message, in any order.')
+  assert.equal(ask.box.question, '1. You mentioned weather cards: what ideas do you have for it, even half-formed?\n2. How does a game end, as far as you know?\n3. Where do you picture people playing it: on a phone, a computer, both?\nAnswer in one message, in any order.')
   assert.equal(E.renderLine(script, 'nope', {}).error, 'there is no line "nope" in the script')
 })
 
@@ -144,7 +146,7 @@ test('boxes: [if] options only when filled, [each] one option per item, 2–4 op
 })
 
 test('word for word: bold marks, curly quotes, bullet signs and spacing don\'t count; a changed word does', () => {
-  const line = { id: 'ideate.idea', text: E.renderLine(script, 'ideate.idea', {}).text }
+  const line = { id: 'ideate.idea', text: E.renderLine(script, 'ideate.idea', {}).box.question }
   assert.deepEqual(E.unsaid([line], 'Your Idea\n\nTell me about your game in your own words: what it is, what you love about it, anything you remember. Half an idea is fine. If you’re not sure yet, just say so.'), [])
   assert.equal(E.unsaid([line], '**Your Idea**\nTell me about your game in your own words: what it is and what you love about it. Half an idea is fine.').length, 1)
   const bullets = { id: 'x', text: '· one\n· two' }
@@ -252,5 +254,5 @@ test('F230: Stage 6 lines fill: the welcome ends "Nothing goes public without yo
   assert.equal(E.renderLine(script, 'release.live', { game: 'Garden Race', link: 'https://x.example/' }).text, 'Garden Race is live: https://x.example/. I checked it from outside, and it loads and plays.')
   assert.equal(E.renderLine(script, 'release.reactions.read', { feelings: 'a close race: seen ✓', fixes: 'nothing' }).text, 'Against your feelings: a close race: seen ✓. Worth fixing in an update: nothing.')
   assert.match(E.renderLine(script, 'release.reactions.read', { feelings: 'x', fixes: 'hail', update: 'Update 1.1' }).text, /\. Added to the roadmap as Update 1\.1\.$/)
-  assert.match(E.renderLine(script, 'release.lookback', { game: 'Garden Race', forgame: 'a', forbmuz: 'b' }).text, /^\*\*Look Back\*\*\nWhat did Garden Race teach us for the next game\? Here's my list; change anything:\n· For this game: a\n· For BMUZ itself: b \(sent to Muzzy as suggestions\)$/)
+  assert.match(E.renderLine(script, 'release.lookback', { game: 'Garden Race', forgame: 'a', forbmuz: 'b' }).box.question, /^\*\*Look Back\*\*\nWhat did Garden Race teach us for the next game\? Here's my list; change anything:\n· For this game: a\n· For BMUZ itself: b \(sent to Muzzy as suggestions\)$/)
 })

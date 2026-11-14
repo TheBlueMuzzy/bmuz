@@ -466,7 +466,12 @@ export async function liveLinkProblem(dir, link, mode) {
     const js = journalOf(dir)
     let from = -1
     js.forEach((j, i) => { if (j.ev === 'step.start' && j.step === 'walk') from = i })
-    const typed = js.slice(Math.max(from, 0)).filter(j => j.ev === 'answer' && j.step === 'walk' && j.via === 'typed' && j.line === 'release.walk.link').map(j => String(j.text || ''))
+    // (F235 task 8: the ask for the link is a box — typed in it, the answer carries the line; after "Chat about this",
+    // their next message is journaled as typed for the line, as before)
+    const LINK = 'release.walk.link'
+    const typed = js.slice(Math.max(from, 0))
+      .filter(j => j.ev === 'answer' && j.step === 'walk' && ((j.via === 'typed' && j.line === LINK) || (j.via === 'box' && Array.isArray(j.lines) && j.lines.includes(LINK))))
+      .map(j => (j.via === 'box' ? [...String(j.text || '').matchAll(/"[^"]*"="([^"]*)"/g)].map(m => m[1]).join(' ') : String(j.text || '')))
     const words = typed.join(' ').split(/\s+/).map(w => w.replace(/^[(<["']+/, '').replace(/[)>\]"'.,;!?]+$/, ''))
     if (from < 0 || !words.includes(url)) return `the link must be the creative's own: ${url} isn't in what the creative typed when asked for its link`
   } else {

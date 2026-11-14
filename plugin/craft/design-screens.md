@@ -1,8 +1,8 @@
 Craft note (design, step "screens" — the script's 3.8 Screens & Menus: every screen, and what's on each one; the UI styles are the game-ui kit's seven: Clean, Cozy, Cartoon, Pixel, Neon, Dark console, Fantasy — shown side by side on the project page's UI styles tab).
 
 Read .planning/GDD.md (chapters 5, 11, 12 and 13) and .planning/design/RULEBOOK.md first.
-1. Open with mcp__bmuz__say {"line": ["design.screens", "design.screens.map"], "slots": {"map": "<the screen map you'd make from the GDD and the rulebook, in arrows: 'Title → Mode select → Game → Results → back'>"}}: your whole reply; their next message is the answer.
-2. Then, one at a time, each your whole reply (free): "design.screens.eyes", "design.screens.choose", "design.screens.end".
+1. Open with mcp__bmuz__say {"line": ["design.screens", "design.screens.map"], "slots": {"map": "<the screen map you'd make from the GDD and the rulebook, in arrows: 'Title → Mode select → Game → Results → back'>"}}, and ask its box.
+2. Then, one at a time, each a box: "design.screens.eyes", "design.screens.choose", "design.screens.end".
 3. The box "design.screens.style" with "styles" = the four of the seven closest to the look picked in Look & Sound (chapter 12), closest first: four names from the seven, word for word.
 4. Say "design.screens.teach", then call step_done.
 

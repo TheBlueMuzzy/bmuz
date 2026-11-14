@@ -3356,3 +3356,69 @@ test('F235 task 10: a half-typed message ending with a slash command ("I think w
   await $.prompt.submit({ text: 'A card game about gardens.' } as any)
   expect(events(w).find((j: any) => j.ev === 'answer')).toMatchObject({ line: 'ideate.idea', via: 'typed', text: 'A card game about gardens.' })
 })
+
+// ---- F235 task 8: every question is a question box ----
+const BOX_SCRIPT = [
+  '# Test script', '',
+  '## ideate.material · box · added', '? **Your Material**', ASK, 'header: Material', '- Never mind — no links to share, carry on', "- In this folder — read what I put in this project's folder", '',
+  '## ideate.idea · box · added', '? **Your Idea**', 'Tell me about your game in your own words.', 'header: Your idea', '- Not sure yet — help me find a spark first', "- It's in my notes — read what I share next instead", '',
+  '## define.pitch · say', '**The Pitch**', 'The game in a few lines, so anyone gets it in ten seconds.', '',
+  '## define.pitch.how · box', '? Want to see my take first?', 'header: The pitch', '- Show me your take — from the game so far', "- I'll write my own — next, in your own words", '',
+  '## define.long · say', 'x '.repeat(200).trim(), '',
+  '## any.chat · say · added', 'Go ahead: type or paste your answer as your next message.', '',
+].join(String.fromCharCode(10))
+function boxWorld(on: any) {
+  const s = sayWorld(on)
+  s.w.files.SCRIPT = BOX_SCRIPT
+  return s
+}
+const CLARIFY = 'The user wants to clarify these questions.\n    This means they may have additional information, context or questions for you.\n    Take their response into account and then reformulate the questions if appropriate.\n    Start by asking them what they would like to clarify.\n\n    Questions asked:\n- "Your Material"\n  (No answer provided)'
+const boxOf = (r: any) => JSON.parse(String(r.result)).box
+
+test('F235 task 8: a question box\'s answer is journaled with its line; the ask for links, now a box, tells Claude its typed words are their material', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: 'User has answered your questions: "Your Material…"="https://github.com/a/b". Read the answers carefully.' }))
+  const { w } = boxWorld(on)
+  await start($, true)
+  const said: any = await $.tool.call({ tool: SAY, line: 'ideate.material' } as any)
+  const box = boxOf(said)
+  expect(box.question).toBe(`**Your Material**${String.fromCharCode(10)}${ASK}`)
+  expect(box.header).toBe('Material')
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: box.question, header: box.header, multiSelect: false, options: box.options }] } as any)
+  expect(refused(r)).toBe(false)
+  expect(events(w).find((j: any) => j.ev === 'answer')).toMatchObject({ step: 'ask', lines: ['ideate.material'], via: 'box' })
+  expect((r.context || []).join(' ')).toMatch(/this message answers your ask for links/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask ?? null).toBeNull()
+})
+
+test('F235 task 8: "Chat about this" opens the box\'s line as a free question: Claude writes the script\'s one line, and the next chat message is the answer to that line', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: CLARIFY, isError: true }))
+  const { w, prompts } = boxWorld(on)
+  await start($, true)
+  const box = boxOf(await $.tool.call({ tool: SAY, line: 'ideate.material' } as any))
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: box.question, header: box.header, multiSelect: false, options: box.options }] } as any)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask).toMatchObject({ step: 'ask', line: 'ideate.material' })
+  expect(events(w).find((j: any) => j.ev === 'ask.open')).toMatchObject({ line: 'ideate.material', via: 'chat' })
+  expect((r.context || []).join(' ')).toMatch(/picked "Chat about this".*write exactly this line as your whole reply — Go ahead: type or paste your answer as your next message\./)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).not.toMatch(/"ev":"ask.refused"/)
+  // their next message is the answer to that line, journaled as typed; Claude is told it's their links
+  const links = 'https://drive.google.com/drive/folders/abc1234567 and my notes'
+  await $.prompt.submit({ text: links } as any)
+  expect(events(w).find((j: any) => j.ev === 'answer' && j.via === 'typed')).toMatchObject({ line: 'ideate.material', text: links })
+  expect(prompts[prompts.length - 1]).toMatch(/this message answers your ask for links/)
+})
+
+test('F235 task 8: the script\'s own box with "I\'ll write my own — next, in your own words" is asked as written (only Claude\'s own boxes are read for a fake option)', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: 'User has answered your questions: "Want to see my take first?"="I\'ll write my own".' }))
+  const { w } = boxWorld(on)
+  await start($, true)
+  const box = boxOf(await $.tool.call({ tool: SAY, line: 'define.pitch.how' } as any))
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: box.question, header: box.header, multiSelect: false, options: box.options }] } as any)
+  expect(refused(r)).toBe(false)
+  // Claude's own box with the same option is still refused
+  const own: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Your pitch?', options: [{ label: 'Show me yours' }, { label: "I'll write my own" }] }] } as any)
+  expect(refused(own)).toBe(true)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"lines":\["define.pitch.how"\]/)
+})

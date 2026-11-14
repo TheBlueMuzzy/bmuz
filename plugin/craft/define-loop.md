@@ -1,8 +1,8 @@
 Craft note (define, step "loop" — the script's 2.4 The Core Loop: fill-in sentence: Unity · challenge, action, reward: Brazie · 3 s / 30 s / 3 min and "different next time": Griesemer (Halo) · "is each verb fun?": Tim Ryan).
 
 Read .planning/GDD.md (chapter 4 and the rulebook ideas) first.
-1. Open with mcp__bmuz__say {"line": "define.loop"}: your whole reply (two questions); their next message answers both.
-2. Then, one at a time, each your whole reply: "define.loop.steps", "define.loop.time", and for each core verb "define.loop.verbs" with "verb" = the verb.
+1. Open with mcp__bmuz__say {"line": "define.loop"} and ask its box (two questions; the answer answers both).
+2. Then, one at a time, each a box: "define.loop.steps", "define.loop.time", and for each core verb "define.loop.verbs" with "verb" = the verb.
 3. Say "define.loop.here" with "loop" = the loop in arrows, in their words ("You draw → you plant → you score → (again)"), and in the same call the box "define.loop.ok". "Change something": {"wait": true}, change it, show it again.
 
 Hand back:

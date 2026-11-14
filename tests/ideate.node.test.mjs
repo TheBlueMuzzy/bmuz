@@ -164,8 +164,8 @@ test('live look 2026-11-10: an option that stands in for typing ("I\'ll paste th
   for (const ok of ['Read rules.md and notes.txt', 'Look in this folder again', "That's everything", 'No link — ask me the idea instead', 'Keep going', 'Send it to Define', 'Open it up', 'Nothing yet — help me find one'])
     assert.equal(E.fakeTypeOptionProblem(box(ok, 'drop your files here first, then pick this')), null, ok)
   assert.equal(E.fakeTypeOptionProblem(undefined), null)
-  // the refusal points at the chat (F232: free answers go in the chat; the next message is the answer)
-  assert.match(E.fakeTypeOptionProblem(box("I'll paste it")) || '', /ask in the chat instead of the box \(their next chat message is the answer\)/)
+  // the refusal points at the box's own fields (F235 task 8: every question is a box; "Chat about this" takes a long or pasted answer)
+  assert.match(E.fakeTypeOptionProblem(box("I'll paste it")) || '', /"Type something\." takes a short answer and "Chat about this" a long or pasted one/)
   assert.equal(E.PASTE_OPTION, undefined)
   // every live talk step without script lines is told: links or long text go in the chat, never the box
   const notes = E.talkPrompt({ id: 'x', results: [] }, 'craft', '', false)
@@ -176,11 +176,11 @@ test('live look 2026-11-10: an option that stands in for typing ("I\'ll paste th
 test('F232 (was live look round 5, ask_paste): the ask for links is the script\'s free line, the creative\'s own words; "never mind" in any form; no stall while any free question is open', () => {
   const script = E.parseScript(readFileSync(join(here, '..', 'plugin', 'script.md'), 'utf8'))
   const links = E.renderLine(script, E.LINKS_LINE, {})
-  assert.equal(links.kind, 'free')
-  assert.ok(links.text.endsWith('Share your links — paste them with Alt+V. I can read Google Drive folder and/or doc links, GitHub links, and even folder and file links from your computer. If you don\'t want to share any links, just say "never mind".'))
-  assert.match(E.sayNext(links, false), /Write exactly the "say" text as your whole reply/)
-  const open = { step: 'material', line: E.LINKS_LINE, text: links.text }
-  assert.ok(E.askResumeLine(open).endsWith(links.text))
+  assert.equal(links.kind, 'box')
+  assert.ok(links.box.question.endsWith('Share your links — paste them with Alt+V. I can read Google Drive folder and/or doc links, GitHub links, and even folder and file links from your computer. If you don\'t want to share any links, just say "never mind".'))
+  assert.match(E.sayNext(links, false), /Call AskUserQuestion now with exactly this box/)
+  const open = { step: 'material', line: E.LINKS_LINE, text: links.box.question }
+  assert.ok(E.askResumeLine(open).endsWith(links.box.question))
   for (const t of ['never mind', 'Never mind', '  NEVER MIND  ', '"never mind"', 'Never mind.', '“never mind”', '"Never mind."', 'nevermind', 'never mind!'])
     assert.equal(E.isNeverMind(t), true, t)
   for (const t of ['never mind the drive link, here: https://drive.google.com/x', 'mind', '', 'never'])
