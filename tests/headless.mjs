@@ -607,9 +607,11 @@ const scenarios = {
     const sl = define.find(j => j.ev === 'line' && j.line === 'define.scope.slice.list')
     check('F235: a finished game gets a proposed slice (bullets), never "what\'s the smallest version?"', !define.some(j => j.ev === 'line' && ['define.scope.first', 'define.scope.smallest'].includes(j.line)) && !!sl && /\n· /.test(sl.text), sl ? sl.text : 'no slice line')
     // F235 task 1: at the lock, "lock it" typed in the chat locks it (the live bug: it passed by untouched)
-    const out2 = runIn(dir, 'lock it', `${TOOLS} ToolSearch mcp__bmuz__say`, true)
-    writeFileSync(join(dir, 'run-output-lock.txt'), out2)
-    const after = journalOf(dir)
+    // ("Lock it: on to Design" moves the project on, and Design's own run starts: stopped once Define is locked; the
+    // journal is then Design's, Define's is kept in .bmuz/stages)
+    const lockedNow = () => [...journalOf(dir), ...stageJournal(dir, 'define')].some(j => j.ev === 'step.done' && j.step === 'locked')
+    await runUntil(dir, 'lock it', `${TOOLS} ToolSearch mcp__bmuz__say`, lockedNow, 600_000)
+    const after = [...stageJournal(dir, 'define'), ...journalOf(dir)]
     check('F235: Define on a finished game locks on "lock it" typed in the chat: the gate answered, the lock logged in the GDD\'s Decisions', after.some(j => j.ev === 'gate.answer' && j.step === 'lock' && j.answer === 'Lock it: on to Design') && after.some(j => j.ev === 'step.done' && j.step === 'locked') && /locked in Define/.test(read('.planning/GDD.md')), trailOf(after.slice(-8)))
   },
 
