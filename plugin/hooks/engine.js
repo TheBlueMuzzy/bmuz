@@ -1604,6 +1604,25 @@ function fillTemplate(t, slots, nested) {
   return missing.length ? { missing } : { text: out }
 }
 
+// F235 task 3 (finding 9, Muzzy: "make them bullet points instead of using semicolon to separate them. visual
+// organization of information, especially in a CLI is very important"): a slot written as a run of semicolons (two or
+// more "; " joins) is a list given as text. Returns { slot, value } for the first, else null.
+export function semicolonRun(slots = {}) {
+  for (const [slot, v] of Object.entries(slots || {})) {
+    if (typeof v === 'string' && (v.match(/;\s/g) || []).length >= 2) return { slot, value: v }
+  }
+  return null
+}
+
+// F235 task 3 (finding 6, Muzzy: "you did talk about vertical slice, but you put it in a bullet list with a bunch of
+// stuff above the question… the users focus is generally at the bottom"): a question with an {example} slot carries an
+// example from THIS game, right above where they type. True when the line has the slot and it isn't given.
+export function needsExample(script, id, slots = {}) {
+  const l = script && script.lines && script.lines[id]
+  if (!l || l.kind === 'box') return false
+  return /\{example\}/.test(String(l.text || '')) && !filled((slots || {}).example)
+}
+
 // A line ready to say: { id, kind, text } or, for a box, { id, kind: 'box', box: { question, header, multiSelect,
 // options: [{ label, description }] } } — or { error } in plain words.
 // (F230 item 9a) A slot whose value is only a placeholder — "<to fill>", "<milestones>" — or a list item that is: the

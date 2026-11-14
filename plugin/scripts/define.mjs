@@ -92,7 +92,8 @@ export function lockShow(project, state, script = loadScript()) {
     pillars: words(r('pillars').pillars).join(' · ') || first(2),
     oneliner: clean(r('pitch').oneliner) || first(3),
     loop: clean(r('loop').loop) || first(4),
-    platform: clean(r('platform').platform) || first(5),
+    // (F235 task 3: a list in a line is never a semicolon run)
+    platform: (clean(r('platform').platform) || first(5)).split(/;\s+/).join(' · '),
     musts: String(listOf(r('scope').musts).length),
     now: when.now,
     design: when.design,

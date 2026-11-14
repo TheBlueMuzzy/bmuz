@@ -32,7 +32,7 @@ test('the pipeline is the script\'s Stage 3: the welcome, then 3.1–3.10 in ord
   for (const id of Object.keys(script.lines).filter(id => id.startsWith('design.') && !composed.includes(id) && !RETIRED.includes(id))) assert.ok(said.has(id), id)
   for (const id of RETIRED) assert.ok(!said.has(id), id)
   for (const id of composed) assert.ok(!said.has(id), id)
-  assert.ok(said.has('define.scope.idea')) // 3.5's box is Define's own words
+  assert.ok(said.has('define.scope.need')) // 3.5's box is Define's own words (F235: "how much does the game need it?")
   assert.equal(E.stepPlace(P, step('flow')), 'Design · 2 of 10 · The Rulebook')
   assert.equal(E.stepPlace(P, step('welcome')), 'Design · Welcome to Design')
   assert.equal(E.stepPlace(P, step('review')), 'Design · 10 of 10 · Blueprint Review')

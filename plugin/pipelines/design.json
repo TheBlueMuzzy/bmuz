@@ -280,7 +280,7 @@
       "title": "Scope & Risks, Second Pass",
       "description": "What the rulebook added, each sized: Must / Should / Could / Won't",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
-      "lines": ["design.scope2", "design.scope2.added", "define.scope.idea"],
+      "lines": ["design.scope2", "design.scope2.added", "define.scope.need"],
       "must": ["design.scope2.added"],
       "opening": ["design.scope2"],
       "craft": "craft/design-scope2.md",

@@ -1514,6 +1514,11 @@ async function sayTool($: any, e: any) {
   // (F230 item 9a: a slot holding only a placeholder — "<to fill>" — is no answer: the line would be said unfilled)
   const hole = E.placeholderSlot(slots)
   if (hole) return deny(`BMUZ engine: {${hole.slot}} is a placeholder ("${hole.value}"): fill it from the game, then say the line.`)
+  // F235 task 3: a list is bullet points, never a semicolon run; a question with an {example} slot carries one
+  const run = E.semicolonRun(slots)
+  if (run) return deny(`BMUZ engine: {${run.slot}} is a list written with semicolons ("${run.value.slice(0, 80)}…"). Give it as a JSON list (["…", "…"]) so it shows as bullet points, one per line, or join short items with " · ".`)
+  const noExample = ids.find(id => E.needsExample(ctx.script, id, slots))
+  if (noExample) return deny(`BMUZ engine: "${noExample}" carries an example from this game right above where they type: give "example" in "slots", one or two short examples from THIS game's own parts (never a generic one).`)
   // (F233: a question list — Ideate's "{questions#}" — is the step's own pool lines, never questions in Claude's words:
   // headless ideate-finished 12:3x passed plain text and the creative read "Anything it should not do?", not the
   // script's line)

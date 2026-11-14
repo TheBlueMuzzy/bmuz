@@ -1,12 +1,12 @@
 Craft note (define, step "slice" — the script's 2.7 Scope, First Pass, part two: vertical slice: Game Developer on pre-production). The chart is on the project page now (the step before wrote it).
 
 1. Open with mcp__bmuz__say {"line": "define.scope.chart"}: your whole reply; their next message is the answer. Move what they say is in the wrong box.
-2. Say "define.scope.slice" with "slice" = the vertical slice you'd build first, two short lines in one (a small piece with a bit of everything that matters, at close to final quality), and in the same call the box "define.scope.slice.ok". "Change it": {"wait": true}, change it, show it again.
-3. Say "define.scope.report" with "risks" (what could stop it being great), "research" (what needs research) and "sketches" (new sketch ideas, numbered on from the GDD's Sketches list: "S03 Hail timing · S04 …", or "none"), then call step_done.
+2. Say "define.scope.slice.list" with "slice" = the vertical slice you'd build first, as a list, one part per item (a small piece with a bit of everything that matters, at close to final quality), and in the same call the box "define.scope.slice.ok". A finished game (F235): build it from the rules — which rules and content are in it, and the last item names what waits ("No Contraband abilities yet"); never ask them to invent it. "Change it": {"wait": true}, change it, show it again.
+3. Say "define.scope.report" with "risks" (what could stop it being great), "research" (what needs research) and "sketches" (new sketch ideas, numbered on from the GDD's Sketches list: "S03 Hail timing · S04 …", or "none"), each joined with " · ", never semicolons; then call step_done.
 
 Hand back:
-- "chapters": {"6": the whole Scope chapter again (read it from .planning/GDD.md), with any box moves, plus "**Vertical slice:** <the slice>"; "7": "- <every risk: the ones already in chapter 7 and the new ones>\n- Needs research: <each>"}
-- "slice": the slice, as kept
+- "chapters": {"6": the whole Scope chapter again (read it from .planning/GDD.md), with any box moves, plus "**Vertical slice:**\n- <part>\n- <part>…"; "7": "- <every risk: the ones already in chapter 7 and the new ones>\n- Needs research: <each>"}
+- "slice": the slice, as kept (a list)
 - "sketches": the new sketch ideas, [{"name", "question"}] ([] when none)
 - "questions": what needs research, each a short question ([] when none)
 - "later": (F235) the GDD's open questions ("Open: …" lines, any chapter) that neither the vertical slice nor the musts need, copied word for word, so the lock lists them as later and never asks them (Muzzy: "is solving that now part of the vertical slice? i don't think it is"). Things like carry-over between games, stats, achievements, accounts, other modes. [] when none.

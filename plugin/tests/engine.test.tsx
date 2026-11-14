@@ -3229,3 +3229,24 @@ test('F235 task 1 (finding 13): BMUZ\'s own bug ("engine": true) goes on BMUZ\'s
   expect(w.runs.some(a => /bugs[.]mjs$/.test(a[1]) && a[2] === 'next')).toBe(false) // no fix run started
   expect(prompts.join(NL)).not.toMatch(/Fixing B004/)
 })
+
+test('F235 task 3: the say tool refuses a semicolon run (a list goes as bullets) and a question with no example from the game', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const s = sayWorld(on)
+  s.w.files.SCRIPT = SCRIPT + NL + '## define.first · free' + NL + 'What would you play first? For example: {example}.' + NL + NL + '## define.list · say' + NL + 'Here it is:' + NL + '{slice}' + NL
+  const p = JSON.parse(s.w.files.PIPELINE)
+  p.steps[0].lines = [...p.steps[0].lines, 'define.first', 'define.list']
+  s.w.files.PIPELINE = JSON.stringify(p)
+  await start($, true)
+  const run: any = await $.tool.call({ tool: SAY, line: 'define.list', slots: { slice: 'the rondel; all 3 actions; boosters' } } as any)
+  expect(refused(run)).toBe(true)
+  expect(why(run)).toMatch(/\{slice\} is a list written with semicolons/)
+  const list: any = await $.tool.call({ tool: SAY, line: 'define.list', slots: { slice: ['the rondel', 'all 3 actions'] } } as any)
+  expect(refused(list)).toBe(false)
+  expect(said(list).say).toBe('Here it is:' + NL + '· the rondel' + NL + '· all 3 actions')
+  const bare: any = await $.tool.call({ tool: SAY, line: 'define.first' } as any)
+  expect(refused(bare)).toBe(true)
+  expect(why(bare)).toMatch(/carries an example from this game/)
+  const ok: any = await $.tool.call({ tool: SAY, line: 'define.first', slots: { example: 'you against one computer smuggler' } } as any)
+  expect(refused(ok)).toBe(false)
+})

@@ -106,7 +106,7 @@ test('task 2: where it\'s played and who plays are asked only in Define\'s Platf
 
 test('task 2: the someday platforms are asked in Scope, after the features are sorted, with the game\'s own example', () => {
   const scope = E.stepById(DEFINE, 'scope')
-  assert.ok(scope.lines.indexOf('define.scope.someday') > scope.lines.indexOf('define.scope.idea'))
+  assert.ok(scope.lines.indexOf('define.scope.someday') > scope.lines.indexOf('define.scope.need'))
   assert.ok(scope.must.includes('define.scope.someday'))
   assert.deepEqual(scope.collects.find(c => c.field === 'platform.someday').neededBy, ['store'])
   const r = E.renderLine(script, 'define.scope.someday', { first: 'the web', example: 'phones once the web version plays well · Steam with online play' })
@@ -151,4 +151,43 @@ test('task 2: the lock lists open questions by when they\'re needed — now (ask
   assert.doesNotMatch(none.text, /Needed before you lock|\*\*Later\*\*/)
   // the slice step names the later ones
   assert.ok(E.stepById(DEFINE, 'slice').results.includes('later'))
+})
+
+// ---- task 3: question craft (findings 6, 7, 9) ----
+test('task 3: every Define question that asks them to make something carries an example from the game, right above where they type', () => {
+  for (const id of ['define.feelings.own', 'define.pillars.own', 'define.pitch.different', 'define.loop.steps', 'define.loop.time', 'define.loop.verbs', 'define.scope.first', 'define.scope.someday', 'design.rulebook.win', 'design.rulebook.setup', 'design.rulebook.action', 'design.rulebook.edge', 'design.players.long']) {
+    assert.ok(E.needsExample(script, id, {}), id)
+    assert.equal(E.needsExample(script, id, { example: 'two players, one seed deck' }), false, id)
+  }
+  const r = E.renderLine(script, 'define.feelings.own', { example: 'the sly glee of steering the Space Force onto a rival' })
+  assert.ok(r.text.endsWith("what's the main feeling? For example: the sly glee of steering the Space Force onto a rival."), r.text)
+  // the vertical slice is explained in the question itself, not only in an earlier list (finding 6)
+  const first = E.renderLine(script, 'define.scope.first', { feeling: 'cat-and-mouse tension', example: 'you against one computer smuggler, no card abilities yet' }).text
+  assert.match(first, /a vertical slice, with a bit of everything that matters, at close to final quality\. What's the smallest version that still gives "cat-and-mouse tension"\? For example: you against one computer smuggler, no card abilities yet\.$/)
+  assert.doesNotMatch(E.renderLine(script, 'define.scope.intro', {}).text, /if it were missing, would the game be pointless/)
+})
+
+test('task 3: a finished game gets a proposed slice to confirm (never "what\'s the smallest version?"); a new idea is asked', () => {
+  const scope = E.stepById(DEFINE, 'scope')
+  assert.ok(!scope.must.includes('define.scope.first'))
+  const note = readFileSync(join(plugin, 'craft', 'define-scope.md'), 'utf8')
+  assert.match(note, /A finished game \(its Rulebook chapter has "Fixed:" rules\): don't ask it\. The next step proposes the slice from the rules/)
+  assert.match(readFileSync(join(plugin, 'craft', 'define-slice.md'), 'utf8'), /A finished game \(F235\): build it from the rules/)
+})
+
+test('task 3: Scope\'s box asks what its answers answer — "<idea>: how much does the game need it?" — each answer described', () => {
+  const box = E.renderLine(script, 'define.scope.need', { idea: 'A computer opponent' }).box
+  assert.equal(box.question, 'A computer opponent: how much does the game need it?')
+  assert.deepEqual(box.options.map(o => o.label), ['Must', 'Should', 'Could', "Won't"])
+  for (const o of box.options) assert.ok(o.description.length > 10, o.label)
+  assert.ok(E.stepById(DEFINE, 'scope').lines.includes('define.scope.need'))
+  assert.ok(E.stepById(DESIGN, 'scope2').lines.includes('define.scope.need'))
+})
+
+test('task 3: lists are bullets, never semicolon runs — the slice shows one part per line; a semicolon run is refused', () => {
+  const slice = E.renderLine(script, 'define.scope.slice.list', { slice: ['You against one simple computer smuggler', 'The rondel, Shuttle, Hypergate and Barter', 'No Contraband abilities yet'] }).text
+  assert.equal(slice, "Here's the vertical slice I'd build first:" + NL + '· You against one simple computer smuggler' + NL + '· The rondel, Shuttle, Hypergate and Barter' + NL + '· No Contraband abilities yet')
+  assert.deepEqual(E.semicolonRun({ slice: 'rondel action selection; all 3 actions; spending boosters' }), { slot: 'slice', value: 'rondel action selection; all 3 actions; spending boosters' })
+  assert.equal(E.semicolonRun({ x: 'one clause; then another' }), null)
+  assert.equal(E.semicolonRun({ x: ['a; b; c'] }), null)
 })

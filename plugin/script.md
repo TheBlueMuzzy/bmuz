@@ -14,6 +14,8 @@ How an entry reads:
 - A box: `? the question`, `header:` (the short chip, 12 characters at most), `many: yes` for "pick any", then one
   option per `- ` line, `label — description`. `[if slot]` shows an option only when the slot is filled;
   `[each slot]` makes one option per item of a list (`{.}` is the item, `{field}` a field of it).
+- (F235) `{example}` in a question: one or two short examples from THIS game, said right above where they type; the
+  engine refuses the line without one. A list slot is given as a list (bullet points), never a run of semicolons.
 
 # Stage 1 · Ideate
 
@@ -247,7 +249,7 @@ many: yes
 - [each moments] "{.}"
 
 ## define.feelings.own · free
-In your own words: what's the main feeling?
+In your own words: what's the main feeling?[[ For example: {example}.]]
 
 ## define.feelings.match · say
 That sounds closest to **{fun}**: {meaning}. Game designers often name eight kinds of fun: the senses, make-believe, drama, challenge, being together, discovery, self-expression, and simply passing time.
@@ -281,7 +283,7 @@ header: Pillars
 - I'll write my own — next, in your own words
 
 ## define.pillars.own · free
-What are the three things {game} is really about? One to three words each, and a line on what each means here.
+What are the three things {game} is really about? One to three words each, and a line on what each means here.[[ For example: {example}.]]
 
 ## define.pillars.test · free
 If we took away "{pillar}", would it still be {game}? And finish this: "When we argue about ___, this pillar says ___."
@@ -323,7 +325,7 @@ header: The pitch
 - Change something — next, tell me what
 
 ## define.pitch.different · free
-What's the one thing that makes it different from the nearest game you'd compare it to?
+What's the one thing that makes it different from the nearest game you'd compare it to?[[ For example: {example}.]]
 
 ## define.pitch.meets · free
 What exactly do you take from {x}, and what from {y}?
@@ -339,13 +341,13 @@ The core loop is what players do over and over: the heartbeat of the game. We'll
 2. Fill in: "You ___, then ___, so you can ___."
 
 ## define.loop.steps · free
-For each step: what's in your way, what do you do about it, and what do you get? And how does that set up the next round?
+For each step: what's in your way, what do you do about it, and what do you get? And how does that set up the next round?[[ For example: {example}.]]
 
 ## define.loop.time · free
-What happens in 3 seconds, in 30 seconds, and in 3 minutes? And what's different the next time round, so it doesn't feel the same?
+What happens in 3 seconds, in 30 seconds, and in 3 minutes? And what's different the next time round, so it doesn't feel the same?[[ For example: {example}.]]
 
 ## define.loop.verbs · free
-For {verb}: is it fun on its own? What does a good player do with it that a new player doesn't?
+For {verb}: is it fun on its own? What does a good player do with it that a new player doesn't?[[ For example: {example}.]]
 
 ## define.loop.here · say
 Here's your core loop:
@@ -428,6 +430,28 @@ Time to see the size of what we're building. Three tools, quickly:
 
 This is a first pass. The rulebook will add a lot, and we'll redo it in Design.
 
+## define.scope.intro · say · added
+**Scope, First Pass**
+Time to see the size of what we're building, in three quick parts:
+
+· **How much the game needs each idea**: must, should, could or won't.
+· **Effort vs impact**: where each idea lands on a chart, so we know what to build first.
+· **The first piece to play**: the smallest version you'd play and share first.
+
+This is a first pass. The rulebook will add a lot, and we'll redo it in Design.
+
+## define.scope.first · free · added
+**The first piece to play**
+Before the whole game, we build one small piece you can play and share: a vertical slice, with a bit of everything that matters, at close to final quality. What's the smallest version that still gives "{feeling}"? For example: {example}.
+
+## define.scope.need · box · added
+? {idea}: how much does the game need it?
+header: Scope
+- Must — the game doesn't work without it
+- Should — it hurts to leave out, but the game still works
+- Could — nice to have, if there's time
+- Won't — not in this game (for now)
+
 ## define.scope.smallest · free
 What's the smallest version that still gives "{feeling}"?
 
@@ -451,6 +475,10 @@ Here's the effort vs impact chart, on your project page now. Effort is my estima
 
 ## define.scope.slice · say
 Here's the vertical slice I'd build first: {slice}.
+
+## define.scope.slice.list · say · added
+Here's the vertical slice I'd build first:
+{slice}
 
 ## define.scope.slice.ok · box
 ? Does that slice feel like the game?
@@ -591,19 +619,19 @@ header: The Flow
 - Change something — next, tell me what
 
 ## design.rulebook.win · free
-How do you win, and how does a game end?
+How do you win, and how does a game end?[[ For example: {example}.]]
 
 ## design.rulebook.setup · free
-How is the game set up, before the first turn?
+How is the game set up, before the first turn?[[ For example: {example}.]]
 
 ## design.rulebook.pieces · free
 What are all the pieces? Here's what I have so far: {pieces}. Anything missing?
 
 ## design.rulebook.action · free
-For {action}: what exactly happens, and what can't you do?
+For {action}: what exactly happens, and what can't you do?[[ For example: {example}.]]
 
 ## design.rulebook.edge · free
-What happens when {edge}?
+What happens when {edge}?[[ For example: {example}.]]
 
 ## design.rulebook.secret · free
 What's secret, from whom, and until when?

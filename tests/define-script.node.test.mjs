@@ -28,7 +28,7 @@ test('the pipeline is the script\'s Stage 2: the welcome, then 2.1–2.8 high to
   // approved define.lock, define.platform and define.platform.someday are kept in the script, said by no step (the
   // lock lists open questions by when they're needed; Platform & Play's heading no longer lists Design's questions;
   // someday platforms are asked in Scope, once the features are sorted)
-  const RETIRED = ['define.lock', 'define.platform', 'define.platform.someday']
+  const RETIRED = ['define.lock', 'define.platform', 'define.platform.someday', 'define.scope', 'define.scope.smallest', 'define.scope.idea', 'define.scope.slice']
   for (const id of Object.keys(script.lines).filter(id => id.startsWith('define.') && id !== 'define.lock.when' && !RETIRED.includes(id))) assert.ok(said.has(id), id)
   for (const id of RETIRED) assert.ok(!said.has(id), id)
   // every talk step that decides writes its chapter as chosen right after it
@@ -93,7 +93,7 @@ test('2.8 the lock page: the script\'s words with what Define chose (✓ lines),
   const r = D.lockShow(dir, state, script)
   const msg = readFileSync(join(dir, D.LOCK_MD), 'utf8')
   assert.ok(msg.startsWith('**Concept Lock**\nHere\'s the concept, one page, on your project page now: file:///'))
-  assert.match(msg, /\n✓ The Feelings: the thrill of a close race\n✓ The 3 Pillars: Quick rivalry · Grow, then guard · Weather is fair\n✓ The Pitch: a three-minute garden race where the weather is your weapon\n✓ The Core Loop: You draw → you plant or play weather → you score blooming rows → \(again\)\n✓ Platform & Play: phone first; friends on the same screen and online, at the same time\n✓ Scope, first pass: 3 musts, slice chosen\n/)
+  assert.match(msg, /\n✓ The Feelings: the thrill of a close race\n✓ The 3 Pillars: Quick rivalry · Grow, then guard · Weather is fair\n✓ The Pitch: a three-minute garden race where the weather is your weapon\n✓ The Core Loop: You draw → you plant or play weather → you score blooming rows → \(again\)\n✓ Platform & Play: phone first · friends on the same screen and online, at the same time\n✓ Scope, first pass: 3 musts, slice chosen\n/)
   // (F235 task 2: the open questions by when they're needed; nothing here is asked now)
   assert.match(msg, /\n\n\*\*For Design\*\*, nothing to answer now:\n· Rulebook: How does a game end and who wins\?\n\nLocking means Design builds on this page\. You can still change it later; every change is logged\.\n$/)
   assert.doesNotMatch(msg, /Needed before you lock|\*\*Later\*\*/)
