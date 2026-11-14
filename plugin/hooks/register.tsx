@@ -2454,7 +2454,11 @@ export const register: Register = on => {
           const lines = [...new Set(asked.map((b: any) => b.id))]
           await journal($, { ev: 'answer', step: ctx.state.current, ...(lines.length ? { lines, via: 'box' } : {}), text: E.answerText(res).slice(0, 6000) })
           // (the ask for links, now a box: what they typed in it is their material, as the free line's answer was)
-          if (lines.includes(E.LINKS_LINE)) return { ...res, context: [...(res.context ?? []), E.answerNote({ line: E.LINKS_LINE }, E.answerText(res))] }
+          if (lines.includes(E.LINKS_LINE)) {
+            // (the box's answer: what follows its question's closing quote; the question itself may hold quotes)
+            const picked = (E.answerText(res).match(/"="([^"]*)"/) || [])[1] ?? E.answerText(res)
+            return { ...res, context: [...(res.context ?? []), E.answerNote({ line: E.LINKS_LINE }, picked)] }
+          }
         }
       }
       return res

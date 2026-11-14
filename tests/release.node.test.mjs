@@ -230,6 +230,12 @@ test('Steam: "Release it" releases 1.0 (once) and starts the walk-through; it is
   assert.match(await releaseTest(() => L.liveLinkProblem(dir, steam, 'auto')), /only the creative can say it is live/)
   assert.equal(await releaseTest(() => L.liveLinkProblem(dir, steam, 'live')), null)
   assert.match(await releaseTest(() => L.liveLinkProblem(dir, link(dir, 'steam/other/'), 'live')), /isn't in what the creative typed/)
+  // (F235 task 8: the ask for the link is a box — the link typed in it counts; a link only in its question never does)
+  const inBox = (q, a) => ({ ev: 'answer', step: 'walk', lines: ['release.walk.link'], via: 'box', text: `User has answered your questions: "${q}"="${a}".` })
+  journal(dir, [{ ev: 'step.start', step: 'walk' }, box, yes, inBox('When Steam shows Garden Race live, paste its link here.', steam)])
+  assert.equal(await releaseTest(() => L.liveLinkProblem(dir, steam, 'live')), null)
+  journal(dir, [{ ev: 'step.start', step: 'walk' }, box, yes, inBox(`Paste it like ${steam}`, 'Not live yet')])
+  assert.match(await releaseTest(() => L.liveLinkProblem(dir, steam, 'live')), /isn't in what the creative typed/)
   // no box answer, or "Not yet", or the box from an earlier try: refused
   journal(dir, [{ ev: 'step.start', step: 'walk' }, box, typed(steam)])
   assert.match(await releaseTest(() => L.liveLinkProblem(dir, steam, 'live')), /"Is Garden Race live on Steam\?"/)

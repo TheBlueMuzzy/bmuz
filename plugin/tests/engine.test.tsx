@@ -3422,3 +3422,13 @@ test('F235 task 8: the script\'s own box with "I\'ll write my own — next, in y
   expect(refused(own)).toBe(true)
   expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"lines":\["define.pitch.how"\]/)
 })
+
+test('F235 task 8: "Never mind" picked in the ask for links (its question holds quotes) is no material', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('tool.call', { tool: 'AskUserQuestion' }, (_: any, e: any) => ({ result: `User has answered your questions: "${e.questions[0].question}"="Never mind". Read the answers carefully.` }))
+  boxWorld(on)
+  await start($, true)
+  const box = boxOf(await $.tool.call({ tool: SAY, line: 'ideate.material' } as any))
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: box.question, header: box.header, multiSelect: false, options: box.options }] } as any)
+  expect((r.context || []).join(' ')).toMatch(/said "never mind" to sharing links/)
+})
