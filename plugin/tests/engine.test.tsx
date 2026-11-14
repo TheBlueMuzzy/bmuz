@@ -3291,3 +3291,23 @@ test('F235 task 5: a script that runs out of time fails at once and retries (no 
   expect(j).toMatch(/"ev":"retry","step":"plan","attempt":2,"why":"the script (ran out of time|couldn't run)/)
   expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('blocked')
 })
+
+test('F235 task 5 (finding 3): a heading-only opening is shown by the engine in its own message; Claude never has to write it, and isn\'t handed it again', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const s = sayWorld(on, ['define.pitch'])
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't-go')
+  const msg = s.prompts.find(p => /BMUZ step "ask"/.test(p)) ?? ''
+  expect(msg).toMatch(/The game in a few lines, so anyone gets it in ten seconds\.[\s\S]*BMUZ step "ask"/)
+  expect(msg).toMatch(/already showed the creative this step's opening \(define\.pitch\)/)
+  const st = JSON.parse(s.w.files['/proj/.bmuz/state.json'])
+  expect(st.opened).toBe('ask')
+  expect(st.said.lines).toContain('define.pitch')
+  expect(events(s.w).find((j: any) => j.ev === 'line' && j.line === 'define.pitch')).toMatchObject({ shown: true })
+  const again: any = await $.tool.call({ tool: SAY, line: 'define.pitch' } as any)
+  expect(why(again)).toMatch(/already shown to the creative/)
+  // the next line is fine at once (no "says it first" refusal), and nothing is nudged at the turn's end
+  const next: any = await $.tool.call({ tool: SAY, line: 'define.pitch.how' } as any)
+  expect(refused(next)).toBe(false)
+})

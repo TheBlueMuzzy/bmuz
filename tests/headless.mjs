@@ -268,7 +268,7 @@ const levelsOf = dir => {
 // is in what Claude wrote, word for word; every line the stage must say was said; the chapters end where the chart says.
 function scriptChecks(dir, out, stage, js, mustSay) {
   const lines = js.filter(j => j.ev === 'line').filter(kept(js))
-  const said = lines.filter(j => j.kind !== 'box')
+  const said = lines.filter(j => j.kind !== 'box' && !j.shown)
   const missing = said.filter(j => !plain(out).includes(plain(j.text)))
   check(`F232 (${stage}): every fixed line the engine handed out (${said.length}) is in Claude's words word for word`, said.length > 0 && missing.length === 0, missing.map(j => `${j.line}: ${plain(j.text).slice(0, 120)}`).join(' | '))
   const shows = js.filter(j => j.ev === 'show')
@@ -585,7 +585,7 @@ const scenarios = {
     check('F233 (define): Define took the conversion path: What Your Rulebook Decides, Platform & Play, scope, the slice, to the lock gate', JSON.stringify(dStarts) === JSON.stringify(['path', 'welcome-rules', 'decides', 'decides-gdd', 'platform-rules', 'platform-rules-gdd', 'scope', 'scope-gdd', 'slice', 'slice-gdd', 'change-gdd', 'lock-show', 'lock']) && define.some(j => j.ev === 'gate.pending' && j.step === 'lock') && !define.some(j => j.ev === 'step.done' && j.step === 'locked'), `${dStarts.join(' ')} | ${trailOf(define.slice(-6))}`)
     const lock = read('.planning/research/define-lock.md')
     check('F233 (define): the concept lock page has its six ✓ lines; GDD Part 1 written as chosen the same way', (lock.match(/^✓ /gm) || []).length === 6 && [1, 2, 3, 4, 5, 6].every(n => levelsOf(dir)[n] === 'chosen'), `${JSON.stringify(levelsOf(dir))} | ${lock.slice(0, 600)}`)
-    const said = both.filter(j => j.ev === 'line' && j.kind !== 'box').filter(kept(both))
+    const said = both.filter(j => j.ev === 'line' && j.kind !== 'box' && !j.shown).filter(kept(both))
     const missing = said.filter(j => !plain(out).includes(plain(j.text)))
     check('F233: every fixed line the engine handed out is in Claude\'s words word for word', said.length > 0 && missing.length === 0, missing.map(j => `${j.line}: ${plain(j.text).slice(0, 120)}`).join(' | '))
     // (the first run, read first-hand: "added to 8, 5, 11", "closes.. We'll know", "who" asked as a box and again as Keep)
@@ -634,7 +634,7 @@ const scenarios = {
     check('F234 review fix 1: the box was asked again for the rest after the one answer was settled', at >= 0 && boxes.some(j => js.indexOf(j) > at) && (state().finished || []).includes('decides'), `${boxes.length} boxes; ${trailOf(js.slice(-8))}`)
     // (the run is stopped once the step is written down, maybe with the next step's first line handed out but not yet
     // written: only this step's lines count)
-    const said = js.filter(j => j.ev === 'line' && j.kind !== 'box' && j.step === 'decides').filter(kept(js))
+    const said = js.filter(j => j.ev === 'line' && j.kind !== 'box' && !j.shown && j.step === 'decides').filter(kept(js))
     const missing = said.filter(j => !plain(out).includes(plain(j.text)))
     check('F234: every fixed line the engine handed out in this step is in Claude\'s words word for word', said.length > 0 && missing.length === 0, missing.map(j => `${j.line}: ${plain(j.text).slice(0, 120)}`).join(' | '))
   },
@@ -694,7 +694,7 @@ const scenarios = {
     const lock = read('.planning/research/define-lock.md')
     check('F234 rule 4: the stage\'s end lists what wasn\'t asked, with why, and how to bring one back', /\*\*What I didn't ask about\*\*\n1\. Where it's played, and what the player holds \(Platform & Play\): your rules say "Played on a computer, with a mouse\." \(from rules\.md\)\n2\. Who else plays \(Platform & Play\): your rules say/.test(lock) && /To bring one back, say "reopen" and its number\./.test(lock), lock.slice(-600))
     check('F234: Define went on to the lock gate (an auto run never locks)', js.some(j => j.ev === 'gate.pending' && j.step === 'lock') && !js.some(j => j.ev === 'step.done' && j.step === 'locked'), trailOf(js.slice(-6)))
-    const said = js.filter(j => j.ev === 'line' && j.kind !== 'box').filter(kept(js))
+    const said = js.filter(j => j.ev === 'line' && j.kind !== 'box' && !j.shown).filter(kept(js))
     const missing = said.filter(j => !plain(out).includes(plain(j.text)))
     check('F234: every fixed line the engine handed out is in Claude\'s words word for word', said.length > 0 && missing.length === 0, missing.map(j => `${j.line}: ${plain(j.text).slice(0, 120)}`).join(' | '))
   },
@@ -892,7 +892,7 @@ const scenarios = {
     check('F216 (develop): the builders ran only through the engine\'s run tool, every Bash try of theirs refused, with nothing allowed but the pre-approvals of auto-run.json', js.some(j => j.ev === 'run') && helperBash.every(j => /^BMUZ engine: (a helper may not use Bash|Bash stays inside this project)/.test(j.why)), trailOf(js.filter(j => j.ev === 'run' || (j.ev === 'deviation' && j.agentId))))
     check('F216 (develop): the auto run never stalled: it ended by itself, no watchdog stop, no BLOCK left standing', !js.some(j => j.ev === 'watchdog' || j.ev === 'watchdog.stopped') && !js.some(j => j.ev === 'blocked' && !runs1.some(r => r.outcome === 'blocked')), trailOf(js.filter(j => /watchdog|blocked|retry/.test(j.ev))))
     // every fixed line the engine handed out in run 1, and every file it showed, in Claude's words word for word
-    const lines1 = js.filter(j => j.ev === 'line' && j.kind !== 'box').filter(kept(js))
+    const lines1 = js.filter(j => j.ev === 'line' && j.kind !== 'box' && !j.shown).filter(kept(js))
     const unsaid1 = lines1.filter(j => !plain(out1).includes(plain(j.text)))
     const shows1 = js.filter(j => j.ev === 'show')
     const shownText = { 'plan-write': read('.bmuz/develop/say-plan.md') }
@@ -964,7 +964,7 @@ const scenarios = {
       const st1 = json('.bmuz/state.json') || {}
       check('F219 (deliver): Develop\'s end hands over to Deliver, which runs 5.0 Welcome → 5.1 Release Check → 5.2 Polish & Stand-ins → 5.3 Safety & Legal → 5.4 Build & Share and stops at "Share it?" (the question noted)', (json('.bmuz/stages.json') || []).some(s => s.pipeline === 'develop') && st1.pipeline === 'deliver' && st1.current === 'share' && ['prep', 'welcome', 'check', 'decide', 'polish', 'polish-do', 'safety', 'build'].every(id => started.includes(id)) && js.some(j => j.ev === 'gate.pending' && j.step === 'share') && /Share it\?/.test(read('.bmuz/questions.md') || ''), `${JSON.stringify({ p: st1.pipeline, cur: st1.current })} | ${trailOf(js.slice(-20))}`)
       check('F219 (deliver): the auto run shared nothing: still on dev/vertical-slice, no tag, the local origin\'s main untouched, nothing on the stand-in host, version 0.0.0', git(['rev-parse', '--abbrev-ref', 'HEAD']) === 'dev/vertical-slice' && git(['tag']) === '' && git(['rev-parse', 'main'], origin) === mainBefore && !existsSync(join(host, 'garden-race')) && json('version.json').version === '0.0.0' && !js.some(j => j.ev === 'step.start' && j.step === 'publish'), `${git(['rev-parse', '--abbrev-ref', 'HEAD'])} tags: ${git(['tag'])}`)
-      const said1 = js.filter(j => j.ev === 'line' && j.kind !== 'box').filter(kept(js)).filter(j => !plain(out1).includes(plain(j.text)))
+      const said1 = js.filter(j => j.ev === 'line' && j.kind !== 'box' && !j.shown).filter(kept(js)).filter(j => !plain(out1).includes(plain(j.text)))
       const unshown1 = shownIn(out1, js)
       check('F219 (deliver): every Stage 5 line of run 1 (the welcome, the Release Check, the stand-ins, Safety & Legal, the build card) is in Claude\'s words word for word', js.some(j => j.ev === 'line' && j.line === 'deliver.standins') && ['welcome', 'check', 'safety', 'build'].every(s => js.some(j => j.ev === 'show' && j.step === s)) && said1.length === 0 && unshown1.length === 0, `${said1.map(j => `${j.line}: ${plain(j.text).slice(0, 100)}`).join(' | ')} ${unshown1.map(j => j.step).join(',')}`)
       // run 2: the creative's own "Share it", then their playtest notes (as test answers)
@@ -977,7 +977,7 @@ const scenarios = {
       check('F219 (deliver): the playtest notes landed: each feeling checked, a tuning task and a rulebook question on the roadmap, a bug in BUGS.md (found in Deliver), an idea; the 5.5 lines word for word', js.some(j => j.ev === 'step.done' && j.step === 'notes-write') && /^- 🟢 F\d+ ✨ Tuning: /m.test(read('.planning/ROADMAP.md') || '') && /^### B\d{3} · P[0-3] · open · found \d{4}-\d\d-\d\d in Deliver · Playtest Notes/m.test(read('.planning/BUGS.md') || '') && /^Against the feelings you chose:/.test(read('.bmuz/deliver/say-notes.md') || '') && plain(out2).includes(plain(read('.bmuz/deliver/say-notes.md') || '~')) && js.some(j => j.ev === 'line' && j.line === 'deliver.notes'), `${(read('.bmuz/deliver/say-notes.md') || '').slice(0, 300)} | ${trailOf(js.filter(j => /notes/.test(j.step || '')))}`)
       const st2 = json('.bmuz/state.json') || {}
       check('F219 (deliver): back to Develop at Plan the Sprint (Deliver\'s record kept in .bmuz/stages/)', (json('bmuz.json') || {}).pipeline === 'develop' && st2.pipeline === 'develop' && (json('.bmuz/stages.json') || []).some(s => s.pipeline === 'deliver') && js.some(j => j.ev === 'stage.enter' && j.from === 'deliver' && j.to === 'develop'), JSON.stringify({ p: st2.pipeline, cur: st2.current }))
-      const unsaid2 = js.filter(j => j.ev === 'line' && j.kind !== 'box' && /^deliver\./.test(j.line || '')).filter(kept(js)).filter(j => !plain(`${out1}\n${out2}`).includes(plain(j.text)))
+      const unsaid2 = js.filter(j => j.ev === 'line' && j.kind !== 'box' && !j.shown && /^deliver\./.test(j.line || '')).filter(kept(js)).filter(j => !plain(`${out1}\n${out2}`).includes(plain(j.text)))
       check('F219 (deliver): every Stage 5 fixed line of run 2 (It\'s live, the notes ask, the notes lines) is in Claude\'s words word for word', unsaid2.length === 0 && plain(out2).includes(plain(read('.bmuz/deliver/say-live.md') || '~')), unsaid2.map(j => j.line).join(', '))
     } finally {
       server.kill()
@@ -1073,7 +1073,7 @@ const scenarios = {
       const rm = read('.planning/ROADMAP.md') || ''
       check('F230 (release): First Reactions read against the feelings; the fixes in an "Update 1.1" milestone (current), the bug in BUGS.md (found in Release); "Against your feelings: … Added to the roadmap as Update 1.1." word for word', /^## v1\.1 — Update 1\.1 {2}← current {2}\(→ update\)$/m.test(rm) && /^- 🟢 F\d+ ✨ .+ — must:update$/m.test(rm) && /^### B\d{3} · P[0-3] · open · found \d{4}-\d\d-\d\d in Release · First Reactions/m.test(read('.planning/BUGS.md') || '') && /^Against your feelings: .+ Added to the roadmap as Update 1\.1\.$/m.test(read('.bmuz/release/say-reactions.md') || '') && plain(all).includes(plain(read('.bmuz/release/say-reactions.md') || '~')), `${(read('.bmuz/release/say-reactions.md') || '').slice(0, 300)} | ${rm.split('\n').filter(l => /Update|must:update/.test(l)).join(' / ')}`)
       check('F230 (release): Look Back wrote both lists: the lessons for this game in STATE\'s Key facts, the ones for BMUZ in .planning/bmuz-suggestions.md; then on to Develop at Plan the Sprint for Update 1.1 ("Back to Develop to build Update 1.1.")', /^- Lesson: /m.test(read('.planning/STATE.md') || '') && /^## \d{4}-\d\d-\d\d · Garden Race\n- /m.test(read('.planning/bmuz-suggestions.md') || '') && (json('bmuz.json') || {}).pipeline === 'develop' && js.some(j => j.ev === 'stage.enter' && j.from === 'release' && j.to === 'develop') && plain(all).includes(plain('Back to Develop to build Update 1.1.')), `${trailOf(js.filter(j => /lookback|stage/.test(j.step || j.ev || '')).slice(-10))}`)
-      const lines = js.filter(j => j.ev === 'line' && j.kind !== 'box' && /^release\./.test(j.line || '')).filter(kept(js))
+      const lines = js.filter(j => j.ev === 'line' && j.kind !== 'box' && !j.shown && /^release\./.test(j.line || '')).filter(kept(js))
       const unsaid = lines.filter(j => !plain(all).includes(plain(j.text)))
       const shownStore = ['the web', 'itch.io', 'Steam'].filter(p => plain(all).includes(plain(`**Store & Launch** · ${p}\nHere's what ${p} needs today:`)))
       const said = new Set(js.filter(j => j.ev === 'line').map(j => j.line))

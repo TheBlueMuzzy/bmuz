@@ -972,6 +972,18 @@ async function stillNeeded($: any, step: any) {
   return E.neededMissing(ctx.pipeline, ctx.state, step, fields, gdd, vars(), later)
 }
 
+// F235 task 5: the step's opening, shown by the engine (see startTalk). Returns its words, or '' when Claude says it.
+async function showOpening($: any, step: any) {
+  if (!step.opening || !step.lines || ctx.state.opened === step.id) return ''
+  const rendered = step.opening.map((id: string) => E.renderLine(ctx.script, id, {}))
+  if (rendered.some((r: any) => r.error || r.kind !== 'say')) return ''
+  const had = ctx.state.said && ctx.state.said.step === step.id && Array.isArray(ctx.state.said.lines) ? ctx.state.said.lines : []
+  ctx.state = { ...ctx.state, opened: step.id, shownOpening: step.id, said: { step: step.id, lines: [...new Set([...had, ...step.opening])] } }
+  for (const r of rendered) await journal($, { ev: 'line', step: step.id, line: r.id, kind: 'say', text: r.text, shown: true })
+  await save($)
+  return rendered.map((r: any) => r.text).join('\n\n')
+}
+
 async function startTalk($: any, step: any, why: string) {
   const craft = await craftOf($, step)
   // A hand-off step is told what is already decided, so it doesn't ask it again.
@@ -988,7 +1000,13 @@ async function startTalk($: any, step: any, why: string) {
   const given = E.givenFor(step, ctx.state.given)
   const back = ctx.state.back && ctx.state.back.step === step.id ? ctx.state.back : null
   talkStartedHere = `${step.id}#${ctx.state.retries[step.id] || 0}`
+  // F235 task 5 (finding 3): a step's heading line ("**Platform & Play** …") is shown by the engine itself, in its own
+  // message, like a stage's intro: Claude kept leaving it out (define.welcome.rules, define.platform), and the engine
+  // had to send it back each time. Only an opening of plain "say" lines with nothing to fill; a free or box opening,
+  // or one with slots, is still Claude's to say.
+  const opening = await showOpening($, step)
   hiddenNotes = E.talkPrompt(step, craft, why, ctx.auto, decided, { recap, wrap: wrapWords(step), answers, intro: !!intro, given, script: ctx.script, opened: ctx.state.opened === step.id, back })
+  if (opening) hiddenNotes += `\nThe engine already showed the creative this step's opening (${step.opening.join(', ')}) with its message, word for word: don't write it again; go straight on with the step.`
   // (F229: the research the creative asked for during this step, with their answer to "Does it change anything?")
   // (review fix 4: read once per step run — marked used, old used notes trimmed)
   const researched = E.useNotes(research.notes, step.id, ctx.pipeline.id)
@@ -1011,7 +1029,7 @@ async function startTalk($: any, step: any, why: string) {
   // A resume (a new window, "bmuz go") while a free question is open: Claude says the same question again.
   const open = E.askOpen(ctx.state)
   if (open) hiddenNotes += `\n${E.askResumeLine(open)}`
-  await $.prompt.submit({ text: E.talkHeadline(step, intro, E.stepPlace(ctx.pipeline, step)) })
+  await $.prompt.submit({ text: E.talkHeadline(step, [intro, opening].filter(Boolean).join('\n\n') || null, E.stepPlace(ctx.pipeline, step)) })
   // The prompt hook takes the notes as it attaches them. Still here = they never went out: say so in the journal
   // rather than let Claude guess the step from its headline.
   if (hiddenNotes !== null) {
@@ -1516,6 +1534,9 @@ async function sayTool($: any, e: any) {
   if (!ids.length || ids.some(id => !id)) return deny(`BMUZ engine: say which line: {"line": "<id>"} (this step's lines: ${step.lines.join(', ')}).`)
   const notHere = ids.filter(id => !step.lines.includes(id))
   if (notHere.length) return deny(`BMUZ engine: ${notHere.map(id => `"${id}"`).join(', ')} ${notHere.length > 1 ? "aren't" : "isn't"} one of this step's lines (${step.lines.join(', ')}).`)
+  // (F235 task 5: an opening the engine already showed isn't said again)
+  const again = ctx.state.shownOpening === step.id && step.opening ? ids.filter(id => step.opening.includes(id)) : []
+  if (again.length) return deny(`BMUZ engine: ${again.map(id => `"${id}"`).join(', ')} was already shown to the creative with the step's message. Don't say it again: go on with the step's next line.`)
   // The step opens with its opening lines, said first, together.
   const opened = ctx.state.opened === step.id
   if (step.opening && !opened && JSON.stringify(ids.slice(0, step.opening.length)) !== JSON.stringify(step.opening)) {
