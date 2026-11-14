@@ -1927,7 +1927,10 @@ async function sayNextNote($: any) {
 async function stepInQuestion($: any, id: string, slots: any) {
   const r = E.renderLine(ctx.script, id, slots)
   if (r.error || r.kind !== 'box' || ctx.auto) return stepInLine($, id, slots)
-  stepInBox = { step: ctx.state.current ?? '', id, box: r.box, slots }
+  // (F235 review fix: one step-in box at a time — a box already waiting, like the bug's "how often" or another
+  // "Ask again?", is never replaced; this line is said in words instead, and their next chat message answers it, as before)
+  if (stepInBox) return stepInLine($, id, slots)
+  stepInBox ={ step: ctx.state.current ?? '', id, box: r.box, slots }
   await journal($, { ev: 'stepin.box', during: ctx.state.current ?? null, line: id, box: r.box })
   return r
 }
@@ -1954,7 +1957,8 @@ async function stepInLine($: any, id: string, slots: any) {
   const r = E.renderLine(ctx.script, id, slots)
   if (r.error) return r
   // (a box said as words — an auto run, nobody to answer — is its question)
-  const line = r.kind === 'box' ? { ...r, text: r.box.question } : r
+  // (review fix: said as words, it carries no box, so a caller never asks it as one)
+  const line = r.kind === 'box' ? { id: r.id, kind: 'say', text: r.box.question } : r
   await journal($, { ev: 'line', step: ctx.state.current ?? null, line: line.id, kind: 'say', text: line.text })
   const sid = ctx.state.current || ''
   if (turnSaid.step !== sid) turnSaid = { step: sid, lines: [] }

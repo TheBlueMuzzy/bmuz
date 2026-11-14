@@ -3567,3 +3567,14 @@ test('F235 review fix: "Chat about this" on two boxes asked together keeps the o
   expect(st.ask).toMatchObject({ line: 'ideate.idea' })
   expect((st.boxes || []).map((b: any) => b.id)).toEqual(['ideate.material'])
 })
+
+test('F235 review fix: two owed "Ask again?" lines: one is the box, the other is said in words, so neither research is dropped', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = researchWorld(on)
+  w.files['/proj/.bmuz/research.json'] = JSON.stringify({ now: null, notes: [], sayNext: [{ line: 'research.lost', slots: { question: 'Which seeds grow fastest?', why: 'when the window closed' } }, { line: 'research.lost', slots: { question: RQ, why: 'when the window closed' } }] })
+  await start($, true)
+  await $.prompt.submit({ text: 'hello again' } as any)
+  const all = prompts.join('\n')
+  expect(all).toMatch(/Which seeds grow fastest\?/)
+  expect(all).toMatch(new RegExp(RQ.replace(/[?.()]/g, '\$&')))
+})
