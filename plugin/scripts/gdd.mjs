@@ -257,6 +257,81 @@ export function setName(text, name) {
   return nl(text).replace(/^# .+? — Game Design Document\s*$/m, `# ${n} — Game Design Document`)
 }
 
+// F235 task 5 (finding 1, Sirius Smugglers rerun 3): a decision or a cut said in passing ("ignore the secret saboteur
+// mode… i'm abandoning it") must land in the document: the cut goes on Won't (chapter 6) and Decisions, the rule it
+// drops is struck where it stands ("Fixed: …" → "Cut: ~~…~~"), and an open question it answers leaves Open Questions
+// and its chapter's "Open:" line. Matching is loose (case, signs, a trailing "(Chapter)" or "?" don't count), and needs
+// at least 12 letters, so a short word never strikes a rule by accident.
+const looseKey = t => clean(t).toLowerCase().replace(/\s*\([^()]*\)\s*$/, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim()
+const looseMatch = (a, b) => { const x = looseKey(a), y = looseKey(b); return x.length >= 12 && y.length >= 12 && (x.includes(y) || y.includes(x)) }
+export function removeFromList(text, list, keep) {
+  const lines = nl(text).split('\n')
+  const at = lines.findIndex(l => l.trim() === `## ${list}`)
+  if (at < 0) return { text, removed: [] }
+  const removed = []
+  for (let i = at + 1; i < lines.length && !/^##\s/.test(lines[i]); i++) {
+    if (/^- /.test(lines[i]) && !keep(lines[i].slice(2).trim())) { removed.push(lines[i].slice(2).trim()); lines.splice(i, 1); i-- }
+  }
+  return { text: lines.join('\n'), removed }
+}
+// Rewrites the chapter lines that match (each chapter through writeChapter, so its marks stay right). fn(line) returns
+// the new line, null to drop it, or the line itself to keep it. Returns { text, chapters: [the ones changed] }.
+function mapChapterLines(text, fn, by) {
+  let doc = text
+  const changed = []
+  for (const [n] of CHAPTERS) {
+    const ch = readGdd(doc)[n]
+    if (!ch || ch.at.start < 0) continue
+    const before = ch.text.split('\n')
+    const after = before.map(fn).filter(l => l !== null)
+    if (after.join('\n') === before.join('\n')) continue
+    doc = writeChapter(doc, n, after.join('\n').trim() || NOTHING, ch.level, by).text
+    changed.push(n)
+  }
+  return { text: doc, chapters: changed }
+}
+export function answerOpen(text, questions, by = {}) {
+  const qs = (Array.isArray(questions) ? questions : [questions]).map(q => clean(q && typeof q === 'object' ? q.text ?? q.question ?? '' : q)).filter(Boolean)
+  if (!qs.length) return { text, removed: [], chapters: [] }
+  const list = removeFromList(text, 'Open Questions', item => !qs.some(q => looseMatch(item, q)))
+  const ch = mapChapterLines(list.text, l => {
+    const m = l.match(/^(- )?Open:\s*(.*)$/)
+    return m && qs.some(q => looseMatch(m[2], q)) ? null : l
+  }, by)
+  return { text: ch.text, removed: list.removed, chapters: ch.chapters }
+}
+export function cutFromGame(text, cut, by = {}) {
+  const what = clean(cut && cut.what), said = clean(cut && cut.said), rule = clean(cut && cut.rule)
+  if (!what) return { text, struck: [], chapters: [] }
+  const theirs = said ? ` (you said: "${said}")` : ''
+  let doc = text
+  // the rule it drops, struck where it stands
+  const struck = []
+  if (rule) {
+    doc = mapChapterLines(doc, l => {
+      const m = l.match(/^(- )?Fixed:\s*(.*)$/)
+      if (!m || !looseMatch(m[2], rule)) return l
+      struck.push(m[2])
+      return `${m[1] || ''}Cut: ~~${m[2]}~~${theirs}`
+    }, by).text
+  }
+  // Won't, in the Scope chapter (once)
+  const scope = readGdd(doc)[6]
+  const wont = `**Won't:** ${what}${theirs}`
+  if (!scope || !String(scope.text || '').split('\n').some(l => /won.?t/i.test(l) && looseMatch(l.replace(/\*\*Won.?t:\*\*/i, ''), what))) {
+    const body = scope && scope.text && scope.text.trim() !== NOTHING ? `${scope.text.trim()}\n${wont}` : wont
+    doc = writeChapter(doc, 6, body, scope ? scope.level : 'loose', by).text
+  }
+  doc = addToList(doc, 'Decisions', [`${by.day || ''} · Cut: ${what}${theirs}`]).text
+  // an open question about it is answered now
+  // (about it: two words in a row from its name, each 4 letters or more — "Undercover Agent")
+  const pairs = looseKey(what).split(' ').map((w, i, a) => [w, a[i + 1]]).filter(([a, b]) => b && a.length >= 4 && b.length >= 4).map(p => p.join(' '))
+  const about = q => pairs.some(p => looseKey(q).includes(p))
+  const open = readList(doc, 'Open Questions').filter(q => about(q) || looseMatch(q, what) || (rule && looseMatch(q, rule)))
+  const ans = answerOpen(doc, open, by)
+  return { text: ans.text, struck, removed: ans.removed }
+}
+
 // What a step's result writes (its keys, all optional):
 //   name: the game's name · chapters: { "<n>": text or list } · sketches: [{ name, question }] ·
 //   questions / ideas / decisions: lists of text (Open Questions, Ideas for Later, Decisions).
@@ -282,6 +357,15 @@ export function applyResult(text, result, level, by = {}) {
     const out = addToList(doc, list, r[key])
     doc = out.text
     if (out.added.length) added[list] = out.added
+  }
+  // (F235 task 5: cuts said in passing, and open questions now answered)
+  for (const c of Array.isArray(r.cuts) ? r.cuts : []) {
+    const out = cutFromGame(doc, c, by)
+    if (out.text !== doc) { doc = out.text; added.Cut = [...(added.Cut || []), clean(c && c.what)] }
+  }
+  if (Array.isArray(r.answered) && r.answered.length) {
+    const out = answerOpen(doc, r.answered, by)
+    if (out.text !== doc) { doc = out.text; added['answered Open'] = [...(added['answered Open'] || []), ...(out.removed.length ? out.removed : r.answered)] }
   }
   if (touched.length || Object.keys(added).length) {
     const what = [touched.length ? `chapters ${touched.join(', ')}` : '', ...Object.entries(added).map(([l, a]) => `${a.length} on ${l}`)].filter(Boolean).join('; ')
@@ -566,6 +650,21 @@ if (isMain) {
     if (!readFileIn(dir, GDD)) writeFile(dir, GDD, newGdd())
     writePage(dir)
     console.log(`✔ ${PAGE}${a === '--open' ? ` · ${openPage(dir)}` : ''}`)
+  } else if (cmd === 'decision') {
+    // (F235 task 5: a decision or a cut said in passing, from the engine's step-in tool: {decision, said, cut, rule, answers, step, stage})
+    let d = null
+    try { d = JSON.parse(a || '{}') } catch (e) { d = null }
+    const what = clean(d && d.decision)
+    if (!what) { console.log(JSON.stringify({ ok: false, say: 'give "decision": what was decided, in a few words' })); process.exit(1) }
+    const by = { step: clean(d.step) || 'step-in', stage: clean(d.stage), day: new Date().toISOString().slice(0, 10) }
+    const said = clean(d.said)
+    const result = d.cut
+      ? { cuts: [{ what, said, rule: d.rule }], answered: d.answers ? [d.answers] : [] }
+      : { decisions: [`${by.day} · ${what}${said ? ` (you said: "${said}")` : ''}`], answered: d.answers ? [d.answers] : [] }
+    const out = applyResult(readFileIn(dir, GDD) || newGdd(), result, null, by)
+    writeFile(dir, GDD, out.text)
+    writePage(dir)
+    console.log(JSON.stringify({ ok: true, report: out.report, added: out.added }))
   } else if (cmd === 'init') {
     if (!readFileIn(dir, GDD)) writeFile(dir, GDD, newGdd(a))
     writePage(dir)

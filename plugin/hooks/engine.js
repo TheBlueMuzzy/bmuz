@@ -1086,6 +1086,8 @@ export function judgeTool(p, state, call, opts = {}) {
   if (call.tool === IDEA_TOOL && !call.agentId) return { allow: true }
   // F234: "already decided" and "reopen" are step-ins too (the motor checks what each may touch)
   if ((call.tool === DECIDED_TOOL || call.tool === REOPEN_TOOL) && !call.agentId) return { allow: true }
+  // F235 task 5: so is a decision or a cut said in passing (written into the GDD by the motor through gdd.mjs)
+  if (call.tool === DECISION_TOOL && !call.agentId) return { allow: true }
   // F229: a research flow's helper may run the source check's own link test (check-sources.mjs --dead '<url>' …), the
   // one command it needs before its report is checked; the plugin's path is outside the project, so it is let through
   // here, exactly that command, only while research runs (a research step, or the creative's own research).
@@ -2191,6 +2193,9 @@ export const FIELD_RE = /^[a-z]+(\.[a-z]+)*$/
 export const FIELD_KINDS = ['fixed', 'decided', 'said', 'read']
 export const THERE_KINDS = ['fixed', 'decided']
 export const DECIDED_TOOL = 'mcp__bmuz__decided'
+// F235 task 5 (finding 1): a decision or a cut the creative says in passing, at any step
+export const DECISION_TOOL = 'mcp__bmuz__decision'
+export const PASSING_RULE = `In passing: when the creative decides something or cuts something on the way ("ignore that mode, it doesn't work, I'm abandoning it", "the first player is random"), even outside this step's questions, it goes into the design document now: call ${DECISION_TOOL} {"decision": "what was decided, in a few words", "said": "their exact words", "cut": true when it drops a part of the game, "rule": "the Fixed rule it drops, word for word from the GDD (a cut only)", "answers": "the open question it answers, word for word from the GDD's Open Questions, if any"}, write the line it returns word for word, then carry on exactly where the step was.`
 export const REOPEN_TOOL = 'mcp__bmuz__reopen'
 
 // What is wrong with a step's "collects" (empty = fine).

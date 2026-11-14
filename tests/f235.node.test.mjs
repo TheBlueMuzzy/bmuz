@@ -257,3 +257,29 @@ test('task 5 (finding 2): their words for the quote checks include every message
   assert.ok(isVerbatim('first player is chosen randomly', src))
   assert.ok(!answersFrom(lines).includes('Lock it: on to Design'))
 })
+
+test('task 5 (finding 1): a cut said in passing goes on Won\'t and Decisions, its Fixed rule is struck, and the open question about it is cleared', () => {
+  let doc = G.newGdd('Sirius Smugglers')
+  doc = G.writeChapter(doc, 8, ['Fixed: "Undercover Agent: one player secretly works for the Space Force." (from Sirius Smugglers - Rules)', 'Fixed: "Pick 2 of your 3 actions each turn." (from Sirius Smugglers - Rules)'], 'loose', {}).text
+  doc = G.writeChapter(doc, 6, ['Open: Is the optional Undercover Agent mode part of the digital game, later, or out?'], 'loose', {}).text
+  doc = G.addToList(doc, 'Open Questions', ['Is the optional Undercover Agent mode part of the digital game, later, or out? (Scope)', 'Who goes first in the digital game? (Rulebook)']).text
+  const out = G.applyResult(doc, { cuts: [{ what: 'The Undercover Agent (secret saboteur) mode', said: "it just doesn't work. i'm abandoning it", rule: 'Undercover Agent: one player secretly works for the Space Force.' }] }, null, { step: 'sketches', stage: 'Ideate', day: '2026-11-14' })
+  const ch = G.readGdd(out.text)
+  assert.match(ch[8].text, /Cut: ~~"Undercover Agent: one player secretly works for the Space Force\." \(from Sirius Smugglers - Rules\)~~ \(you said: "it just doesn't work\. i'm abandoning it"\)/)
+  assert.match(ch[8].text, /Fixed: "Pick 2 of your 3 actions each turn\."/)
+  assert.match(ch[6].text, /\*\*Won't:\*\* The Undercover Agent \(secret saboteur\) mode \(you said: "it just doesn't work\. i'm abandoning it"\)/)
+  assert.doesNotMatch(ch[6].text, /Open: Is the optional Undercover Agent/)
+  assert.deepEqual(G.readList(out.text, 'Open Questions'), ['Who goes first in the digital game? (Rulebook)'])
+  assert.match(G.readList(out.text, 'Decisions').join('\n'), /2026-11-14 · Cut: The Undercover Agent/)
+  // an answered question said in passing leaves the list too
+  const ans = G.applyResult(out.text, { answered: ['Who goes first in the digital game?'] }, null, {})
+  assert.deepEqual(G.readList(ans.text, 'Open Questions'), [])
+  // a short word never strikes anything
+  assert.equal(G.answerOpen(doc, ['mode']).removed.length, 0)
+})
+
+test('task 5 (finding 1): the decision step-in is told to every talk step with script lines, and its line is the script\'s', () => {
+  assert.match(E.PASSING_RULE, /mcp__bmuz__decision/)
+  assert.equal(E.renderLine(script, 'any.noted', { decision: 'the Undercover Agent mode is cut' }).text, 'Noted in your design document: the Undercover Agent mode is cut.')
+  assert.equal(E.judgeTool(DEFINE, { current: 'lock', status: 'waiting', finished: [], results: {}, retries: {} }, { tool: E.DECISION_TOOL }, {}).allow, true)
+})

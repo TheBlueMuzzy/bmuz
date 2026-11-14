@@ -1104,6 +1104,9 @@ header: Keep?
 ## any.type · say · added
 Type your answer below.
 
+## any.noted · say · added
+Noted in your design document: {decision}.
+
 ## any.decided · say · added
 Noted: {what} is already decided ({answer}). I won't ask about it again.
 

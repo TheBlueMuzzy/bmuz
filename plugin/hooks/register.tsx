@@ -645,6 +645,12 @@ async function registerAll($: any) {
     isDeferred: false,
   })
   await $.tool.register({
+    name: 'decision',
+    description: 'BMUZ engine (any step): the creative decided or cut something in passing, even outside the step\'s questions ("ignore that mode, I\'m abandoning it"). It goes into the design document now: {"decision": "what was decided, in a few words", "said": "their exact words", "cut": true when it drops a part of the game (it goes on Won\'t and Decisions), "rule": "the Fixed rule it drops, word for word from the GDD (it is struck)", "answers": "the open question it answers, word for word (it leaves Open Questions)"}. Returns the line to say word for word.',
+    inputSchema: { type: 'object', properties: { decision: { type: 'string' }, said: { type: 'string' }, cut: { type: 'boolean' }, rule: { type: 'string' }, answers: { type: 'string' } }, required: ['decision'] },
+    isDeferred: false,
+  })
+  await $.tool.register({
     name: 'reopen',
     description: 'BMUZ engine: the creative said "reopen <number or name>" for something the stage\'s end listed as not asked. Give their words: {"which": "2"}. That step runs again. Returns the line to say word for word.',
     inputSchema: { type: 'object', properties: { which: { type: 'string' } }, required: ['which'] },
@@ -1022,7 +1028,7 @@ async function startTalk($: any, step: any, why: string) {
   const rec = ctx.state.asked && ctx.state.asked[step.id]
   const plan = step.collects ? await planFor($, step, rec && rec.only ? rec.only : null) : null
   if (plan) hiddenNotes += `\n${E.planNote(step, plan)}`
-  if (step.lines) hiddenNotes += `\n${E.DECIDED_RULE}`
+  if (step.lines) hiddenNotes += `\n${E.DECIDED_RULE}\n${E.PASSING_RULE}`
   if (step.lines && answers !== undefined && E.soundsDecided(JSON.stringify(answers))) hiddenNotes += `\n${E.decidedNote()}`
   const skipped = E.skipItems(ctx.pipeline, ctx.state)
   if (skipped.length && ctx.pipeline.steps.some((s: any) => s.stageEnd && ctx.state.finished.includes(s.id))) hiddenNotes += `\n${E.reopenRule(skipped)}`
@@ -1741,6 +1747,35 @@ async function ideaTool($: any, e: any) {
 // "Already decided" settles exactly the question just asked (Muzzy's rule 1): its fields get a decided record and a
 // "Fixed: … (you said it's already decided)" line in their chapter (fields.mjs), the must for that line is met, and the
 // step carries on. Nothing after it is marked.
+// F235 task 5 (finding 1, Sirius Smugglers rerun 3: "ignore the other tabs in the rules regarding the secret sabateuer
+// mode. it just doesn't work. i'm abandoning it" at Sketches → nothing recorded; the GDD still listed the mode as Open
+// and its rule as Fixed). A decision or a cut said in passing goes into the GDD at once (gdd.mjs decision: Won't and
+// Decisions, the rule struck, the open question answered); the step carries on where it was, nothing in its state moves.
+async function decisionTool($: any, e: any) {
+  const decision = String(e.decision ?? '').replace(/\s+/g, ' ').trim()
+  if (!decision) return { deny: 'BMUZ engine: give "decision": what was decided, in a few words.' }
+  stepInTurn = true
+  const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
+  const payload = { decision, said: e.said, cut: e.cut === true || e.cut === 'true', rule: e.rule, answers: e.answers, step: step ? step.id : 'step-in', stage: E.stageOf(ctx.pipeline.id)?.name ?? ctx.pipeline.id }
+  let ran: any = null
+  try {
+    ran = await $.process.run(['node', `${ctx.root}/scripts/gdd.mjs`, 'decision', JSON.stringify(payload)], { cwd: ctx.dir, timeoutMs: 60000 })
+  } catch (err) {
+    return { deny: `BMUZ engine: it wasn't written down: ${String(err).slice(0, 200)}` }
+  }
+  let out: any = null
+  try { out = JSON.parse(String(ran?.stdout ?? '').trim().split('\n').pop() || '{}') } catch (err) { out = null }
+  if (!out || !out.ok) return { deny: `BMUZ engine: it wasn't written down: ${String((out && out.say) || ran?.stdout || '').trim().slice(0, 200)}` }
+  const r = E.renderLine(ctx.script, 'any.noted', { decision: decision.replace(/[.]+$/, '') })
+  if (r.error) return { deny: `BMUZ engine: ${r.error}` }
+  await journal($, { ev: 'decision', step: step ? step.id : null, ...payload, added: out.added ?? null })
+  await journal($, { ev: 'line', step: ctx.state.current ?? null, line: r.id, kind: 'say', text: r.text })
+  const sid = ctx.state.current || ''
+  if (turnSaid.step !== sid) turnSaid = { step: sid, lines: [] }
+  turnSaid.lines.push({ id: r.id, text: r.text })
+  return { result: JSON.stringify({ say: r.text, then: `Write exactly the "say" text now, as text in your reply. Then ${carryOnWords('the decision')}` }) }
+}
+
 async function decidedTool($: any, e: any) {
   const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
   if (!step || step.kind !== 'talk' || ctx.state.status !== 'working' || !step.lines) return { deny: 'BMUZ engine: no talk step is asking anything now, so nothing is settled. Carry on.' }
@@ -2296,6 +2331,7 @@ export const register: Register = on => {
     if (call.tool === E.BUG_TOOL) return bugTool($, e)
     if (call.tool === E.IDEA_TOOL) return ideaTool($, e)
     if (call.tool === E.DECIDED_TOOL) return decidedTool($, e)
+    if (call.tool === E.DECISION_TOOL) return decisionTool($, e)
     if (call.tool === E.REOPEN_TOOL) return reopenTool($, e)
     if (call.tool === E.RESEARCH_TOOL) return researchTool($, e)
     if (call.tool === E.RUN_TOOL) return runTool($, e)

@@ -3322,3 +3322,22 @@ test('F235 task 5 (finding 2): every message the creative types during a talk st
   expect(ans.map((j: any) => j.text)).toEqual(['you pick their card to take, and they pick a random one from you.'])
   expect(ans[0]).toMatchObject({ step: 'ask', via: 'chat' })
 })
+
+test('F235 task 5 (finding 1): a cut said in passing is written through gdd.mjs at once, its line comes back word for word, and the step stays where it was', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, base({ current: 'name', status: 'working' }), (argv: string[]) => (/gdd[.]mjs$/.test(String(argv[1])) && argv[2] === 'decision' ? { exitCode: 0, stdout: JSON.stringify({ ok: true, added: { Cut: ['the saboteur mode'] } }) } : { exitCode: 0, stdout: '{}' }))
+  w.files.SCRIPT = SCRIPT + NL + '## any.noted · say · added' + NL + 'Noted in your design document: {decision}.' + NL
+  await start($, true)
+  const before = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  const r: any = await $.tool.call({ tool: 'mcp__bmuz__decision', decision: 'The secret saboteur mode is cut.', said: "i'm abandoning it", cut: true, rule: 'Undercover Agent: one player secretly works for the Space Force.' } as any)
+  expect(refused(r)).toBe(false)
+  expect(JSON.parse(String(r.result)).say).toBe('Noted in your design document: The secret saboteur mode is cut.')
+  const call = w.runs.find(a => /gdd[.]mjs$/.test(String(a[1])) && a[2] === 'decision')
+  expect(JSON.parse(String(call?.[3]))).toMatchObject({ cut: true, rule: 'Undercover Agent: one player secretly works for the Space Force.', said: "i'm abandoning it", step: 'name' })
+  const after = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(after.current).toBe(before.current)
+  expect(after.status).toBe(before.status)
+  expect(events(w).find((j: any) => j.ev === 'decision')).toMatchObject({ decision: 'The secret saboteur mode is cut.', cut: true })
+})
