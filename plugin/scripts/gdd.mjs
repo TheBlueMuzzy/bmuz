@@ -395,6 +395,55 @@ export function researchReports(dir) {
   return out.sort((a, b) => (a.date === b.date ? a.file.localeCompare(b.file) : a.date < b.date ? 1 : -1))
 }
 
+// F235 task 4 (finding 8, Muzzy 2026-11-14: "Would love to see this on the actual Moscow chart in an artifact instead of
+// a spreadsheet in CLI"): the Scope chapter's table (| Idea | MoSCoW | Effort | Impact | Box |) read back as rows, then
+// drawn on the page as real MoSCoW columns and an effort vs impact 2×2. The box is the table's own when it names one of
+// the four, else worked out from effort and impact (medium counts as high).
+export const SCOPE_BOXES = [
+  ['quick', 'Quick wins', 'low effort, high impact: do first'],
+  ['big', 'Big projects', 'high effort, high impact: plan them'],
+  ['fill', 'Fill-ins', "low effort, low impact: when there's time"],
+  ['avoid', 'Avoid', 'high effort, low impact'],
+]
+export const MOSCOW = ['Must', 'Should', 'Could', "Won't"]
+export function scopeRows(text) {
+  const lines = nl(text).split('\n').map(l => l.trim().replace(/^- (?=\|)/, '')).filter(l => l.startsWith('|'))
+  const cellsOf = l => l.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim())
+  const head = lines.findIndex(l => /moscow/i.test(l) && /effort/i.test(l))
+  if (head < 0) return []
+  const h = cellsOf(lines[head]).map(c => c.toLowerCase())
+  const col = name => h.findIndex(c => c.includes(name))
+  const [ci, cm, ce, cp, cb] = [col('idea'), col('moscow'), col('effort'), col('impact'), col('box')]
+  const rows = []
+  for (const l of lines.slice(head + 1)) {
+    const c = cellsOf(l)
+    if (c.every(x => /^:?-+:?$/.test(x) || !x)) continue
+    const idea = c[ci >= 0 ? ci : 0]
+    if (!idea) continue
+    const m = String(c[cm] || '').toLowerCase()
+    const moscow = MOSCOW.find(x => m.startsWith(x.toLowerCase()) || (x === "Won't" && /^won.?t/.test(m))) || ''
+    const effort = String(c[ce] || ''), impact = String(c[cp] || ''), box = String(c[cb] || '')
+    const named = /quick/i.test(box) ? 'quick' : /big/i.test(box) ? 'big' : /fill/i.test(box) ? 'fill' : /avoid/i.test(box) ? 'avoid' : ''
+    const hiE = /high|medium/i.test(effort), hiI = /high|medium/i.test(impact)
+    rows.push({ idea, moscow, effort, impact, box: named || (hiI ? (hiE ? 'big' : 'quick') : (hiE ? 'avoid' : 'fill')) })
+  }
+  return rows
+}
+export function scopeChartHtml(text) {
+  const rows = scopeRows(text)
+  if (!rows.length) return ''
+  const cols = MOSCOW.map(m => {
+    const items = rows.filter(r => r.moscow === m)
+    return `<div class="mcol"><h5>${esc(m)}</h5>${items.length ? `<ul>${items.map(r => `<li>${inline(r.idea)}</li>`).join('')}</ul>` : '<p class="open">none</p>'}</div>`
+  }).join('')
+  const tag = r => (r.moscow ? ` <span class="mtag">${esc(r.moscow)}</span>` : '')
+  const cells = SCOPE_BOXES.map(([id, title, means]) => {
+    const items = rows.filter(r => r.box === id)
+    return `<div class="quad ${id}"><h5>${esc(title)}</h5><p class="means">${esc(means)}</p>${items.length ? `<ul>${items.map(r => `<li>${inline(r.idea)}${tag(r)}</li>`).join('')}</ul>` : '<p class="open">none</p>'}</div>`
+  }).join('')
+  return `<div class="scope-chart" id="scope-chart"><h4>Must / Should / Could / Won't</h4><div class="moscow">${cols}</div><h4>Effort vs impact</h4><div class="matrix"><span class="axis y">impact ↑</span><div class="quads">${cells}</div><span class="axis x">effort →</span></div></div>`
+}
+
 export function pageHtml(text, when = '', tabs = [], roadmap = '') {
   const doc = nl(text)
   const chapters = readGdd(doc)
@@ -407,7 +456,9 @@ export function pageHtml(text, when = '', tabs = [], roadmap = '') {
       const c = chapters[n] || { level: 'empty', text: '' }
       const all = String(c.all || '').trim()
       const body = all && all !== NOTHING ? mdHtml(all) : `<p class="open">${NOTHING}</p>`
-      return `<section class="ch"><h3>${n} · ${esc(ch)} ${chip(c.level)}</h3><p class="holds">${esc(holds)}</p>${body}</section>`
+      // (F235 task 4: the Scope chapter's table drawn as a real chart, above the table)
+      const chart = n === 6 && all ? scopeChartHtml(all) : ''
+      return `<section class="ch"><h3>${n} · ${esc(ch)} ${chip(c.level)}</h3><p class="holds">${esc(holds)}</p>${chart}${body}</section>`
     })
     return `<h2>${esc(title)}</h2>\n${rows.join('\n')}`
   })
@@ -430,6 +481,13 @@ h1 { margin: 0; } h2 { margin-top: 32px; } h3 { margin: 0 0 4px; font-size: 18px
 .chip { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
 .empty { background: var(--empty); } .loose { background: var(--loose); } .chosen { background: var(--chosen); color: #fff; } .worked-out { background: var(--worked); color: #fff; } .built { background: var(--built); color: #fff; }
 .styles { display: flex; flex-wrap: wrap; gap: 10px; } .style { width: 180px; padding: 10px; border-radius: 10px; border: 1px solid var(--line); } .style .panel { margin-top: 6px; padding: 8px; font-size: 13px; } .style .btn { display: inline-block; margin-top: 6px; padding: 4px 10px; font-weight: 700; }
+.scope-chart { margin: 12px 0 16px; } .scope-chart h4 { margin: 16px 0 8px; } .scope-chart h5 { margin: 0 0 6px; font-size: 15px; } .scope-chart ul { margin: 0; padding-left: 18px; } .scope-chart li { margin: 2px 0; }
+.moscow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; } .mcol { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--bg); }
+.matrix { display: grid; grid-template-columns: auto 1fr; grid-template-rows: 1fr auto; gap: 6px; } .axis { color: var(--soft); font-size: 13px; } .axis.y { writing-mode: vertical-rl; transform: rotate(180deg); align-self: center; } .axis.x { grid-column: 2; text-align: center; }
+.quads { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } .quad { border-radius: 8px; padding: 10px 12px; min-height: 90px; } .quad .means { color: var(--soft); font-size: 13px; margin: 0 0 6px; }
+.quad.quick { background: #dafbe1; } .quad.big { background: #ddf4ff; } .quad.fill { background: #f6f8fa; border: 1px solid var(--line); } .quad.avoid { background: #ffebe9; }
+.mtag { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 8px; background: #fff; border: 1px solid var(--line); margin-left: 4px; }
+@media (max-width: 640px) { .moscow { grid-template-columns: 1fr 1fr; } }
 .levels { color: var(--soft); font-size: 14px; } table { border-collapse: collapse; margin: 8px 0; } td, th { border: 1px solid var(--line); padding: 4px 10px; text-align: left; }
 </style></head><body><main>
 <h1>${esc(name)}</h1>

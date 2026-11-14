@@ -28,7 +28,7 @@ test('the pipeline is the script\'s Stage 2: the welcome, then 2.1–2.8 high to
   // approved define.lock, define.platform and define.platform.someday are kept in the script, said by no step (the
   // lock lists open questions by when they're needed; Platform & Play's heading no longer lists Design's questions;
   // someday platforms are asked in Scope, once the features are sorted)
-  const RETIRED = ['define.lock', 'define.platform', 'define.platform.someday', 'define.scope', 'define.scope.smallest', 'define.scope.idea', 'define.scope.slice']
+  const RETIRED = ['define.lock', 'define.platform', 'define.platform.someday', 'define.scope', 'define.scope.smallest', 'define.scope.idea', 'define.scope.slice', 'define.scope.chart']
   for (const id of Object.keys(script.lines).filter(id => id.startsWith('define.') && id !== 'define.lock.when' && !RETIRED.includes(id))) assert.ok(said.has(id), id)
   for (const id of RETIRED) assert.ok(!said.has(id), id)
   // every talk step that decides writes its chapter as chosen right after it

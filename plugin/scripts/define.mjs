@@ -72,8 +72,12 @@ export function pathOf(project) {
   return rules.length >= MIN_FIXED ? 'convert' : 'new'
 }
 
-export function lockShow(project, state, script = loadScript()) {
+// env: given (the command line), the page is opened in the creative's browser first (F235 task 4, finding 10: "It's not
+// a clickable link and should be"), and the card's link says so; a test run (BMUZ_TEST=1) only says it would.
+export function lockShow(project, state, script = loadScript(), env = null) {
   const doc = G.readFileIn(project, G.GDD) || G.newGdd()
+  G.writePage(project)
+  const opened = env ? /^(opened|test run: would open)/.test(G.openPage(project, env)) : false
   const by = state.resultsBy || {}
   // (F233: a finished game's feelings, pillars, pitch and loop come from one step, "decides"; its platform from
   // "platform-rules")
@@ -87,7 +91,7 @@ export function lockShow(project, state, script = loadScript()) {
   // (F235 task 2: the open questions by when they're needed; the slice step names the ones the slice doesn't need)
   const when = openByWhen(doc, (by.slice || {}).later)
   const slots = {
-    link: G.pageLink(project),
+    link: `${G.pageLink(project)}${opened ? ' (open in your browser now)' : ''}`,
     feelings: words(r('feelings').feelings).join(' · ') || first(1),
     pillars: words(r('pillars').pillars).join(' · ') || first(2),
     oneliner: clean(r('pitch').oneliner) || first(3),
@@ -134,7 +138,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
   if (!state) { console.log('✘ no .bmuz/state.json: this runs inside a define run'); process.exit(1) }
   try {
     if (mode === 'lock-show') {
-      const r = lockShow(project, state)
+      const r = lockShow(project, state, loadScript(), process.env)
       console.log(`✔ ${LOCK_MD}: the concept, one page (${r.slots.musts} musts)`)
     } else if (mode === 'locked') {
       locked(project)

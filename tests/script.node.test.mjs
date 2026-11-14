@@ -87,7 +87,7 @@ test('lines not in the approved script are marked "added" (each one has an Ask M
   // (F234 — Steps ask only what's still open: already decided, the stage's skip list and reopen, the ask for the rules)
   const F234 = ['ideate.rules.link', 'any.decided', 'any.decided.what', 'any.decided.which', 'any.skipped', 'any.reopen']
   // (F235 — Fixes from the Sirius Smugglers live look)
-  const F235 = ['bug.engine', 'define.platform.now', 'define.scope.someday', 'define.lock.when', 'design.players.leave', 'design.players.long', 'design.players.defaults', 'define.scope.intro', 'define.scope.first', 'define.scope.need', 'define.scope.slice.list']
+  const F235 = ['bug.engine', 'define.platform.now', 'define.scope.someday', 'define.lock.when', 'design.players.leave', 'design.players.long', 'design.players.defaults', 'define.scope.intro', 'define.scope.first', 'define.scope.need', 'define.scope.slice.list', 'define.scope.chart.here']
   assert.deepEqual(Object.values(script.lines).filter(l => l.added).map(l => l.id).sort(), [...F233, ...F234, ...F235,'any.keep', 'bug.fix.done', 'bug.fix.reproduced', 'bug.fix.start', 'bug.none', 'bug.now', 'bug.often', 'bug.verified', 'define.feelings.eight', 'deliver.back', 'deliver.live', 'deliver.notready.box', 'design.rulebook.ok', 'design.rulebook.section', 'design.sketches.none', 'design.time.notrap', 'develop.idea', 'develop.plan.one', 'develop.setup.nologin', 'develop.waiting', 'release.none', 'release.notyet', 'release.out', 'release.walk', 'release.walk.link', 'release.walk.live.box', 'research.busy', 'research.changed', 'research.lost', 'research.none', 'research.notstarted', 'research.wait'].sort())
 })
 

@@ -3250,3 +3250,23 @@ test('F235 task 3: the say tool refuses a semicolon run (a list goes as bullets)
   const ok: any = await $.tool.call({ tool: SAY, line: 'define.first', slots: { example: 'you against one computer smuggler' } } as any)
   expect(refused(ok)).toBe(false)
 })
+
+test('F235 task 4: a line pointing at the project page opens the page first (once per step try) and fills its {link}, saying so', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const s = sayWorld(on)
+  s.w.files.SCRIPT = SCRIPT + NL + '## define.chart · free' + NL + "It's on your project page too: {link}. Anything in the wrong box?" + NL
+  const p = JSON.parse(s.w.files.PIPELINE)
+  p.steps[0].lines = [...p.steps[0].lines, 'define.chart']
+  s.w.files.PIPELINE = JSON.stringify(p)
+  await start($, true)
+  const before = s.w.runs.length
+  const r: any = await $.tool.call({ tool: SAY, line: 'define.chart' } as any)
+  expect(refused(r)).toBe(false)
+  const opens = s.w.runs.slice(before).filter(a => /gdd[.]mjs$/.test(String(a[1])) && a[2] === 'page' && a[3] === '--open')
+  expect(opens.length).toBe(1)
+  expect(said(r).say).toMatch(/^It's on your project page too: file:\/\/\/.*proj\/\.planning\/project-page\.html\. Anything in the wrong box\?/)
+  expect(events(s.w).find((j: any) => j.ev === 'page.open')).toMatchObject({ step: 'ask' })
+  // said again in the same try: not opened twice
+  await $.tool.call({ tool: SAY, line: 'define.chart' } as any)
+  expect(s.w.runs.slice(before).filter(a => /gdd[.]mjs$/.test(String(a[1])) && a[2] === 'page').length).toBe(1)
+})

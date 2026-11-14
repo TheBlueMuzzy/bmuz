@@ -1614,6 +1614,19 @@ export function semicolonRun(slots = {}) {
   return null
 }
 
+// F235 task 4 (findings 8, 10): does this line point at the project page? (Then the engine opens the page first.)
+export function pointsAtPage(script, id) {
+  const l = script && script.lines && script.lines[id]
+  if (!l) return false
+  const words = l.kind === 'box' ? [l.box.question, ...l.box.options.map(o => `${o.label} ${o.description}`)].join(' ') : String(l.text || '')
+  return /project page/i.test(words)
+}
+// A file's address as a file:/// link (Windows paths too), the spaces and other signs escaped.
+export function fileLink(path) {
+  const p = String(path || '').replace(/\\/g, '/')
+  return `file://${p.startsWith('/') ? '' : '/'}${encodeURI(p).replace(/#/g, '%23').replace(/\?/g, '%3F')}`
+}
+
 // F235 task 3 (finding 6, Muzzy: "you did talk about vertical slice, but you put it in a bullet list with a bunch of
 // stuff above the question… the users focus is generally at the bottom"): a question with an {example} slot carries an
 // example from THIS game, right above where they type. True when the line has the slot and it isn't given.

@@ -176,7 +176,7 @@ test('Define on the conversion path: one "What your rulebook decides" page, then
   assert.equal(lock.slots.feelings, 'racing the moon')
   assert.equal(lock.slots.pillars, 'Race the moon · Read the market · Small hands')
   assert.equal(lock.slots.oneliner, 'Fill the night market\'s orders before the moon sets.')
-  assert.equal(lock.slots.platform, 'computer first; online against people or the computer')
+  assert.equal(lock.slots.platform, 'computer first · online against people or the computer') // (F235 task 3: never a semicolon run)
   assert.equal(lock.slots.musts, '3')
 })
 

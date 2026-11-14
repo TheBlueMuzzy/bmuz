@@ -476,6 +476,12 @@ Here's the effort vs impact chart, on your project page now. Effort is my estima
 ## define.scope.slice · say
 Here's the vertical slice I'd build first: {slice}.
 
+## define.scope.chart.here · free · added
+**Effort vs impact**
+{chart}
+
+It's drawn on your project page too, as a real chart: {link}. Effort is my estimate from research; impact is yours to correct. Anything in the wrong box?
+
 ## define.scope.slice.list · say · added
 Here's the vertical slice I'd build first:
 {slice}

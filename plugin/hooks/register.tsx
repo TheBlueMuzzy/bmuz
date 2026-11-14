@@ -1530,7 +1530,9 @@ async function sayTool($: any, e: any) {
   // (F234 rule 2: what the design document already holds is never asked, not even as a Keep)
   const there = E.asksThere(ctx.state.asked && ctx.state.asked[step.id], ids, slots, ctx.script)
   if (there) return deny(`BMUZ engine: "${there.what}" is already in the design document (${there.why}), so it isn't asked, not even as a Keep. Leave it out and ask the next question.`)
-  const rendered = ids.map(id => E.renderLine(ctx.script, id, slots))
+  // F235 task 4 (findings 8, 10): a line that points at the project page opens it, and its {link} says so
+  const withPage = await pageSlots($, step, ids, slots)
+  const rendered = ids.map(id => E.renderLine(ctx.script, id, withPage))
   const bad = rendered.find((r: any) => r.error)
   if (bad) return deny(`BMUZ engine: ${bad.error}.`)
   const boxes = rendered.filter((r: any) => r.kind === 'box')
@@ -1597,6 +1599,34 @@ async function sayTool($: any, e: any) {
   if (kind === 'say' && E.isLongSay(text) && !ctx.auto) longSaid = true
   await save($)
   return { result: JSON.stringify({ say: text, then: E.sayNext({ kind, text }, ctx.auto) }) }
+}
+
+// F235 task 4 (findings 8, 10, Sirius Smugglers 2026-11-14): "You said Here's the effort vs impact chart, on your project
+// page now, but you never shared the link" · "the link isn't clickable" (a file:/// link isn't, in the terminal). A line
+// that points at the project page opens the page in the creative's browser first (gdd.mjs page --open, as Ideate's page
+// step does; a test run only says it would), once per step try, and its {link}, when it has one and Claude left it out,
+// is the page's address with "(open in your browser now)". Returns the slots to render with.
+let pageOpenedFor = ''
+let pageOpenedOk = false
+async function pageSlots($: any, step: any, ids: string[], slots: any) {
+  if (!ids.some(id => E.pointsAtPage(ctx.script, id))) return slots
+  const key = `${step.id}#${ctx.state.retries[step.id] || 0}`
+  let opened = pageOpenedFor === key && pageOpenedOk
+  if (pageOpenedFor !== key && !ctx.auto) {
+    pageOpenedFor = key // (tried once per step try, whatever came of it)
+    pageOpenedOk = false
+    try {
+      const ran: any = await $.process.run(['node', `${ctx.root}/scripts/gdd.mjs`, 'page', '--open'], { cwd: ctx.dir, timeoutMs: 30000 })
+      opened = ran?.exitCode === 0 && /opened|would open/.test(String(ran?.stdout ?? ''))
+      pageOpenedOk = opened
+      await journal($, { ev: 'page.open', step: step.id, ok: opened, said: String(ran?.stdout ?? '').trim().slice(0, 200) })
+    } catch (err) {
+      await journal($, { ev: 'page.open', step: step.id, ok: false, said: String(err).slice(0, 200) })
+    }
+  }
+  const needsLink = ids.some(id => /\{link\}/.test(String(ctx.script.lines[id]?.text || '')))
+  if (!needsLink || (typeof slots.link === 'string' && slots.link.trim())) return slots
+  return { ...slots, link: `${E.fileLink(`${ctx.dir}/.planning/project-page.html`)}${opened ? ' (open in your browser now)' : ''}` }
 }
 
 // ---- Stepping in (F215 task 3): a bug report is a side trip; the step it interrupts keeps its record ----

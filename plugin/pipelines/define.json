@@ -363,9 +363,9 @@
       "title": "Scope, First Pass",
       "description": "The chart, the vertical slice, and my first report",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
-      "lines": ["define.scope.chart", "define.scope.slice.list", "define.scope.slice.ok", "define.scope.report"],
+      "lines": ["define.scope.chart.here", "define.scope.slice.list", "define.scope.slice.ok", "define.scope.report"],
       "must": ["define.scope.slice.list", "define.scope.slice.ok", "define.scope.report"],
-      "opening": ["define.scope.chart"],
+      "opening": ["define.scope.chart.here"],
       "craft": "craft/define-slice.md",
       "results": ["chapters", "slice", "later"],
       "collects": [

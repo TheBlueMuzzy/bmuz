@@ -191,3 +191,48 @@ test('task 3: lists are bullets, never semicolon runs — the slice shows one pa
   assert.equal(E.semicolonRun({ x: 'one clause; then another' }), null)
   assert.equal(E.semicolonRun({ x: ['a; b; c'] }), null)
 })
+
+// ---- task 4: pages and links (findings 8, 10) ----
+const SIRIUS_TABLE = ['**Must:** The rules as written', '', '| Idea | MoSCoW | Effort | Impact | Box |', '|---|---|---|---|---|',
+  '| Traps | Must | Low (reuses the Barter flow) | High | Quick win |',
+  '| Computer opponent, good | Must | High | High | Big project |',
+  '| Tutorial with progressive hints | Should | High | Medium | Big project, later |',
+  '| Online play with friends | Could | High (server, rooms) | Low for now | Avoid for now: build so it can be added later |',
+  '| Undercover Agent | Won\'t | High | Low | Avoid |',
+  '| A replay button | Could | Low | Low | |'].join(NL)
+
+test('task 4: the Scope chapter\'s table is drawn on the page as real MoSCoW columns and an effort vs impact 2×2', () => {
+  const rows = G.scopeRows(SIRIUS_TABLE)
+  assert.deepEqual(rows.map(r => [r.idea, r.moscow, r.box]), [
+    ['Traps', 'Must', 'quick'], ['Computer opponent, good', 'Must', 'big'], ['Tutorial with progressive hints', 'Should', 'big'],
+    ['Online play with friends', 'Could', 'avoid'], ['Undercover Agent', "Won't", 'avoid'], ['A replay button', 'Could', 'fill'],
+  ])
+  const html = G.scopeChartHtml(SIRIUS_TABLE)
+  for (const m of ['Must', 'Should', 'Could', "Won&#39;t|Won't"]) assert.match(html, new RegExp(`<h5>(${m})</h5>`))
+  assert.match(html, /<div class="quad quick"><h5>Quick wins<\/h5>.*Traps/)
+  assert.match(html, /<div class="quad avoid"><h5>Avoid<\/h5>.*Online play with friends.*Undercover Agent/)
+  assert.equal(G.scopeChartHtml('no table here'), '')
+  // on the page, inside chapter 6
+  const doc = G.writeChapter(G.newGdd('Sirius Smugglers'), 6, SIRIUS_TABLE.split(NL), 'chosen', {}).text
+  assert.match(G.pageHtml(doc), /6 · Scope[\s\S]*id="scope-chart"/)
+})
+
+test('task 4: a line that points at the project page is known, and the page\'s link is a proper file link', () => {
+  for (const id of ['define.scope.chart.here', 'define.lock.when', 'ideate.page']) assert.ok(E.pointsAtPage(script, id), id)
+  assert.equal(E.pointsAtPage(script, 'define.scope.need'), false)
+  assert.equal(E.fileLink('C:/Users/Muzzy/My Games/x/.planning/project-page.html'), 'file:///C:/Users/Muzzy/My%20Games/x/.planning/project-page.html')
+  assert.equal(E.fileLink('/home/a/b.html'), 'file:///home/a/b.html')
+  const chat = E.renderLine(script, 'define.scope.chart.here', { chart: ['Quick wins (do first): Traps', 'Avoid: Undercover Agent'], link: 'file:///x (open in your browser now)' }).text
+  assert.match(chat, /\*\*Effort vs impact\*\*\n· Quick wins \(do first\): Traps\n· Avoid: Undercover Agent\n\nIt's drawn on your project page too, as a real chart: file:\/\/\/x \(open in your browser now\)\./)
+})
+
+test('task 4: the lock card opens the page first (a test run says it would) and says so beside its link', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'f235-lock-'))
+  mkdirSync(join(dir, '.planning'), { recursive: true })
+  writeFileSync(join(dir, '.planning', 'GDD.md'), G.newGdd('Sirius Smugglers'))
+  const state = { resultsBy: { slice: { later: [] } } }
+  const shown = D.lockShow(dir, state, script, { BMUZ_TEST: '1' })
+  assert.match(shown.slots.link, /^file:\/\/\/.*project-page\.html \(open in your browser now\)$/)
+  // no env (a test calling it directly): never opens a browser, no claim
+  assert.doesNotMatch(D.lockShow(dir, state, script).slots.link, /open in your browser/)
+})
