@@ -2547,6 +2547,14 @@ export const register: Register = on => {
       askClosedThisTurn = true
       return next({ ...(e as any), context: [...((e as any).context ?? []), E.answerNote(openAsk, text), ...brokenHint] })
     }
+    // F235 task 5 (finding 2, Sirius Smugglers rerun 3: "7 quotes not found in their words"): the creative answered
+    // What Your Rules Leave Open over several messages; only the first, while the question was open, was journaled, so
+    // their own words in the later ones were filed as "my reading". Every message they type during a talk step is
+    // their words too (journaled for the quote checks), whether or not a question is open.
+    if (!ctx.broken && ctx.state.status === 'working' && !/^\s*bmuz\b/i.test(text)) {
+      const cur = E.stepById(ctx.pipeline, ctx.state.current)
+      if (cur && cur.kind === 'talk') await journal($, { ev: 'answer', step: cur.id, via: 'chat', text: text.slice(0, 6000) })
+    }
     const say = (words: string) => {
       quietTurn = true
       return next({ ...(e as any), text: `${text}\n(${words}\nShow the creative these lines as they are, then end your turn.)` })

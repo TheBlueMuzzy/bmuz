@@ -25,7 +25,10 @@ export function answersFrom(journalLines, steps = null) {
   for (const l of journalLines) {
     let j
     try { j = JSON.parse(l) } catch (e) { continue }
-    if (!j || j.ev !== 'answer' || (steps && !steps.includes(j.step))) continue
+    // (F235 task 5: words typed at a gate in place of an option are their words too)
+    const gateTyped = j && j.ev === 'gate.answer' && j.typed
+    if (!j || (j.ev !== 'answer' && !gateTyped) || (steps && !steps.includes(j.step))) continue
+    if (gateTyped) { out.push(String(j.answer || '')); continue }
     const t = String(j.text || '')
     const picked = [...t.matchAll(/"[^"]*"="([^"]*)"/g)].map(m => m[1])
     out.push(...(picked.length ? picked : [t]))

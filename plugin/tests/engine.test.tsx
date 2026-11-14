@@ -3311,3 +3311,14 @@ test('F235 task 5 (finding 3): a heading-only opening is shown by the engine in 
   const next: any = await $.tool.call({ tool: SAY, line: 'define.pitch.how' } as any)
   expect(refused(next)).toBe(false)
 })
+
+test('F235 task 5 (finding 2): every message the creative types during a talk step is journaled as their words, question open or not', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = sayWorld(on)
+  await start($, true)
+  await $.prompt.submit({ text: 'you pick their card to take, and they pick a random one from you.' } as any)
+  await $.prompt.submit({ text: 'bmuz doctor' } as any)
+  const ans = events(w).filter((j: any) => j.ev === 'answer')
+  expect(ans.map((j: any) => j.text)).toEqual(['you pick their card to take, and they pick a random one from you.'])
+  expect(ans[0]).toMatchObject({ step: 'ask', via: 'chat' })
+})

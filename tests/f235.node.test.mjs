@@ -242,3 +242,18 @@ test('task 5 (the stall): a command that ran past its time is said as that, for 
   assert.match(E.scriptRunFailure('HooksError: bmuz: $.process.run(node) aborted: still running after 60000ms', 480000), /^the script ran out of time \(480 s\): HooksError/)
   assert.match(E.scriptRunFailure('ENOENT node', 60000), /^the script couldn't run: ENOENT/)
 })
+
+test('task 5 (finding 2): their words for the quote checks include every message they typed, and words typed at a gate', async () => {
+  const { answersFrom } = await import('../plugin/scripts/ideate.mjs')
+  const { isVerbatim, normalise } = await import('../plugin/scripts/material.mjs')
+  const lines = [
+    JSON.stringify({ ev: 'answer', step: 'rules-open', line: 'ideate.open.ask', via: 'typed', text: '1 shared win - OR - most number of boosters (rockets)' }),
+    JSON.stringify({ ev: 'answer', step: 'rules-open', via: 'chat', text: 'you pick their card to take, and they pick a random one from you.' }),
+    JSON.stringify({ ev: 'gate.answer', step: 'lock', answer: 'first player is chosen randomly', typed: true }),
+    JSON.stringify({ ev: 'gate.answer', step: 'lock', answer: 'Lock it: on to Design' }),
+  ]
+  const src = normalise(answersFrom(lines).join('\n'))
+  assert.ok(isVerbatim('you pick their card to take, and they pick a random one from you.', src))
+  assert.ok(isVerbatim('first player is chosen randomly', src))
+  assert.ok(!answersFrom(lines).includes('Lock it: on to Design'))
+})
