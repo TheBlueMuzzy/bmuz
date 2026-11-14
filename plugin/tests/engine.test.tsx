@@ -3270,3 +3270,24 @@ test('F235 task 4: a line pointing at the project page opens the page first (onc
   await $.tool.call({ tool: SAY, line: 'define.chart' } as any)
   expect(s.w.runs.slice(before).filter(a => /gdd[.]mjs$/.test(String(a[1])) && a[2] === 'page').length).toBe(1)
 })
+
+// F235 task 5 (the stall, Sirius Smugglers rerun 2, 2026-11-13): Ideate's folder read ran past its time; Claude Code's
+// $.process.run threw "aborted: still running after 60000ms", the throw left the step "working", and nothing moved until
+// the 20-minute watchdog. A script that runs out of time is a failed try at once: retried, and after its tries, BLOCKED.
+test('F235 task 5: a script that runs out of time fails at once and retries (no 20-minute wait), then BLOCKS', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, base({ current: null, status: 'idle', finished: ['name', 'approve'] }), (argv: string[]) => {
+    if (argv[1] === 'x.mjs') throw new Error('bmuz: $.process.run(node) aborted: still running after 60000ms')
+    return { exitCode: 0, stdout: '{}' }
+  })
+  await start($, false)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as any)
+  const j = w.files['/proj/.bmuz/journal.jsonl']
+  expect((j.match(/"ev":"script.ran","step":"plan"/g) || []).length).toBe(3)
+  // (the fake process.run's throw reaches the mod as "no implementation…"; the real words are E.scriptRunFailure's test)
+  expect(j).toMatch(/"ev":"retry","step":"plan","attempt":2,"why":"the script (ran out of time|couldn't run)/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).status).toBe('blocked')
+})

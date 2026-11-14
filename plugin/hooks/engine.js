@@ -1614,6 +1614,15 @@ export function semicolonRun(slots = {}) {
   return null
 }
 
+// F235 task 5 (the stall): a script step's command that threw instead of finishing, in plain words for the failed try.
+// Claude Code says "aborted: still running after 60000ms" when it runs past its time.
+export function scriptRunFailure(why, limitMs) {
+  const w = String(why || '')
+  return /still running after|timed? ?out/i.test(w)
+    ? `the script ran out of time (${Math.round(Number(limitMs) / 1000)} s): ${w.slice(0, 160)}`
+    : `the script couldn't run: ${w.slice(0, 200)}`
+}
+
 // F235 task 4 (findings 8, 10): does this line point at the project page? (Then the engine opens the page first.)
 export function pointsAtPage(script, id) {
   const l = script && script.lines && script.lines[id]

@@ -1085,8 +1085,19 @@ async function runScript($: any, step: any) {
   const argv = E.fillDeep(step.run, vars())
   // (F219: a script step with its own "timeoutMs" — Deliver's release check runs the tests and the build, its publish
   // the release scripts — gets that long, up to the 10 minutes Claude Code allows a mod's command; others 1 minute)
-  const ran = await $.process.run(argv, { cwd: ctx.dir, timeoutMs: Math.min(Number(step.timeoutMs) || 60000, E.HOST_RUN_MAX_MS) })
-  await journal($, { ev: 'script.ran', step: step.id, exitCode: ran.exitCode, stdout: ran.stdout.trim().slice(0, 300) })
+  const limit = Math.min(Number(step.timeoutMs) || 60000, E.HOST_RUN_MAX_MS)
+  let ran: any
+  try {
+    ran = await $.process.run(argv, { cwd: ctx.dir, timeoutMs: limit })
+  } catch (err) {
+    // F235 task 5 (the stall, Sirius Smugglers rerun 2): Claude Code throws when a command runs past its time ("aborted:
+    // still running after 60000ms"); the throw used to leave the step "working" until the 20-minute watchdog. Now it is a
+    // failed try at once, retried (and after its tries, BLOCKED like any failing script).
+    const why = String(err && (err as any).message ? (err as any).message : err)
+    await journal($, { ev: 'script.ran', step: step.id, exitCode: null, stdout: '', error: why.slice(0, 300) })
+    return { ok: false, why: E.scriptRunFailure(why, limit) }
+  }
+  await journal($, { ev: 'script.ran', step: step.id, exitCode: ran.exitCode, stdout: String(ran.stdout ?? '').trim().slice(0, 300) })
   // A script that refuses says why in its output (Define's stage: "Not ready for Design: the pillars are still
   // open…"): those words are the reason, in place of a done-check that could only say a file lacks a line.
   if (ran.exitCode !== 0) {

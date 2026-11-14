@@ -236,3 +236,9 @@ test('task 4: the lock card opens the page first (a test run says it would) and 
   // no env (a test calling it directly): never opens a browser, no claim
   assert.doesNotMatch(D.lockShow(dir, state, script).slots.link, /open in your browser/)
 })
+
+// ---- task 5: bookkeeping (findings 1, 2, 3 + the stall) ----
+test('task 5 (the stall): a command that ran past its time is said as that, for a failed try that is retried at once', () => {
+  assert.match(E.scriptRunFailure('HooksError: bmuz: $.process.run(node) aborted: still running after 60000ms', 480000), /^the script ran out of time \(480 s\): HooksError/)
+  assert.match(E.scriptRunFailure('ENOENT node', 60000), /^the script couldn't run: ENOENT/)
+})
