@@ -3432,3 +3432,16 @@ test('F235 task 8: "Never mind" picked in the ask for links (its question holds 
   const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: box.question, header: box.header, multiSelect: false, options: box.options }] } as any)
   expect((r.context || []).join(' ')).toMatch(/said "never mind" to sharing links/)
 })
+
+test('F235 task 8: a box pointing at the project page (define.scope.chart.here is a box now) gets its {link} filled too', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const s = sayWorld(on)
+  s.w.files.SCRIPT = SCRIPT + NL + '## define.chart · box · added' + NL + "? It's on your project page too: {link}. Anything in the wrong box?" + NL + 'header: The chart' + NL + '- All right — every idea is in the right box' + NL + '- Move some — next, tell me which' + NL
+  const p = JSON.parse(s.w.files.PIPELINE)
+  p.steps[0].lines = [...p.steps[0].lines, 'define.chart']
+  s.w.files.PIPELINE = JSON.stringify(p)
+  await start($, true)
+  const r: any = await $.tool.call({ tool: SAY, line: 'define.chart' } as any)
+  expect(refused(r)).toBe(false)
+  expect(boxOf(r).question).toMatch(/^It's on your project page too: file:\/\/\/.*proj\/\.planning\/project-page\.html\. Anything in the wrong box\?/)
+})

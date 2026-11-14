@@ -1662,7 +1662,11 @@ async function pageSlots($: any, step: any, ids: string[], slots: any) {
       await journal($, { ev: 'page.open', step: step.id, ok: false, said: String(err).slice(0, 200) })
     }
   }
-  const needsLink = ids.some(id => /\{link\}/.test(String(ctx.script.lines[id]?.text || '')))
+  // (F235 task 8: a box's {link} is in its question — define.scope.chart.here is a box now)
+  const needsLink = ids.some(id => {
+    const l = ctx.script.lines[id]
+    return /\{link\}/.test(String((l && (l.kind === 'box' ? l.box.question : l.text)) || ''))
+  })
   if (!needsLink || (typeof slots.link === 'string' && slots.link.trim())) return slots
   return { ...slots, link: `${E.fileLink(`${ctx.dir}/.planning/project-page.html`)}${opened ? ' (open in your browser now)' : ''}` }
 }
