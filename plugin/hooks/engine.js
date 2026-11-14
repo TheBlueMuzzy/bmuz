@@ -1105,6 +1105,11 @@ export function judgeTool(p, state, call, opts = {}) {
   if (opts.auto && call.tool === 'AskUserQuestion') {
     return { allow: false, why: `BMUZ engine: auto run, nobody is here to answer. Don't ask: pick the sensible default, add {"question": "...", "picked": "..."} to the "asks" list in ${ENGINE_TOOL}'s result, and carry on.` }
   }
+  // F235 task 11: a step-in's own box (the research's "Does it change anything?" / "Ask again?", a bug's "how often"),
+  // handed out by the engine and asked exactly, may be asked at any moment: in a talk step, at a gate, between steps.
+  if (call.tool === 'AskUserQuestion' && !call.agentId && opts.stepInBox && !boxProblem([{ id: opts.stepInBox.id, n: 0, box: opts.stepInBox.box }], (call.input || {}).questions).why) {
+    return { allow: true, stepInBox: true }
+  }
   // F215: the creative may step in with a bug at any moment (between steps, at a gate, during a helper's run): the report
   // is a side trip that leaves the step's record as it was (the motor writes it through bugs.mjs).
   if (call.tool === BUG_TOOL && !call.agentId) return { allow: true }
@@ -1857,6 +1862,52 @@ export function freeQuestionProblems(p, script) {
     }
   }
   return out
+}
+
+// F235 task 11: the lines the engine says itself when the creative steps in (a bug, research) — no pipeline step lists
+// them, so freeQuestionProblems never reads them. The same rule holds: one that asks something is a box (research.found
+// "Does it change anything?" and research.lost "Ask again?" were the last two asked in plain text).
+export const STEP_IN_LINES = ['bug.logged', 'bug.how', 'bug.now', 'bug.engine', 'bug.often', 'bug.none', 'bug.verified',
+  'research.look', 'research.found', 'research.wait', 'research.busy', 'research.none', 'research.changed', 'research.notstarted', 'research.lost']
+export function stepInQuestionProblems(script) {
+  const out = []
+  for (const id of STEP_IN_LINES) {
+    const l = script && script.lines && script.lines[id]
+    if (!l) out.push(`the engine's step-in line "${id}" isn't in the script (plugin/script.md)`)
+    else if (l.kind !== 'box' && asksSomething(l)) out.push(`the engine's step-in line "${id}" asks something but is a "${l.kind}" line: every question is a box (2–4 options that are real answers; "Type something." and "Chat about this" are added by Claude Code)`)
+  }
+  return out
+}
+
+// What was picked in a question box: { option: its index, or -1 for their own typed words, text }. Claude Code answers
+// 'User has answered your questions: "<question>"="<answer>". You can now continue…': the answer is read after the
+// question's closing '"=", up to the last quote (the question and the answer may both hold quotes).
+export function boxPick(box, res) {
+  const t = answerText(res)
+  const i = t.indexOf('"="')
+  let text = t
+  if (i >= 0) {
+    const rest = t.slice(i + 3)
+    const j = rest.lastIndexOf('"')
+    text = j >= 0 ? rest.slice(0, j) : rest
+  }
+  text = text.trim()
+  const option = ((box && box.options) || []).findIndex(o => plainWords(o.label) === plainWords(text) || plainWords(`${o.label} — ${o.description}`) === plainWords(text))
+  return { option, text }
+}
+
+// The words Claude gets with a step-in box (said by the engine, not a step's script call)
+export function stepInBoxWords(box) {
+  return `Call AskUserQuestion now with exactly this box — the same question, header, options (label and description) and multiSelect, in this order — with nothing written before it: ${JSON.stringify(box)}`
+}
+
+// What Claude is told beside the answer to research.lost's "Ask again?" box. pick = boxPick's.
+export function stepInAnswerNote(id, slots, pick) {
+  const q = String((slots && slots.question) || '')
+  if (id !== 'research.lost') return `BMUZ engine: the creative answered "${pick.text}". Carry on.`
+  if (pick.option === 1) return `BMUZ engine: the creative picked "Ask again" for the research on "${q}": call ${RESEARCH_TOOL} with ${JSON.stringify({ question: q })} now, and say the line it returns.`
+  if (pick.option === 0) return `BMUZ engine: the creative picked "Not now" for the research on "${q}": don't start it again; carry on where you were.`
+  return `BMUZ engine: the creative answered "Ask again?" (the research on "${q}") in their own words: "${pick.text}". If they want it again, call ${RESEARCH_TOOL} with ${JSON.stringify({ question: q })}; otherwise don't start it, and carry on where you were.`
 }
 
 // A gate's question and options: from its script box ("line") when it has one, else its own words.

@@ -56,7 +56,8 @@ let stepInTurn = false
 let askedThisTurn = false
 let askClosedThisTurn = false
 // (review fix 9) the step-in's own question box ("how often"), handed out this turn: never one of the step's boxes
-let stepInBox: null | { step: string, box: any } = null
+// (F235 task 11: id = the line it asks — bug.often, research.found, research.lost; slots = what it was said with)
+let stepInBox: null | { step: string, box: any, id?: string, slots?: any } = null
 let pendingFix: null | { id: string | null, sweep: string[] } = null
 // (review fix 6) the step-in turns an auto run's step try has had: at most MAX_STEP_INS go free, then a failed try
 let stepIns = { key: '', n: 0 }
@@ -1906,12 +1907,29 @@ async function sayNextNote($: any) {
   research.sayNext = []
   await saveResearch($)
   const texts: string[] = []
+  let box: any = null
   for (const o of owed) {
-    const line = await stepInLine($, o.line, o.slots || {})
-    if (!line.error) texts.push(line.text)
-    else await journal($, { ev: 'deviation', step: ctx.state.current ?? null, tool: null, agentId: null, why: `a research line owed to the creative couldn't be said: ${line.error}` })
+    // (F235 task 11: research.lost's "Ask again?" is a box, asked after any words owed with it)
+    const line: any = await stepInQuestion($, o.line, o.slots || {})
+    if (line.error) await journal($, { ev: 'deviation', step: ctx.state.current ?? null, tool: null, agentId: null, why: `a research line owed to the creative couldn't be said: ${line.error}` })
+    else if (line.box) box = line.box
+    else texts.push(line.text)
   }
-  return texts.length ? `BMUZ engine: before anything else, write this to the creative word for word, as its own paragraph:\n\n${texts.join('\n\n')}\n\n` : null
+  if (!texts.length && !box) return null
+  const words = texts.length ? `write this to the creative word for word, as its own paragraph:\n\n${texts.join('\n\n')}\n\n` : ''
+  const ask = box ? `${E.stepInBoxWords(box)}\n\nTheir answer comes back with what to do.\n\n` : ''
+  return `BMUZ engine: before anything else, ${words}${words && ask ? 'Then ' : ''}${ask}`
+}
+// F235 task 11 (Muzzy: "whenever you are asking questions… put it in a question box"): a step-in line that asks
+// (research.found, research.lost) is a box. In a live window it is handed to Claude to ask exactly, kept apart from the
+// step's own boxes like the bug's "how often" (dropped at the turn's end if never asked: the next chat message still
+// answers it, as before); in an auto run nobody answers, so its words are said and checked word for word, as before.
+async function stepInQuestion($: any, id: string, slots: any) {
+  const r = E.renderLine(ctx.script, id, slots)
+  if (r.error || r.kind !== 'box' || ctx.auto) return stepInLine($, id, slots)
+  stepInBox = { step: ctx.state.current ?? '', id, box: r.box, slots }
+  await journal($, { ev: 'stepin.box', during: ctx.state.current ?? null, line: id, box: r.box })
+  return r
 }
 async function saveResearch($: any) {
   // (review fix 4: only the newest used notes are kept)
@@ -1933,8 +1951,10 @@ async function runResearch($: any, args: string[]) {
 }
 // A step-in line (journaled, and checked word for word at the turn's end like the step's own)
 async function stepInLine($: any, id: string, slots: any) {
-  const line = E.renderLine(ctx.script, id, slots)
-  if (line.error) return line
+  const r = E.renderLine(ctx.script, id, slots)
+  if (r.error) return r
+  // (a box said as words — an auto run, nobody to answer — is its question)
+  const line = r.kind === 'box' ? { ...r, text: r.box.question } : r
   await journal($, { ev: 'line', step: ctx.state.current ?? null, line: line.id, kind: 'say', text: line.text })
   const sid = ctx.state.current || ''
   if (turnSaid.step !== sid) turnSaid = { step: sid, lines: [] }
@@ -2053,7 +2073,7 @@ async function researchDone($: any, status: string) {
     if (ctx.auto) await addQuestions($, now.step || ctx.pipeline.id, [{ question: `Research while you were away: "${now.question}" found nothing sourced (${r.why ?? 'no findings'}).` }])
     return `BMUZ engine: the research the creative asked for (at ${now.place}) found nothing it could source (${r.why ?? 'no findings'}). Write exactly this as your reply, then ${carryOnWords()}\n\n${line.text ?? ''}`
   }
-  const line = await stepInLine($, 'research.found', { found: r.lines })
+  const line: any = await stepInQuestion($, 'research.found', { found: r.lines })
   await journal($, { ev: 'research.done', question: now.question, out: now.out, found: r.lines })
   if (ctx.auto) {
     // (nobody to answer "Does it change anything?": it's noted for the step, and the creative finds it in the questions file)
@@ -2065,20 +2085,82 @@ async function researchDone($: any, status: string) {
   }
   research.now = { ...now, status: 'asked', found: r.lines }
   await saveResearch($)
-  return `BMUZ engine: the research the creative asked for at ${now.place} is back (${now.out}).${stubNote} Write exactly this as your whole reply, then end your turn: the creative's next message answers "Does it change anything?" (never offer options).\n\n${line.text}`
+  return `BMUZ engine: the research the creative asked for at ${now.place} is back (${now.out}).${stubNote} ${foundWords(line)}`
+}
+// (F235 task 11) What Claude is told to do with research.found: ask its box (live), else write it (an old script's line)
+function foundWords(line: any) {
+  if (line.box) return `${E.stepInBoxWords(line.box)}\n\nThat box is your whole reply this turn; their answer comes back with what to do.`
+  return `Write exactly this as your whole reply, then end your turn: the creative's next message answers "Does it change anything?" (never offer options).\n\n${line.text ?? ''}`
+}
+
+// F235 task 11: the research's own box asked ("Does it change anything?" / "Ask again?"). Its answer goes where the chat
+// message went: research.found's into researchAnswer (noted for the step it came from, never the step's own answer);
+// "Yes — next, tell me what changes" and "Chat about this" leave it open, so the next chat message answers it, as before.
+// research.lost's "Ask again" starts the same research again.
+async function researchBoxAsked($: any, e: any, next: any) {
+  const own: any = stepInBox
+  stepInBox = null
+  let res: any
+  asksOpen += 1
+  try {
+    res = await next(e)
+  } finally {
+    asksOpen = Math.max(0, asksOpen - 1)
+  }
+  const ok = !res?.deny && !res?.isError
+  if (ok || E.isPersonDeclining(res)) await markActive($)
+  if (ok) { nudges = { key: '', n: 0 }; continues = { key: '', n: 0 }; quietWait = '' }
+  if (!ok && E.isPersonDeclining(res)) quietWait = 'declined'
+  const chat = !ok && E.isChatInstead(res)
+  const pick = ok ? E.boxPick(own.box, res) : null
+  const add = (note: string) => ({ ...res, context: [...(res.context ?? []), note] })
+  // (the line Claude writes when the answer comes in the chat: any.chat, checked word for word)
+  const chatWords = async () => {
+    const r = ctx.script && ctx.script.lines[E.CHAT_LINE] ? E.renderLine(ctx.script, E.CHAT_LINE, {}) : null
+    if (!r || r.error) return ''
+    await journal($, { ev: 'line', step: ctx.state.current ?? null, line: r.id, kind: 'say', text: r.text })
+    const sid = ctx.state.current || ''
+    if (turnSaid.step !== sid) turnSaid = { step: sid, lines: [] }
+    turnSaid.lines = [...turnSaid.lines.filter(l => l.id !== r.id), { id: r.id, text: r.text }]
+    return r.text
+  }
+  if (own.id === 'research.found') {
+    const rn = research.now
+    if (!rn || rn.status !== 'asked') return res
+    if (chat || (pick && pick.option === 1)) {
+      await journal($, { ev: 'research.open', question: rn.question, via: chat ? 'chat' : 'box' })
+      return add(E.chatNote('research.found', await chatWords()))
+    }
+    if (pick) return add(await researchAnswer($, pick.text, 'box'))
+    return res
+  }
+  if (own.id === 'research.lost') {
+    const q = String((own.slots && own.slots.question) || '')
+    if (chat) {
+      const words = await chatWords()
+      return add(`BMUZ engine: the creative picked "Chat about this" in "Ask again?". Don't ask what they want to clarify: ${words ? `write exactly this line as your whole reply — ${words} — and end your turn.` : 'write one short line inviting them to type it, and end your turn.'} Their next message says whether to start the research on "${q}" again: if it does, call ${E.RESEARCH_TOOL} with ${JSON.stringify({ question: q })}.`)
+    }
+    if (pick) {
+      await journal($, { ev: 'research.lost.answer', question: q, text: pick.text.slice(0, 2000) })
+      return add(E.stepInAnswerNote('research.lost', own.slots, pick))
+    }
+  }
+  return res
 }
 
 // The creative's answer to "Does it change anything?": noted for the step it came from. Returns the note for Claude.
-async function researchAnswer($: any, text: string) {
+async function researchAnswer($: any, text: string, via = 'chat') {
   const now = research.now
   const note = { pipeline: now.pipeline, step: now.step, question: now.question, out: now.out, found: now.found || [], answer: text.slice(0, 2000) }
   research.notes.push(note)
   research.now = null
   await saveResearch($)
-  await journal($, { ev: 'research.answer', step: now.step, question: now.question, text: text.slice(0, 2000) })
+  await journal($, { ev: 'research.answer', step: now.step, question: now.question, via, text: text.slice(0, 2000) })
   const here = now.pipeline === ctx.pipeline.id && now.step && now.step === ctx.state.current
   const step = here ? E.stepById(ctx.pipeline, now.step) : null
-  const head = `BMUZ engine: this message is the creative's answer to the research's "Does it change anything?" (on "${now.question}": ${note.found.join(' · ')}).`
+  // (F235 task 11: from its question box, or their chat message)
+  const what = via === 'box' ? `"${text.slice(0, 300)}", from its question box, is` : 'this message is'
+  const head = `BMUZ engine: ${what} the creative's answer to the research's "Does it change anything?" (on "${now.question}": ${note.found.join(' · ')}).`
   if (step && step.kind === 'talk' && ctx.state.status === 'working') {
     // (taken into the step there and then: the note is used)
     note.used = true
@@ -2301,14 +2383,14 @@ export const register: Register = on => {
     if (await $.fs.exists(`${ctx.dir}/.bmuz/test-fault`)) throw new Error('injected fault (test)')
     if (ctx.broken) return { deny: `BMUZ engine: ${ctx.broken}` }
     const call = { tool: String(e.tool), agentId: (e as any).agentId, input: e }
-    const verdict = E.judgeTool(ctx.pipeline, ctx.state, call, { auto: ctx.auto, dir: ctx.dir, root: ctx.root, research: research.now, tweak: research.tweak })
+    const verdict = E.judgeTool(ctx.pipeline, ctx.state, call, { auto: ctx.auto, dir: ctx.dir, root: ctx.root, research: research.now, tweak: research.tweak, stepInBox: stepInBox ? { id: stepInBox.id || 'bug.often', box: stepInBox.box } : null })
     if (!verdict.allow) {
       await journal($, { ev: 'deviation', step: ctx.state.current, tool: call.tool, agentId: call.agentId ?? null, why: verdict.why })
       return { deny: verdict.why }
     }
     // F232: a script step says its opening before it asks or finishes anything.
     const cur0 = E.stepById(ctx.pipeline, ctx.state.current)
-    if (cur0 && cur0.kind === 'talk' && cur0.opening && ctx.state.status === 'working' && ctx.state.opened !== cur0.id && (call.tool === E.ENGINE_TOOL || call.tool === 'AskUserQuestion') && !call.agentId) {
+    if (cur0 && cur0.kind === 'talk' && cur0.opening && ctx.state.status === 'working' && ctx.state.opened !== cur0.id && (call.tool === E.ENGINE_TOOL || call.tool === 'AskUserQuestion') && !call.agentId && !verdict.stepInBox) {
       const why = `BMUZ engine: this step opens with its script line first: call ${E.SAY_TOOL} with {"line": ${JSON.stringify(cur0.opening.length === 1 ? cur0.opening[0] : cur0.opening)}}.`
       await journal($, { ev: 'deviation', step: cur0.id, tool: call.tool, agentId: null, why })
       return { deny: why }
@@ -2365,6 +2447,8 @@ export const register: Register = on => {
       }
       return res
     }
+    // F235 task 11: the research's own box ("Does it change anything?", "Ask again?"), asked exactly, at any moment
+    if (call.tool === 'AskUserQuestion' && !ctx.auto && verdict.stepInBox && stepInBox && stepInBox.id && stepInBox.id !== 'bug.often') return researchBoxAsked($, e, next)
     if (call.tool === 'AskUserQuestion' && !ctx.auto) {
       // A background session lists the question tool but refuses it (headless check 15): then nobody
       // can answer, so from here this session is an auto run and the turn-end rule keeps it moving.
@@ -2915,8 +2999,8 @@ export const register: Register = on => {
         research.now = { ...rn, reasked: true }
         await saveResearch($)
         await journal($, { ev: 'research.reask', question: rn.question })
-        const line = await stepInLine($, 'research.found', { found: rn.found || [] })
-        await $.prompt.submit({ text: `BMUZ engine: the step's question is answered; the research the creative asked for ("${rn.question}") still waits for theirs. Write exactly this as your whole reply, then end your turn: their next message answers "Does it change anything?" (never offer options).\n\n${line.text ?? ''}` })
+        const line: any = await stepInQuestion($, 'research.found', { found: rn.found || [] })
+        await $.prompt.submit({ text: `BMUZ engine: the step's question is answered; the research the creative asked for ("${rn.question}") still waits for theirs. ${foundWords(line)}` })
         quietTurn = false
         creativeTurn = false
         return r

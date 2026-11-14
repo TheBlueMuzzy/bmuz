@@ -1344,10 +1344,13 @@ Marked {bug} as verified: you checked it and it's right.
 ## research.look · say
 Let me look. {time}…
 
-## research.found · say
-Here's what I found:
+## research.found · box · added
+? Here's what I found:
 {found}
 Sources are on your project page. Does it change anything?
+header: Research
+- No, carry on — it changes nothing
+- Yes — next, tell me what changes
 
 ## research.wait · say · added
 The {helpers} helpers are still working, so I'll start looking once they're done: "{question}".
@@ -1364,8 +1367,11 @@ Changed {file} for your answer: {what}.
 ## research.notstarted · say · added
 The research on "{question}" didn't start. Ask again when you want it.
 
-## research.lost · say · added
-Your research on "{question}" stopped {why}. Ask again?
+## research.lost · box · added
+? Your research on "{question}" stopped {why}. Ask again?
+header: Research
+- Not now — carry on where we were
+- Ask again — start the same research again
 
 # Fixing a bug (F215: the bug pipeline)
 

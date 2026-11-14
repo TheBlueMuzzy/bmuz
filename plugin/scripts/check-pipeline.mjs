@@ -68,5 +68,15 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       console.log(`✔ ${basename(file)}`)
     }
   }
+  // F235 task 11: the lines the engine says itself when the creative steps in (no pipeline lists them): a question is a box
+  const script = E.parseScript(existsSync(join(root, 'script.md')) ? readFileSync(join(root, 'script.md'), 'utf8') : '')
+  const stepIn = E.stepInQuestionProblems(script)
+  if (stepIn.length) {
+    bad++
+    console.log(`✘ script.md (step-in lines): ${stepIn.length} problem${stepIn.length > 1 ? 's' : ''}`)
+    for (const x of stepIn) console.log(`  - ${x}`)
+  } else {
+    console.log('✔ script.md (step-in lines)')
+  }
   process.exit(bad ? 1 : 0)
 }

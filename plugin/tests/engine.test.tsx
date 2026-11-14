@@ -2764,7 +2764,8 @@ test('F235 task 11: "Ask again?" is a box — "Ask again" starts the same resear
   expect(refused(r)).toBe(false)
   expect((r.context || []).join(' ')).toMatch(new RegExp(`call mcp__bmuz__research with \\{"question":${JSON.stringify(RQ).replace(/[?.()]/g, '\\$&')}\\}`))
   expect(events(w).find((j: any) => j.ev === 'research.lost.answer')).toMatchObject({ question: RQ, text: 'Ask again' })
-  expect(events(w).some((j: any) => j.ev === 'answer')).toBe(false)
+  // (never the step's own answer: only "hello again", their chat message, is journaled as theirs)
+  expect(events(w).filter((j: any) => j.ev === 'answer').map((j: any) => j.text)).toEqual(['hello again'])
 })
 
 test('F235 task 11: the research box may be asked between steps too (and only that box), and "Not now" carries on', () => {
