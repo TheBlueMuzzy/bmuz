@@ -2427,7 +2427,8 @@ export const register: Register = on => {
       // (state.ask), so that message is journaled as its answer, exactly as a free line's was.
       if ((res?.deny || res?.isError) && E.isChatInstead(res) && asked.length && !ctx.auto) {
         const last = asked[asked.length - 1]
-        ctx.state = { ...ctx.state, ask: { step: ctx.state.current, line: last.id, text: last.box.question } }
+        // (F235 review fix: the other boxes asked in the same call go back to pending, so none is lost; Claude asks them after)
+        ctx.state = { ...ctx.state, boxes: [...(ctx.state.boxes || []), ...asked.slice(0, -1)], ask: { step: ctx.state.current, line: last.id, text: last.box.question } }
         await journal($, { ev: 'ask.open', step: ctx.state.current, line: last.id, via: 'chat' })
         await save($)
         await markActive($)
