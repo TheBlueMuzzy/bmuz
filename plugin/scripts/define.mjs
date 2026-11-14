@@ -41,7 +41,7 @@ const looseKey = t => clean(t).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replac
 export function openByWhen(doc, later = []) {
   const ch = G.readGdd(doc)
   const laterKeys = listOf(later).map(x => looseKey(x && typeof x === 'object' ? x.text ?? x.question ?? '' : x)).filter(k => k.length >= 8)
-  const isLater = q => { const k = looseKey(q); return laterKeys.some(l => k.includes(l) || l.includes(k)) }
+  const isLater = q => { const k = looseKey(q); return k.length >= 8 && laterKeys.some(l => k.includes(l) || l.includes(k)) }
   const out = { now: [], design: [], later: [] }
   const seen = new Set()
   for (const [n, name] of G.CHAPTERS) {

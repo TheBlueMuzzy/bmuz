@@ -283,3 +283,11 @@ test('task 5 (finding 1): the decision step-in is told to every talk step with s
   assert.equal(E.renderLine(script, 'any.noted', { decision: 'the Undercover Agent mode is cut' }).text, 'Noted in your design document: the Undercover Agent mode is cut.')
   assert.equal(E.judgeTool(DEFINE, { current: 'lock', status: 'waiting', finished: [], results: {}, retries: {} }, { tool: E.DECISION_TOOL }, {}).allow, true)
 })
+
+test('review fix: a short open question is never filed as "later" because a later phrase contains its word (it stays "now" and the lock asks it)', () => {
+  let doc = G.newGdd('Sirius Smugglers')
+  doc = G.writeChapter(doc, 6, ['Open: Name?'], 'loose', {}).text
+  const when = D.openByWhen(doc, ['A name for each player profile, carried over between games'])
+  assert.deepEqual(when.now, ['Scope: Name?'])
+  assert.deepEqual(when.later, [])
+})
