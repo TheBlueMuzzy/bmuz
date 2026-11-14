@@ -291,3 +291,21 @@ test('review fix: a short open question is never filed as "later" because a late
   assert.deepEqual(when.now, ['Scope: Name?'])
   assert.deepEqual(when.later, [])
 })
+
+// ---- task 10: a half-typed message ended with a slash command is never an answer ----
+test('task 10: a message that is or ends with a Claude Code command is not an answer; a slash inside words is', () => {
+  for (const t of ['I think whenever you /exit', '/exit', '  /clear  ', 'hmm /config', 'wait /bmuz:define', 'ok then\n/compact'])
+    assert.ok(E.endsWithCommand(t), t)
+  for (const t of ['phones and/or tablets', 'Steam / phones', 'it lives in C:/Users/Muzzy/notes', 'see /c/Users/Muzzy/notes', 'none', '1/2 of the deck', 'a 50/50 split', 'https://example.com/exit'])
+    assert.equal(E.endsWithCommand(t), null, t)
+  assert.equal(E.endsWithCommand('I think whenever you /exit'), '/exit')
+})
+
+test('task 10: a journaled answer that ends with a command (sirius-live4, 11:20) never counts as their words on resume', async () => {
+  const { answersFrom } = await import('../plugin/scripts/ideate.mjs')
+  const lines = [
+    JSON.stringify({ ev: 'answer', step: 'scope', line: 'define.scope.someday', via: 'typed', text: 'I think whenever you /exit' }),
+    JSON.stringify({ ev: 'answer', step: 'scope', line: 'define.scope.someday', via: 'typed', text: 'phones once the web version plays well' }),
+  ]
+  assert.deepEqual(answersFrom(lines), ['phones once the web version plays well'])
+})

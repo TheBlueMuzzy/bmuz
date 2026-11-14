@@ -3341,3 +3341,18 @@ test('F235 task 5 (finding 1): a cut said in passing is written through gdd.mjs 
   expect(after.status).toBe(before.status)
   expect(events(w).find((j: any) => j.ev === 'decision')).toMatchObject({ decision: 'The secret saboteur mode is cut.', cut: true })
 })
+
+test('F235 task 10: a half-typed message ending with a slash command ("I think whenever you /exit") is not the answer: the question stays open, nothing journaled as theirs', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = sayWorld(on)
+  await start($, true)
+  await $.tool.call({ tool: SAY, line: 'ideate.idea' } as any)
+  await $.prompt.submit({ text: 'I think whenever you /exit' } as any)
+  expect(events(w).filter((j: any) => j.ev === 'answer')).toHaveLength(0)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask).toMatchObject({ step: 'ask', line: 'ideate.idea' })
+  expect(events(w).find((j: any) => j.ev === 'typed.command')).toMatchObject({ command: '/exit', text: 'I think whenever you /exit' })
+  expect(prompts[prompts.length - 1]).toMatch(/not an answer/)
+  // the real answer after it still is
+  await $.prompt.submit({ text: 'A card game about gardens.' } as any)
+  expect(events(w).find((j: any) => j.ev === 'answer')).toMatchObject({ line: 'ideate.idea', via: 'typed', text: 'A card game about gardens.' })
+})

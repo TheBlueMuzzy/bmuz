@@ -1024,6 +1024,20 @@ export function isNeverMind(text) {
   return t === 'never mind' || t === 'nevermind'
 }
 
+// F235 task 10 (sirius-live4, 11:20: "I think whenever you /exit" saved as the answer to define.scope.someday): Claude
+// Code runs a command only when it starts an empty message; typed after other words it is sent as a plain message. A
+// message that is or ends with a command ("/exit", "/clear", "/bmuz:define") is never an answer. Returns the command,
+// or null. A slash inside words ("and/or", a path, a link, "50/50") is not a command: the command stands alone at the end.
+export function endsWithCommand(text) {
+  const m = String(text || '').match(/(?:^|\s)(\/[a-z][a-z0-9_-]*(?::[a-z0-9_-]+)?)\s*$/i)
+  return m ? m[1] : null
+}
+
+// What Claude is told beside such a message: no answer, the question (if any) still open.
+export function commandNote(command, open) {
+  return `BMUZ engine: this message ends with the command "${command}", typed after other words, so Claude Code sent it as a plain message and the command did not run. It is not an answer${open ? ` to "${open.line}": that question is still open` : ''}. Tell the creative in one short line that a command only runs when it is typed alone at the start of an empty message${open ? ', then end your turn (their next message is the answer)' : ''}.`
+}
+
 // What Claude is told beside the creative's answer (prompt context: the creative never sees it).
 export function answerNote(ask, text) {
   if (ask && ask.line === LINKS_LINE) {

@@ -2541,6 +2541,15 @@ export const register: Register = on => {
     quietTurn = false
     creativeTurn = true
     if (!ctx.broken && ctx.state.status === 'working') await markActive($)
+    // F235 task 10: a message that is or ends with a Claude Code command ("I think whenever you /exit": Claude Code sent
+    // it as a plain message, the command never ran) answers nothing: no open question, gate, research or numbered line
+    // takes it, and it isn't journaled as their words. The question stays open.
+    const command = !ctx.broken && !/^\s*bmuz\b/i.test(text) ? E.endsWithCommand(text) : null
+    if (command) {
+      const open = E.askOpen(ctx.state)
+      await journal($, { ev: 'typed.command', step: ctx.state.current ?? null, ...(open ? { line: open.line } : {}), command, text: text.slice(0, 2000) })
+      return next({ ...(e as any), context: [...((e as any).context ?? []), E.commandNote(command, open)] })
+    }
     // F229: the creative's next message after the research's line answers "Does it change anything?": it is noted for the
     // step the research came from, and that step carries on (its open question, if any, stays open and is asked again).
     // (F229 review fixes 2 and 5: a line the creative is still owed about their research rides on their next message)

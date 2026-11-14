@@ -30,6 +30,8 @@ export function answersFrom(journalLines, steps = null) {
     if (!j || (j.ev !== 'answer' && !gateTyped) || (steps && !steps.includes(j.step))) continue
     if (gateTyped) { out.push(String(j.answer || '')); continue }
     const t = String(j.text || '')
+    // (F235 task 10: a half-typed message ending with a command, journaled before that fix, is not their answer)
+    if (E.endsWithCommand(t)) continue
     const picked = [...t.matchAll(/"[^"]*"="([^"]*)"/g)].map(m => m[1])
     out.push(...(picked.length ? picked : [t]))
   }
