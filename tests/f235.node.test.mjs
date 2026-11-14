@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import * as E from '../plugin/hooks/engine.js'
 import * as G from '../plugin/scripts/gdd.mjs'
+import * as D from '../plugin/scripts/define.mjs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const plugin = join(here, '..', 'plugin')
@@ -78,4 +79,76 @@ test('task 1 (finding 13): bugs.mjs add with "engine" writes BMUZ\'s list (with 
   assert.match(list, /^# BMUZ — Bugs/)
   assert.match(list, /### B001 · P1 · open · found \d{4}-\d{2}-\d{2} in Sirius Smugglers, Define · 8 of 8 · Concept Lock/)
   assert.match(list, /Concept lock gate ignores lock it/)
+})
+
+// ---- task 2: ask once, where it's used (findings 4, 5, 11) ----
+const IDEATE = pipe('ideate')
+const DESIGN = pipe('design')
+
+test('task 2: where it\'s played and who plays are asked only in Define\'s Platform & Play — never in Ideate, on either path', () => {
+  const ideateLines = IDEATE.steps.flatMap(s => s.lines || [])
+  for (const id of ['ideate.pool.where', 'ideate.digital.who']) assert.ok(!ideateLines.includes(id), id)
+  for (const s of IDEATE.steps) for (const c of s.collects || []) assert.ok(!['platform.where', 'players.who'].includes(c.field), `${s.id} ${c.field}`)
+  for (const id of ['platform', 'platform-rules']) {
+    const st = E.stepById(DEFINE, id)
+    assert.ok(st.lines.includes('define.platform.where') && st.lines.includes('define.platform.who'), id)
+    // its heading no longer lists Design's questions (length, saving, leaving) as if they were coming
+    assert.deepEqual(st.opening, ['define.platform.now'])
+    assert.doesNotMatch(script.lines['define.platform.now'].text, /saving|leaves/)
+    assert.ok(!st.lines.includes('define.platform.someday'), id)
+  }
+  for (const f of ['ideate-rules.md', 'ideate-open.md']) {
+    const note = readFileSync(join(plugin, 'craft', f), 'utf8')
+    assert.doesNotMatch(note, /ideate\.pool\.where|ideate\.digital\.who/, f)
+    assert.match(note, /Platform & Play asks (those|them) once, where they're used/, f)
+  }
+})
+
+test('task 2: the someday platforms are asked in Scope, after the features are sorted, with the game\'s own example', () => {
+  const scope = E.stepById(DEFINE, 'scope')
+  assert.ok(scope.lines.indexOf('define.scope.someday') > scope.lines.indexOf('define.scope.idea'))
+  assert.ok(scope.must.includes('define.scope.someday'))
+  assert.deepEqual(scope.collects.find(c => c.field === 'platform.someday').neededBy, ['store'])
+  const r = E.renderLine(script, 'define.scope.someday', { first: 'the web', example: 'phones once the web version plays well · Steam with online play' })
+  assert.match(r.text, /It starts on the web\. Now that the features are sorted/)
+  assert.match(r.text, /For example: phones once the web version plays well · Steam with online play\./)
+  assert.match(readFileSync(join(plugin, 'craft', 'define-scope.md'), 'utf8'), /"define\.scope\.someday"/)
+})
+
+test('task 2: saving and leaving are engineering calls with the framework\'s defaults — told, never asked; leaving online is one box, its default first', () => {
+  const players = E.stepById(DESIGN, 'players')
+  assert.ok(!players.lines.includes('design.players.online') && !players.lines.includes('design.players.length'))
+  const leave = E.renderLine(script, 'design.players.leave', {})
+  assert.equal(leave.kind, 'box')
+  assert.match(leave.box.options[0].label, /The computer plays their seat/)
+  assert.match(leave.box.options[0].description, /BMUZ's usual way/)
+  assert.doesNotMatch(E.renderLine(script, 'design.players.long', { example: 'about 20 minutes' }).text, /sav/i)
+  const note = readFileSync(join(plugin, 'craft', 'design-players.md'), 'utf8')
+  assert.match(note, /"design\.players\.leave" \(a box\): only when people play online/)
+  assert.match(note, /Saving and leaving are engineering calls, never questions/)
+  assert.match(note, /saves kit/)
+  assert.match(note, /rooms kit/)
+})
+
+test('task 2: the lock lists open questions by when they\'re needed — now (asked), Design, later (the slice doesn\'t need them)', () => {
+  let doc = G.newGdd('Sirius Smugglers')
+  doc = G.writeChapter(doc, 8, ['Open: Your rules say the first player is whoever most recently stole something. Who goes first in the digital game?'], 'loose', {}).text
+  doc = G.writeChapter(doc, 10, ['Open: Does anything carry over between games (stats, unlocks), or is each game on its own?'], 'loose', {}).text
+  doc = G.writeChapter(doc, 6, ['Open: Which release does the tutorial belong to?'], 'loose', {}).text
+  const when = D.openByWhen(doc, ['Does anything carry over between games (stats, unlocks), or is each game on its own'])
+  assert.deepEqual(when.now, ['Scope: Which release does the tutorial belong to?'])
+  assert.deepEqual(when.design, ['Rulebook: Your rules say the first player is whoever most recently stole something. Who goes first in the digital game?'])
+  assert.deepEqual(when.later, ['Change Over Time: Does anything carry over between games (stats, unlocks), or is each game on its own?'])
+  const r = E.renderLine(script, 'define.lock.when', { link: 'L', feelings: 'f', pillars: 'p', oneliner: 'o', loop: 'l', platform: 'pl', musts: '3', now: when.now, design: when.design, later: when.later })
+  const text = r.text.replace(/\n{3,}/g, '\n\n')
+  assert.match(text, /\*\*Needed before you lock\*\*: type your answers in the box below, in its own field\.\n1\. Scope: Which release/)
+  assert.match(text, /\*\*For Design\*\*, nothing to answer now:\n· Rulebook: /)
+  assert.match(text, /\*\*Later\*\*, not needed for the slice:\n· Change Over Time: /)
+  // lists are bullets, never a semicolon run (finding 9)
+  assert.doesNotMatch(text, /\?; /)
+  // nothing open now: no "Needed" part at all
+  const none = E.renderLine(script, 'define.lock.when', { link: 'L', feelings: 'f', pillars: 'p', oneliner: 'o', loop: 'l', platform: 'pl', musts: '3', now: [], design: when.design, later: [] })
+  assert.doesNotMatch(none.text, /Needed before you lock|\*\*Later\*\*/)
+  // the slice step names the later ones
+  assert.ok(E.stepById(DEFINE, 'slice').results.includes('later'))
 })

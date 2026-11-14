@@ -32,6 +32,33 @@ export function stillOpen(doc, max = 3) {
   return out
 }
 
+// F235 task 2 (finding 11, Sirius Smugglers 2026-11-14): the lock lists every open question by when it's needed, and
+// asks only the ones needed now. Muzzy: "even if things carried over between games, is solving that now part of the
+// vertical slice? i don't think it is." now = an open line in a chapter Define decides (1–6: the concept itself isn't settled);
+// later = one the slice step named as not needed for the slice ("later", matched loosely); design = every other open
+// line (the risks, and the Rulebook on). Returns { now, design, later }, each a list of "<chapter>: <question>" (no repeats).
+const looseKey = t => clean(t).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim()
+export function openByWhen(doc, later = []) {
+  const ch = G.readGdd(doc)
+  const laterKeys = listOf(later).map(x => looseKey(x && typeof x === 'object' ? x.text ?? x.question ?? '' : x)).filter(k => k.length >= 8)
+  const isLater = q => { const k = looseKey(q); return laterKeys.some(l => k.includes(l) || l.includes(k)) }
+  const out = { now: [], design: [], later: [] }
+  const seen = new Set()
+  for (const [n, name] of G.CHAPTERS) {
+    const lines = String((ch[n] && ch[n].text) || '').split('\n').map(l => l.replace(/^- /, '')).filter(l => /^Open:\s*/.test(l))
+    for (const l of lines) {
+      const q = clean(l.replace(/^Open:\s*/, ''))
+      if (!q || seen.has(looseKey(q))) continue
+      seen.add(looseKey(q))
+      const item = `${name}: ${q}`
+      if (isLater(q)) out.later.push(item)
+      else if (n <= 6) out.now.push(item)
+      else out.design.push(item)
+    }
+  }
+  return out
+}
+
 // (F233) Which path Define takes: a finished, played game (Ideate's so-far found its rules: "path": "convert" in
 // ideate-so-far.json), else, for a project brought straight to Define, a GDD whose Rulebook already has at least 3
 // "Fixed:" rules. Worked out, never asked. Returns "convert" or "new".
@@ -57,7 +84,8 @@ export function lockShow(project, state, script = loadScript()) {
   const has = (x, k) => x && typeof x === 'object' && x[KEY[k] || k] != null && x[KEY[k] || k] !== '' && !(Array.isArray(x[KEY[k] || k]) && !x[KEY[k] || k].length)
   const r = k => [by[k], alt(k)].find(x => has(x, k)) || by[k] || {}
   const first = n => (String((G.readGdd(doc)[n] || {}).text || '').split('\n')[0] || '').replace(/^- /, '').replace(/^\*\*[^*]+\*\*:?\s*/, '')
-  const open = stillOpen(doc)
+  // (F235 task 2: the open questions by when they're needed; the slice step names the ones the slice doesn't need)
+  const when = openByWhen(doc, (by.slice || {}).later)
   const slots = {
     link: G.pageLink(project),
     feelings: words(r('feelings').feelings).join(' · ') || first(1),
@@ -66,10 +94,13 @@ export function lockShow(project, state, script = loadScript()) {
     loop: clean(r('loop').loop) || first(4),
     platform: clean(r('platform').platform) || first(5),
     musts: String(listOf(r('scope').musts).length),
-    open: open.length ? open.join('; ') : 'the rest of the game, in Design',
+    now: when.now,
+    design: when.design,
+    later: when.later,
   }
-  const out = E.renderLine(script, 'define.lock', slots)
+  const out = E.renderLine(script, 'define.lock.when', slots)
   if (out.error) throw new Error(out.error)
+  out.text = out.text.replace(/\n{3,}/g, '\n\n')
   // (F234 rule 4: what Define didn't ask, each reopenable with one word, before the lock)
   const skipped = F.skipList(state, script)
   mkdirSync(dirname(join(project, LOCK_MD)), { recursive: true })

@@ -172,7 +172,7 @@
       "title": "Open Ideas",
       "description": "A few questions about the half-formed parts, hardest to change first (1–3 rounds)",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
-      "lines": ["ideate.open", "ideate.open.ask", "ideate.pool.mentioned", "ideate.pool.remember", "ideate.pool.where", "ideate.pool.end", "ideate.pool.skill", "ideate.pool.first", "ideate.added", "ideate.round"],
+      "lines": ["ideate.open", "ideate.open.ask", "ideate.pool.mentioned", "ideate.pool.remember", "ideate.pool.end", "ideate.pool.skill", "ideate.pool.first", "ideate.added", "ideate.round"],
       "opening": ["ideate.open", "ideate.open.ask"],
       "must": ["ideate.added", "ideate.round"],
       "craft": "craft/ideate-open.md",
@@ -195,9 +195,9 @@
       "when": "{convert}",
       "no": "1.4",
       "title": "What Your Rules Leave Open",
-      "description": "A finished game (F233): only what its rules leave open, and what's new on a screen (platform, online, the computer); in place of Feelings & Hopes and Open Ideas",
+      "description": "A finished game (F233): only what its rules leave open, and what the computer now does; in place of Feelings & Hopes and Open Ideas (F235: where it's played and who plays are asked once, in Define's Platform & Play)",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
-      "lines": ["ideate.rules", "ideate.open.ask", "ideate.rules.gap", "ideate.pool.where", "ideate.digital.who", "ideate.digital.computer", "ideate.added"],
+      "lines": ["ideate.rules", "ideate.open.ask", "ideate.rules.gap", "ideate.digital.computer", "ideate.added"],
       "opening": ["ideate.rules", "ideate.open.ask"],
       "must": ["ideate.added"],
       "craft": "craft/ideate-rules.md",
@@ -205,8 +205,6 @@
       "recap": ["sofar"],
       "collects": [
         { "field": "rules.gaps", "what": "What your rules leave open", "chapter": 8, "line": "ideate.rules.gap", "neededBy": [] },
-        { "field": "platform.where", "what": "Where people play it", "chapter": 5, "line": "ideate.pool.where", "neededBy": [] },
-        { "field": "players.who", "what": "Who plays on a screen", "chapter": 5, "line": "ideate.digital.who", "neededBy": [] },
         { "field": "computer.does", "what": "What the computer does for the players", "chapter": 14, "line": "ideate.digital.computer", "neededBy": [] }
       ]
     },

@@ -85,7 +85,7 @@ test('must: a talk step\'s "must" lines are checked against the lines handed out
   const { readFileSync } = await import('node:fs')
   const D = JSON.parse(readFileSync(new URL('../plugin/pipelines/design.json', import.meta.url), 'utf8'))
   const players = D.steps.find(s => s.id === 'players')
-  assert.deepEqual(players.must, ['design.players.length', 'design.players.needs'])
+  assert.deepEqual(players.must, ['design.players.long', 'design.players.defaults', 'design.players.needs']) // (F235 task 2)
   for (const p of ['ideate', 'define', 'design']) {
     const P = JSON.parse(readFileSync(new URL(`../plugin/pipelines/${p}.json`, import.meta.url), 'utf8'))
     assert.deepEqual(E.checkPipeline(P), [], p)
@@ -93,10 +93,10 @@ test('must: a talk step\'s "must" lines are checked against the lines handed out
   const bad = { id: 'p', version: 1, steps: [{ id: 'a', kind: 'talk', tools: ['Read'], lines: ['x.one'], must: ['x.two'] }] }
   assert.ok(E.checkPipeline(bad).some(p => /"must" line "x.two" isn't one of the step's "lines"/.test(p)))
   // nothing said yet: both named; one said: the other named; another step's record doesn't count
-  assert.match(E.mustProblem(players, { said: null }), /"design\.players\.length", "design\.players\.needs" were never said/)
-  assert.match(E.mustProblem(players, { said: { step: 'players', lines: ['design.players.read', 'design.players.length'] } }), /line "design\.players\.needs" was never said[^]*mcp__bmuz__say/)
-  assert.ok(E.mustProblem(players, { said: { step: 'look', lines: ['design.players.length', 'design.players.needs'] } }))
-  assert.equal(E.mustProblem(players, { said: { step: 'players', lines: ['design.players.length', 'design.players.needs'] } }), null)
+  assert.match(E.mustProblem(players, { said: null }), /"design\.players\.long", "design\.players\.defaults", "design\.players\.needs" were never said/)
+  assert.match(E.mustProblem(players, { said: { step: 'players', lines: ['design.players.read', 'design.players.long', 'design.players.defaults'] } }), /line "design\.players\.needs" was never said[^]*mcp__bmuz__say/)
+  assert.ok(E.mustProblem(players, { said: { step: 'look', lines: ['design.players.long', 'design.players.defaults', 'design.players.needs'] } }))
+  assert.equal(E.mustProblem(players, { said: { step: 'players', lines: ['design.players.long', 'design.players.defaults', 'design.players.needs'] } }), null)
   // a step's record starts with it and ends when it finishes
   const s1 = E.begin({ finished: [], said: { step: 'look', lines: ['a'] } }, players, 1)
   assert.deepEqual(s1.said, { step: 'players', lines: [] })

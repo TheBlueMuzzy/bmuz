@@ -18,7 +18,8 @@ const script = E.parseScript(readFileSync(join(plugin, 'script.md'), 'utf8'))
 // The script's example (bmuz-design-doc.html, "Example · Ideate, filled in").
 // (F233 task 5, 6b) approved lines no step says any more: "really vague and doesn't offer enough guidance" ·
 // "a bad question. we should consider removing it" (live look 2026-11-13); ideate.pool.first replaces the first
-const RETIRED = ['ideate.pool.smallest', 'ideate.pool.decided']
+// (F235 task 2: where it's played and who plays are asked once, in Define's Platform & Play, never in Ideate too)
+const RETIRED = ['ideate.pool.smallest', 'ideate.pool.decided', 'ideate.pool.where', 'ideate.digital.who']
 export const GARDEN_IDEA ="A card game where two friends race to grow the best garden. You draw seed cards and plant them, but weather cards can wreck the other person's rows. I'd like it on phones, quick games."
 
 test('the pipeline is the script\'s Stage 1: 1.1–1.7 in order, every Ideate line said by a step, openings first, the gates (1.3, 1.7) as script boxes', () => {

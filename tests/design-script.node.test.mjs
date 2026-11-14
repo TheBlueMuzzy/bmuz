@@ -26,7 +26,11 @@ test('the pipeline is the script\'s Stage 3: the welcome, then 3.1–3.10 in ord
   const said = new Set([...P.steps.flatMap(s => s.lines || []), ...P.steps.filter(s => s.line).map(s => s.line)])
   // composed by a script from script.md and shown word for word, not said by Claude
   const composed = ['design.rulebook.done', 'design.plan.how', 'design.plan.roadmap', 'design.review']
-  for (const id of Object.keys(script.lines).filter(id => id.startsWith('design.') && !composed.includes(id))) assert.ok(said.has(id), id)
+  // (F235 task 2: saving and leaving are engineering calls with the framework's defaults: the two approved questions
+  // that asked them are kept in the script, said by no step; design.players.leave / .long / .defaults replace them)
+  const RETIRED = ['design.players.online', 'design.players.length']
+  for (const id of Object.keys(script.lines).filter(id => id.startsWith('design.') && !composed.includes(id) && !RETIRED.includes(id))) assert.ok(said.has(id), id)
+  for (const id of RETIRED) assert.ok(!said.has(id), id)
   for (const id of composed) assert.ok(!said.has(id), id)
   assert.ok(said.has('define.scope.idea')) // 3.5's box is Define's own words
   assert.equal(E.stepPlace(P, step('flow')), 'Design · 2 of 10 · The Rulebook')

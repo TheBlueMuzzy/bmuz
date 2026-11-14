@@ -9,3 +9,4 @@ Hand back:
 - "slice": the slice, as kept
 - "sketches": the new sketch ideas, [{"name", "question"}] ([] when none)
 - "questions": what needs research, each a short question ([] when none)
+- "later": (F235) the GDD's open questions ("Open: …" lines, any chapter) that neither the vertical slice nor the musts need, copied word for word, so the lock lists them as later and never asks them (Muzzy: "is solving that now part of the vertical slice? i don't think it is"). Things like carry-over between games, stats, achievements, accounts, other modes. [] when none.

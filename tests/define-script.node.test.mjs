@@ -24,8 +24,13 @@ test('the pipeline is the script\'s Stage 2: the welcome, then 2.1–2.8 high to
   const titled = [...new Map(P.steps.filter(s => s.no).map(s => [s.no, s.title])).entries()]
   assert.deepEqual(titled, [['2.0', 'Welcome to Define'], ['2.1', 'The Feelings'], ['2.2', 'The 3 Pillars'], ['2.3', 'The Pitch'], ['2.4', 'The Core Loop'], ['2.5', 'Platform & Play'], ['2.6', 'Clash Check'], ['2.7', 'Scope, First Pass'], ['2.8', 'Concept Lock']])
   const said = new Set([...P.steps.flatMap(s => s.lines || []), ...P.steps.filter(s => s.line).map(s => s.line)])
-  // define.lock is composed by the lock-show script (shown word for word), not said by Claude
-  for (const id of Object.keys(script.lines).filter(id => id.startsWith('define.') && id !== 'define.lock')) assert.ok(said.has(id), id)
+  // define.lock.when is composed by the lock-show script (shown word for word), not said by Claude; (F235 task 2) the
+  // approved define.lock, define.platform and define.platform.someday are kept in the script, said by no step (the
+  // lock lists open questions by when they're needed; Platform & Play's heading no longer lists Design's questions;
+  // someday platforms are asked in Scope, once the features are sorted)
+  const RETIRED = ['define.lock', 'define.platform', 'define.platform.someday']
+  for (const id of Object.keys(script.lines).filter(id => id.startsWith('define.') && id !== 'define.lock.when' && !RETIRED.includes(id))) assert.ok(said.has(id), id)
+  for (const id of RETIRED) assert.ok(!said.has(id), id)
   // every talk step that decides writes its chapter as chosen right after it
   for (const id of ['feelings', 'pillars', 'pitch', 'loop', 'platform', 'clashes', 'scope', 'slice', 'change']) {
     const g = P.steps.find(s => s.id === `${id}-gdd`)
@@ -89,7 +94,9 @@ test('2.8 the lock page: the script\'s words with what Define chose (✓ lines),
   const msg = readFileSync(join(dir, D.LOCK_MD), 'utf8')
   assert.ok(msg.startsWith('**Concept Lock**\nHere\'s the concept, one page, on your project page now: file:///'))
   assert.match(msg, /\n✓ The Feelings: the thrill of a close race\n✓ The 3 Pillars: Quick rivalry · Grow, then guard · Weather is fair\n✓ The Pitch: a three-minute garden race where the weather is your weapon\n✓ The Core Loop: You draw → you plant or play weather → you score blooming rows → \(again\)\n✓ Platform & Play: phone first; friends on the same screen and online, at the same time\n✓ Scope, first pass: 3 musts, slice chosen\n/)
-  assert.match(msg, /\nStill open: Rulebook: How does a game end and who wins\. That's fine; Design fills these\.\n\nLocking means Design builds on this page\. You can still change it later; every change is logged\.\n$/)
+  // (F235 task 2: the open questions by when they're needed; nothing here is asked now)
+  assert.match(msg, /\n\n\*\*For Design\*\*, nothing to answer now:\n· Rulebook: How does a game end and who wins\?\n\nLocking means Design builds on this page\. You can still change it later; every change is logged\.\n$/)
+  assert.doesNotMatch(msg, /Needed before you lock|\*\*Later\*\*/)
   assert.deepEqual(D.stillOpen(readFileSync(join(dir, G.GDD), 'utf8')), ['Rulebook: How does a game end and who wins'])
   assert.equal(r.slots.musts, '3')
 })

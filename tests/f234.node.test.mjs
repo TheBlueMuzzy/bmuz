@@ -27,7 +27,9 @@ test('task 2: every Define step that asks the concept names what it collects, wh
   assert.deepEqual(E.checkPipeline(DEFINE), [])
   assert.deepEqual(E.checkPipeline(IDEATE), [])
   const ids = s => (E.stepById(DEFINE, s).collects || []).map(c => c.field)
-  assert.deepEqual(ids('platform'), ['platform.where', 'platform.first', 'platform.someday', 'players.who', 'computer.ai'])
+  // (F235 task 2: the someday platforms are asked in Scope, once the features are sorted)
+  assert.deepEqual(ids('platform'), ['platform.where', 'platform.first', 'players.who', 'computer.ai'])
+  assert.deepEqual(ids('scope'), ['scope.smallest', 'scope.musts', 'platform.someday'])
   assert.deepEqual(ids('platform-rules'), ids('platform'))
   assert.deepEqual(ids('decides'), ['feel.target', 'feel.know', 'pillars', 'pitch.oneliner', 'pitch.lines', 'loop'])
   for (const s of ['feelings', 'pillars', 'pitch', 'loop', 'scope', 'slice']) assert.ok(ids(s).length, s)
@@ -52,11 +54,11 @@ test('task 3, rules 2 and 5: there only with a fixed rule or a decision whose li
   const records = { 'players.who': [{ chapter: 5, line: fixed, kind: 'fixed' }], 'platform.where': [{ chapter: 5, line: said, kind: 'said' }], 'platform.first': [{ chapter: 5, line: read, kind: 'read' }] }
   const plan = E.askPlan(step, records, doc)
   const st = Object.fromEntries(plan.fields.map(f => [f.field, f.status]))
-  assert.deepEqual(st, { 'platform.where': 'unsure', 'platform.first': 'unsure', 'platform.someday': 'missing', 'players.who': 'there', 'computer.ai': 'missing' })
+  assert.deepEqual(st, { 'platform.where': 'unsure', 'platform.first': 'unsure', 'players.who': 'there', 'computer.ai': 'missing' })
   assert.equal(plan.decision, 'confirm')
   assert.equal(plan.fields.find(f => f.field === 'players.who').why, 'your rules say "Play it online, two players taking turns" (from rules.md)')
   // a chapter that looks full is not an answer: an Idea line is no record at all
-  assert.equal(plan.fields.find(f => f.field === 'platform.someday').status, 'missing')
+  assert.equal(E.askPlan(E.stepById(DEFINE, 'scope'), records, doc).fields.find(f => f.field === 'platform.someday').status, 'missing')
   // the line taken out of the GDD (an undo, a hand edit): the field is open again
   assert.equal(E.askPlan(step, records, gdd([said])).fields.find(f => f.field === 'players.who').status, 'missing')
   // a new idea: nothing recorded = everything asked
@@ -69,13 +71,13 @@ test('task 3, rules 2 and 5: there only with a fixed rule or a decision whose li
   const lifted = E.liftedMusts(step, plan)
   assert.deepEqual(lifted, ['define.platform.who', 'define.platform.ai'].filter(l => plan.fields.find(f => f.line === l).status === 'there'))
   const state = { asked: { platform: E.planRecord(plan, step) }, said: { step: 'platform', lines: ['define.platform'] } }
-  assert.match(E.mustProblem(step, state, {}), /"define\.platform\.where", "define\.platform\.first", "define\.platform\.someday" were never said/)
+  assert.match(E.mustProblem(step, state, {}), /"define\.platform\.where", "define\.platform\.first" were never said/)
   assert.doesNotMatch(E.mustProblem(step, state, {}), /define\.platform\.who/)
   // the plan as the step is told it
   const note = E.planNote(step, plan)
   assert.match(note, /Who else plays \(define\.platform\.who\): already there, so don't ask it/)
   assert.match(note, /Where it's played, and what the player holds \(define\.platform\.where\): the document has "Clear: "On a computer first"".*Confirm it with "any\.keep"/)
-  assert.match(note, /The someday platforms \(define\.platform\.someday\): not in the document yet: ask it \(store needs it\)/)
+  assert.match(note, /Whether the computer must play it \(define\.platform\.ai\): not in the document yet: ask it \(design needs it\)/)
 })
 
 test('task 3, rule 3: a step a path turns off still asks a needed field that nothing else asks; the conversion path as built needs none', () => {
@@ -334,7 +336,8 @@ test('review fix 1 (headless ideate-decided-box): an answer that starts with wha
 
 test('review fix 3 (headless ideate-decided): a Keep of a free line\'s question counts as it; an answer settled here by "already decided" isn\'t on the stage\'s end list', () => {
   const step = E.stepById(DEFINE, 'platform-rules')
-  assert.equal(E.keepLine(step, { question: 'Which ones are "someday"?', answer: 'phones' }, script), 'define.platform.someday')
+  // (F235 task 2: the someday platforms moved to Scope, its free question in its own words)
+  assert.equal(E.keepLine(E.stepById(DEFINE, 'scope'), { question: "Anywhere else you'd like it someday, once the musts are built?", answer: 'phones' }, script), 'define.scope.someday')
   const fields = step.collects.map(c => ({ ...c, status: c.field === 'platform.first' ? 'there' : 'missing', why: 'you said it\'s already decided: the web', ...(c.field === 'platform.first' ? { here: true } : {}) }))
   const items = E.skipItems({ steps: [step] }, { finished: ['platform-rules'], asked: { 'platform-rules': { fields, title: 'Platform & Play', said: step.collects.map(c => c.line) } } })
   assert.deepEqual(items, [])

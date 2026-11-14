@@ -361,6 +361,10 @@ header: Core loop
 **Platform & Play**
 Where it's played first, and who with. These change how the game is designed, so we decide the big ones now. The details (how long a game is, saving, what happens when someone leaves) come later, in Design.
 
+## define.platform.now · say · added
+**Platform & Play**
+Where it's played first, and who with. These two change how the game is designed, so we decide them now. Everything else about the digital game comes later.
+
 ## define.platform.where · box
 ? Where is the player, and what are they holding? (pick any)
 header: Holding
@@ -438,6 +442,10 @@ header: Scope
 ## define.scope.wont · free
 For each "won't", a quick reason, so we remember why: {wonts}
 
+## define.scope.someday · free · added
+**Platforms later**
+It starts on {first}. Now that the features are sorted: anywhere else you'd like it someday, once the musts are built? For example: {example}. Or say "none".
+
 ## define.scope.chart · free
 Here's the effort vs impact chart, on your project page now. Effort is my estimate from research; impact is yours to correct. Anything in the wrong box?
 
@@ -469,6 +477,28 @@ Here's the concept, one page, on your project page now: {link}
 
 Still open: {open}. That's fine; Design fills these.
 
+Locking means Design builds on this page. You can still change it later; every change is logged.
+
+## define.lock.when · say · added
+**Concept Lock**
+Here's the concept, one page, on your project page now: {link}
+
+✓ The Feelings: {feelings}
+✓ The 3 Pillars: {pillars}
+✓ The Pitch: {oneliner}
+✓ The Core Loop: {loop}
+✓ Platform & Play: {platform}
+✓ Scope, first pass: {musts} musts, slice chosen
+[[
+**Needed before you lock**: type your answers in the box below, in its own field.
+{now#}
+]][[
+**For Design**, nothing to answer now:
+{design}
+]][[
+**Later**, not needed for the slice:
+{later}
+]]
 Locking means Design builds on this page. You can still change it later; every change is logged.
 
 ## define.lock.box · box
@@ -662,6 +692,21 @@ Online: what happens when someone leaves, goes quiet, comes back or joins late? 
 
 ## design.players.length · free
 How long is one game? Can it be paused or saved halfway?
+
+## design.players.leave · box · added
+? Online, when someone leaves partway through a game, what should happen?
+header: Leaving
+- The computer plays their seat — the game goes on, and they can rejoin their seat later (BMUZ's usual way)
+- The game waits for them — paused a few minutes, then the computer plays their seat
+- The game ends for everyone — nobody wins that one
+
+## design.players.long · free · added
+**One game**
+How long is one game, roughly? For example: {example}. If it just ends when someone wins, say so.
+
+## design.players.defaults · say · added
+The rest is mine to build, the way every BMUZ game does it, so there's nothing to decide:
+{defaults}
 
 ## design.players.needs · box
 ? Which of these does the game need? (pick any)

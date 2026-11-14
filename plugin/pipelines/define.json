@@ -226,15 +226,14 @@
       "title": "Platform & Play",
       "description": "Where it's played first, and who with",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
-      "lines": ["define.platform", "define.platform.where", "define.platform.first", "define.platform.someday", "define.platform.who", "define.platform.ai", "any.keep"],
-      "must": ["define.platform.where", "define.platform.first", "define.platform.someday", "define.platform.who"],
-      "opening": ["define.platform"],
+      "lines": ["define.platform.now", "define.platform.where", "define.platform.first", "define.platform.who", "define.platform.ai", "any.keep"],
+      "must": ["define.platform.where", "define.platform.first", "define.platform.who"],
+      "opening": ["define.platform.now"],
       "craft": "craft/define-platform.md",
       "results": ["chapters", "platform"],
       "collects": [
         { "field": "platform.where", "what": "Where it's played, and what the player holds", "chapter": 5, "line": "define.platform.where", "neededBy": ["design", "build"] },
         { "field": "platform.first", "what": "The first platform", "chapter": 5, "line": "define.platform.first", "neededBy": ["build", "store"] },
-        { "field": "platform.someday", "what": "The someday platforms", "chapter": 5, "line": "define.platform.someday", "neededBy": ["store"] },
         { "field": "players.who", "what": "Who else plays", "chapter": 5, "line": "define.platform.who", "neededBy": ["design", "build"] },
         { "field": "computer.ai", "what": "Whether the computer must play it", "chapter": 5, "line": "define.platform.ai", "neededBy": ["design"] }
       ],
@@ -256,17 +255,16 @@
       "when": "{convert}",
       "no": "2.5",
       "title": "Platform & Play",
-      "description": "A finished game (F233): where it's played first, and who with; what you said in Ideate shows first, one tap to keep",
+      "description": "A finished game (F233): where it's played first, and who with; what your rules or your own words already say shows first, one tap to keep (F235: asked here once, never in Ideate too)",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
-      "lines": ["define.platform", "define.platform.where", "define.platform.first", "define.platform.someday", "define.platform.who", "define.platform.ai", "any.keep"],
+      "lines": ["define.platform.now", "define.platform.where", "define.platform.first", "define.platform.who", "define.platform.ai", "any.keep"],
       "must": ["define.platform.first"],
-      "opening": ["define.platform"],
+      "opening": ["define.platform.now"],
       "craft": "craft/define-platform-rules.md",
       "results": ["chapters", "platform"],
       "collects": [
         { "field": "platform.where", "what": "Where it's played, and what the player holds", "chapter": 5, "line": "define.platform.where", "neededBy": ["design", "build"] },
         { "field": "platform.first", "what": "The first platform", "chapter": 5, "line": "define.platform.first", "neededBy": ["build", "store"] },
-        { "field": "platform.someday", "what": "The someday platforms", "chapter": 5, "line": "define.platform.someday", "neededBy": ["store"] },
         { "field": "players.who", "what": "Who else plays", "chapter": 5, "line": "define.platform.who", "neededBy": ["design", "build"] },
         { "field": "computer.ai", "what": "Whether the computer must play it", "chapter": 5, "line": "define.platform.ai", "neededBy": ["design"] }
       ]
@@ -338,14 +336,15 @@
       "title": "Scope, First Pass",
       "description": "Must / Should / Could / Won't, effort vs impact",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
-      "lines": ["define.scope", "define.scope.smallest", "define.scope.idea", "define.scope.wont"],
-      "must": ["define.scope.smallest"],
+      "lines": ["define.scope", "define.scope.smallest", "define.scope.idea", "define.scope.wont", "define.scope.someday", "any.keep"],
+      "must": ["define.scope.smallest", "define.scope.someday"],
       "opening": ["define.scope"],
       "craft": "craft/define-scope.md",
       "results": ["chapters", "musts"],
       "collects": [
         { "field": "scope.smallest", "what": "The smallest version that still gives the feeling", "chapter": 6, "line": "define.scope.smallest", "neededBy": ["design"] },
-        { "field": "scope.musts", "what": "Must, should, could or won't, for each idea", "chapter": 6, "line": "define.scope.idea", "neededBy": ["design", "build"] }
+        { "field": "scope.musts", "what": "Must, should, could or won't, for each idea", "chapter": 6, "line": "define.scope.idea", "neededBy": ["design", "build"] },
+        { "field": "platform.someday", "what": "The someday platforms (asked once the features are sorted)", "chapter": 6, "line": "define.scope.someday", "neededBy": ["store"] }
       ]
     },
     {
@@ -368,7 +367,7 @@
       "must": ["define.scope.slice", "define.scope.slice.ok", "define.scope.report"],
       "opening": ["define.scope.chart"],
       "craft": "craft/define-slice.md",
-      "results": ["chapters", "slice"],
+      "results": ["chapters", "slice", "later"],
       "collects": [
         { "field": "scope.slice", "what": "The vertical slice", "chapter": 6, "line": "define.scope.slice.ok", "neededBy": ["design", "build"] }
       ]
