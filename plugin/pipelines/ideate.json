@@ -37,6 +37,7 @@
       "needs": ["material"],
       "description": "Reading it all: the text of everything shared (files, folders, Drive, GitHub), and what the rest appears to be",
       "run": ["node", "{plugin}/scripts/ideate-fetch.mjs"],
+      "timeoutMs": 480000,
       "writes": [".planning/research/shared.md", ".planning/research/shared.json"],
       "done": { "type": "file-contains", "path": ".planning/research/shared.md", "text": "## The text" }
     },
