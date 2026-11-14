@@ -3445,3 +3445,17 @@ test('F235 task 8: a box pointing at the project page (define.scope.chart.here i
   expect(refused(r)).toBe(false)
   expect(boxOf(r).question).toMatch(/^It's on your project page too: file:\/\/\/.*proj\/\.planning\/project-page\.html\. Anything in the wrong box\?/)
 })
+
+test('F235 review fix: "Chat about this" on two boxes asked together keeps the other box pending (only the last opens as a free question; none is lost)', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: CLARIFY, isError: true }))
+  const { w } = boxWorld(on)
+  await start($, true)
+  const said: any = await $.tool.call({ tool: SAY, line: ['ideate.material', 'ideate.idea'] } as any)
+  const boxes = JSON.parse(String(said.result)).boxes || [JSON.parse(String(said.result)).box]
+  expect(boxes.length).toBe(2)
+  await $.tool.call({ tool: 'AskUserQuestion', questions: boxes.map((b: any) => ({ question: b.question, header: b.header, multiSelect: false, options: b.options })) } as any)
+  const st = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(st.ask).toMatchObject({ line: 'ideate.idea' })
+  expect((st.boxes || []).map((b: any) => b.id)).toEqual(['ideate.material'])
+})
