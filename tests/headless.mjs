@@ -156,15 +156,15 @@ const GARDEN_DEFINE = {
   platform: {
     'Where is the player, and what are they holding?': 'A phone',
     'Which one platform first?': 'The web',
-    'Which ones are "someday"?': 'Phone app stores, someday.',
     'Who else is playing?': 'Friends on the same screen, Online, at the same time',
     'Must the computer be able to play it?': 'Nice to have',
   },
   clashes: { 'What should we do? (each clash)': 'Keep both' },
   scope: {
     'The smallest version that still gives the feeling': 'Two players on one phone, one seed deck, three weather cards.',
-    'Each idea: must, should, could or won\'t?': 'Planting and scoring rows: Must. Weather cards: Must. Online play: Should. Computer opponent: Could. Seasons: Could. Card packs to collect: Won\'t.',
+    'Each idea: how much does the game need it?': 'Planting and scoring rows: Must. Weather cards: Must. Online play: Should. Computer opponent: Could. Seasons: Could. Card packs to collect: Won\'t.',
     'A reason for each won\'t': 'Card packs: collecting is not this game.',
+    'Platforms later: anywhere else someday?': 'Phone app stores, someday.',
   },
   slice: {
     'Anything in the wrong box?': 'No, it looks right.',
@@ -174,8 +174,10 @@ const GARDEN_DEFINE = {
 
 // Where the script's growth chart says each chapter ends (bmuz-design-doc.html "4 · How the GDD grows").
 const CHART = {
-  ideate: { 1: 'loose', 2: 'empty', 3: 'loose', 4: 'loose', 5: 'loose', 6: 'loose', 7: 'loose', 8: 'loose', 9: 'empty', 10: 'loose', 11: 'loose', 12: 'loose', 13: 'empty', 14: 'empty' },
-  define: { 1: 'chosen', 2: 'chosen', 3: 'chosen', 4: 'chosen', 5: 'chosen', 6: 'chosen', 7: 'chosen', 8: 'loose', 9: 'empty', 10: 'loose', 11: 'loose', 12: 'loose', 13: 'empty', 14: 'empty' },
+  // (F235: chapter 10 after Ideate and Define is "loose" only when Open Ideas happened to pick a question about change
+  // over time — haiku picks 3 from the pool — so either is right; the F234 notes' flaky check)
+  ideate: { 1: 'loose', 2: 'empty', 3: 'loose', 4: 'loose', 5: 'loose', 6: 'loose', 7: 'loose', 8: 'loose', 9: 'empty', 10: ['loose', 'empty'], 11: 'loose', 12: 'loose', 13: 'empty', 14: 'empty' },
+  define: { 1: 'chosen', 2: 'chosen', 3: 'chosen', 4: 'chosen', 5: 'chosen', 6: 'chosen', 7: 'chosen', 8: 'loose', 9: 'empty', 10: ['loose', 'empty'], 11: 'loose', 12: 'loose', 13: 'empty', 14: 'empty' },
   design: { 1: 'chosen', 2: 'chosen', 3: 'worked out', 4: 'worked out', 5: 'worked out', 6: 'worked out', 7: 'worked out', 8: 'worked out', 9: 'worked out', 10: 'worked out', 11: 'worked out', 12: 'worked out', 13: 'worked out', 14: 'loose' },
 }
 
@@ -278,7 +280,7 @@ function scriptChecks(dir, out, stage, js, mustSay) {
   const notSaid = mustSay.filter(id => !ids.has(id))
   check(`F232 (${stage}): the script's lines for this run were all said (${mustSay.length})`, notSaid.length === 0, `not said: ${notSaid.join(', ')}`)
   const lv = levelsOf(dir)
-  const off = Object.entries(CHART[stage]).filter(([n, l]) => lv[n] !== l).map(([n, l]) => `${n}: ${lv[n] || '?'} (chart: ${l})`)
+  const off = Object.entries(CHART[stage]).filter(([n, l]) => !(Array.isArray(l) ? l.includes(lv[n]) : lv[n] === l)).map(([n, l]) => `${n}: ${lv[n] || '?'} (chart: ${[].concat(l).join(' or ')})`)
   check(`F232 (${stage}): the GDD's chapters end where the script's growth chart says`, off.length === 0, off.join(' · '))
 }
 // A stage's journal: its archived record once the project moved on (.bmuz/stages/<n>-<stage>/), else the current one.
@@ -542,16 +544,18 @@ const scenarios = {
       idea: { 'Your Idea': "It's Moonmarket, a board game I finished years ago: we've played it loads. I want to turn it into a digital version." },
       material: { 'Your Material (share your links)': 'rules.md and the art folder' },
       next: { 'What next?': 'Carry on in Ideate (Recommended)' },
-      'rules-open': { 'What Your Rules Leave Open (answer all in one message)': 'If the deck runs out, shuffle the discards back in. On a computer first. Online, taking turns, and against the computer. The computer should do all the bookkeeping, and a short tutorial would be nice.' },
+      'rules-open': { 'What Your Rules Leave Open (answer all in one message)': 'If the deck runs out, shuffle the discards back in. The computer should do all the bookkeeping, and a short tutorial would be nice.' },
       sketches: { 'Which of these should we sketch? Pick any.': 'the first two', 'Anything else?': "that's all" },
       ready: { 'Ready for Define?': 'On to Define (Recommended)' },
       'welcome-rules': {},
       decides: { 'Is that your game?': "Yes, that's it" },
-      'platform-rules': { 'Keep? (each answer from Ideate)': 'Keep', 'Which one platform first?': 'The web', 'Must the computer be able to play it?': 'Yes, and it has to be good' },
+      // (F235: where it's played and who plays are asked here, once, never in Ideate)
+      'platform-rules': { 'Where is the player, and what are they holding?': 'A computer, mouse and keyboard', 'Which one platform first?': 'The web', 'Who else is playing?': 'Online, taking turns', 'Must the computer be able to play it?': 'Yes, and it has to be good' },
+      // (F235: a finished game is never asked "what's the smallest version?": the slice is proposed from its rules)
       scope: {
-        'The smallest version that still gives the feeling': 'Two players against each other online, the base game only.',
-        'Each idea: must, should, could or won\'t?': 'Online, taking turns: Must. A computer opponent: Should. A tutorial: Could. Expansions: Won\'t.',
+        'Each idea: how much does the game need it?': 'Online, taking turns: Must. A computer opponent: Should. A tutorial: Could. Expansions: Won\'t.',
         'A reason for each won\'t': 'Expansions: the base game first.',
+        'Platforms later: anywhere else someday?': 'Phone app stores, someday.',
       },
       slice: { 'Anything in the wrong box?': 'No, it looks right.', 'Does that slice feel like the game?': 'Yes' },
     }
@@ -596,6 +600,17 @@ const scenarios = {
     const ids = new Set(both.filter(j => j.ev === 'line').map(j => j.line))
     const must = ['ideate.rules', 'ideate.open.ask', 'ideate.added', 'define.welcome.rules', 'define.rules', 'define.rules.ok', 'define.platform.now', 'define.platform.first', 'define.scope.intro', 'define.scope.slice.list', 'define.scope.report']
     check('F233: the conversion path\'s lines were all said', must.every(id => ids.has(id)), `not said: ${must.filter(id => !ids.has(id)).join(', ')}`)
+    // F235 task 2: Ideate never asked where it's played or who plays; Define's Platform & Play asked each once, and not "someday"
+    const iLines = ideate.filter(j => j.ev === 'line').map(j => j.line)
+    check('F235: Ideate never asked where it\'s played or who plays; Platform & Play asked each once (no "someday": Scope asks it)', !iLines.includes('ideate.pool.where') && !iLines.includes('ideate.digital.who') && plat.filter(j => j.line === 'define.platform.where').length <= 1 && plat.filter(j => j.line === 'define.platform.who').length <= 1 && !plat.some(j => j.line === 'define.platform.someday') && define.some(j => j.ev === 'line' && j.line === 'define.scope.someday'), `ideate: ${iLines.join(', ')} | platform: ${plat.map(j => j.line).join(', ')}`)
+    // F235 task 3: a finished game is never asked "what's the smallest version?"; the slice is proposed as bullets
+    const sl = define.find(j => j.ev === 'line' && j.line === 'define.scope.slice.list')
+    check('F235: a finished game gets a proposed slice (bullets), never "what\'s the smallest version?"', !define.some(j => j.ev === 'line' && ['define.scope.first', 'define.scope.smallest'].includes(j.line)) && !!sl && /\n· /.test(sl.text), sl ? sl.text : 'no slice line')
+    // F235 task 1: at the lock, "lock it" typed in the chat locks it (the live bug: it passed by untouched)
+    const out2 = runIn(dir, 'lock it', `${TOOLS} ToolSearch mcp__bmuz__say`, true)
+    writeFileSync(join(dir, 'run-output-lock.txt'), out2)
+    const after = journalOf(dir)
+    check('F235: Define on a finished game locks on "lock it" typed in the chat: the gate answered, the lock logged in the GDD\'s Decisions', after.some(j => j.ev === 'gate.answer' && j.step === 'lock' && j.answer === 'Lock it: on to Design') && after.some(j => j.ev === 'step.done' && j.step === 'locked') && /locked in Define/.test(read('.planning/GDD.md')), trailOf(after.slice(-8)))
   },
 
 
@@ -664,11 +679,11 @@ const scenarios = {
     mkdirSync(join(dir, '.bmuz'), { recursive: true })
     writeFileSync(join(dir, '.bmuz/state.json'), JSON.stringify(entered, null, 2))
     const answers = {
-      'platform-rules': { 'Which one platform first?': 'Already decided: the web.', 'Which ones are "someday"?': 'Phone app stores, someday.', 'Must the computer be able to play it?': 'Yes, and it has to be good' },
+      'platform-rules': { 'Which one platform first?': 'Already decided: the web.', 'Must the computer be able to play it?': 'Yes, and it has to be good' },
       scope: {
-        'The smallest version that still gives the feeling': 'Two players against each other online, the base game only.',
-        'Each idea: must, should, could or won\'t?': 'Online, taking turns: Must. A computer opponent: Should. A tutorial: Could. Expansions: Won\'t.',
+        'Each idea: how much does the game need it?': 'Online, taking turns: Must. A computer opponent: Should. A tutorial: Could. Expansions: Won\'t.',
         'A reason for each won\'t': 'Expansions: the base game first.',
+        'Platforms later: anywhere else someday?': 'Phone app stores, someday.',
       },
       slice: { 'Anything in the wrong box?': 'No, it looks right.', 'Does that slice feel like the game?': 'Yes' },
     }
