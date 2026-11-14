@@ -446,7 +446,7 @@ Before the whole game, we build one small piece you can play and share: a vertic
 
 ## define.scope.need · box · added
 ? {idea}: how much does the game need it?
-header: Scope
+header: {idea}
 - Must — the game doesn't work without it
 - Should — it hurts to leave out, but the game still works
 - Could — nice to have, if there's time

@@ -309,3 +309,17 @@ test('task 10: a journaled answer that ends with a command (sirius-live4, 11:20)
   ]
   assert.deepEqual(answersFrom(lines), ['phones once the web version plays well'])
 })
+
+// ---- task 9: each scope box's tab is named after its feature ----
+test('task 9: define.scope.need\'s tab is its idea, whole words cut to 12 characters (live look 4: four tabs all "Scope")', () => {
+  const tab = idea => E.renderLine(script, 'define.scope.need', { idea }).box.header
+  assert.equal(tab('Online play with friends'), 'Online play')
+  assert.equal(tab('Tutorial with progressive hints'), 'Tutorial')
+  assert.equal(tab('Traps variant (face-down Trap cards)'), 'Traps')
+  assert.equal(tab('Asymmetrical smuggler powers'), 'Asymmetrical')
+  assert.equal(tab('Hyperspacejumping'), 'Hyperspaceju')
+  assert.equal(tab('AI'), 'AI')
+  for (const idea of ['Online play with friends', 'Tutorial with progressive hints', 'a very long name with many words']) assert.ok(tab(idea).length <= E.HEADER_MAX)
+  // every box in the script still fits its tab
+  for (const [id, l] of Object.entries(script.lines)) if (l.kind === 'box' && !/\{/.test(l.box.header)) assert.ok(l.box.header.length <= 12, id)
+})

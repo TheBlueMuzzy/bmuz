@@ -1707,7 +1707,25 @@ export function renderLine(script, id, slots = {}) {
     }
   }
   if (options.length < 2 || options.length > 4) return { error: `box "${id}" would have ${options.length} option${options.length === 1 ? '' : 's'}; a question box takes 2 to 4 (give at most ${Math.max(0, 4 - line.box.options.filter(o => !o.each && !o.if).length)} items)` }
-  return { id, kind: 'box', box: { question: q.text.trim(), header: line.box.header, multiSelect: line.box.many, options } }
+  // F235 task 9 (live look 4: four scope boxes, four tabs all "Scope"): a header may carry a slot ("header: {idea}"),
+  // filled and cut to fit the tab (boxHeader)
+  const h = fillTemplate(line.box.header, s, nested)
+  if (h.missing) return { error: `box "${id}" needs ${h.missing.map(n => `{${n}}`).join(', ')} in "slots" (its header)` }
+  return { id, kind: 'box', box: { question: q.text.trim(), header: boxHeader(h.text), multiSelect: line.box.many, options } }
+}
+
+// A question box's tab: AskUserQuestion takes 12 characters at most. Whole words while they fit ("Online play with
+// friends" → "Online play", "Traps variant (face-down…)" → "Traps"); a first word longer than 12 is cut.
+export const HEADER_MAX = 12
+export function boxHeader(text) {
+  const words = String(text || '').replace(/[()[\]{}"“”]/g, ' ').trim().split(/\s+/).filter(Boolean)
+  let out = ''
+  for (const w of words) {
+    const next = out ? `${out} ${w}` : w
+    if (next.length > HEADER_MAX) break
+    out = next
+  }
+  return (out || (words[0] || '').slice(0, HEADER_MAX)).replace(/[\s,:;·—–-]+$/, '')
 }
 
 // The words as compared: bold marks, curly quotes, bullet signs and spacing don't count (Markdown may draw them
