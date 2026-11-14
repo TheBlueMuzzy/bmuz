@@ -2479,16 +2479,22 @@ test('F230 item 9a: a line said again in the same step replaces its earlier word
 // word; the creative's answer back into the step as a note; the step's record never touched ----
 const RESEARCH_LINES = [
   '## research.look · say', 'Let me look. {time}…', '',
-  '## research.found · say', 'Here\'s what I found:', '{found}', 'Sources are on your project page. Does it change anything?', '',
+  '## research.found · box · added', '? Here\'s what I found:', '{found}', 'Sources are on your project page. Does it change anything?', 'header: Research', '- No, carry on — it changes nothing', '- Yes — next, tell me what changes', '',
   '## research.wait · say · added', 'The {helpers} helpers are still working, so I\'ll start looking once they\'re done: "{question}".', '',
   '## research.busy · say · added', 'I\'m still looking into "{question}". One question at a time: ask me this one again once that\'s back.', '',
   '## research.none · say · added', 'I couldn\'t find sources I trust on "{question}", so I have nothing to add yet. Back to {back}.', '',
   '## research.changed · say · added', 'Changed {file} for your answer: {what}.', '',
   '## research.notstarted · say · added', 'The research on "{question}" didn\'t start. Ask again when you want it.', '',
-  '## research.lost · say · added', 'Your research on "{question}" stopped {why}. Ask again?', '',
+  '## research.lost · box · added', '? Your research on "{question}" stopped {why}. Ask again?', 'header: Research', '- Not now — carry on where we were', '- Ask again — start the same research again', '',
+  '## any.chat · say · added', 'Go ahead: type or paste your answer as your next message.', '',
 ].join(NL)
 const FOUND = ['Co-op weather games exist', 'Shared weather reads as fair', 'Players dislike pure luck']
 const FOUND_TEXT = `Here's what I found:${NL}· ${FOUND.join(`${NL}· `)}${NL}Sources are on your project page. Does it change anything?`
+// F235 task 11: the two research questions are boxes (the words above are the found box's question)
+const FOUND_BOX = { question: FOUND_TEXT, header: 'Research', multiSelect: false, options: [{ label: 'No, carry on', description: 'it changes nothing' }, { label: 'Yes', description: 'next, tell me what changes' }] }
+const lostBox = (q: string, why: string) => ({ question: `Your research on "${q}" stopped ${why}. Ask again?`, header: 'Research', multiSelect: false, options: [{ label: 'Not now', description: 'carry on where we were' }, { label: 'Ask again', description: 'start the same research again' }] })
+const CLARIFY_FOUND = 'The user wants to clarify these questions.\n    Start by asking them what they would like to clarify.\n\n    Questions asked:\n- "Here\'s what I found:"\n  (No answer provided)'
+const answered = (box: any, a: string) => ({ result: `User has answered your questions: "${box.question}"="${a}". You can now continue with the user's answers in mind.` })
 // A world whose step "ask" is a talk step, then a flow step and a gate, with the research lines; research.mjs answers like
 // the real one.
 function researchWorld(on: any, found: any = { ok: true, lines: FOUND }) {
@@ -2550,12 +2556,13 @@ test('F229: during a talk step, research runs in the background — the look lin
   // it's back: the engine checks the report (research.mjs found) and hands Claude the line, word for word
   await $.prompt.submit(done('tu-r') as any)
   expect(w.runs.some(a => /research\.mjs$/.test(a[1]) && a[2] === 'found' && a[3] === researchFile(w).now.out)).toBe(true)
-  expect(prompts[prompts.length - 1]).toContain(FOUND_TEXT)
-  expect(prompts[prompts.length - 1]).toMatch(/never offer options/)
+  // (F235 task 11: "Does it change anything?" is a question box, handed to Claude to ask exactly)
+  expect(prompts[prompts.length - 1]).toContain(JSON.stringify(FOUND_TEXT))
+  expect(prompts[prompts.length - 1]).toMatch(/Call AskUserQuestion now with exactly this box/)
   expect(researchFile(w).now.status).toBe('asked')
   const nudgesBefore = events(w).filter((j: any) => j.ev === 'nudge').length
+  // (Claude wrote it as text instead, or the box was closed: their next chat message still answers it, as before)
   await $.turn.complete({ answer: FOUND_TEXT, durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' } as any)
-  expect(events(w).filter((j: any) => j.ev === 'said').pop()).toMatchObject({ lines: ['research.found'], missing: [] })
   // the question waits for their answer: no nudge
   expect(events(w).filter((j: any) => j.ev === 'nudge').length).toBe(nudgesBefore)
   expect(events(w).some((j: any) => j.ev === 'research.waiting')).toBe(true)
@@ -2655,7 +2662,8 @@ test('F229 review fix 3: while the research waits for an answer, a message to th
   expect(researchFile(w).now).toMatchObject({ status: 'asked', setAside: true })
   // the step's question answered (none open now): the research's is asked once more
   await $.turn.complete({ answer: 'Got it.', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
-  expect(prompts[prompts.length - 1]).toContain(FOUND_TEXT)
+  expect(prompts[prompts.length - 1]).toContain(JSON.stringify(FOUND_TEXT))
+  expect(prompts[prompts.length - 1]).toMatch(/Call AskUserQuestion now with exactly this box/)
   expect(researchFile(w).now.reasked).toBe(true)
   // the step asks again before they answer it: that message is the step's, and the research goes into the notes
   await $.tool.call({ tool: SAY, line: 'ideate.idea' } as any)
@@ -2669,8 +2677,107 @@ test('F229 review fix 5: a research from another window is told to the creative 
   w.files['/proj/.bmuz/research.json'] = JSON.stringify({ now: { status: 'running', question: RQ, session: 'old-window', out: '.planning/research/x.md' }, notes: [] })
   await start($, true)
   await $.prompt.submit({ text: 'hello again' } as any)
-  expect(prompts[prompts.length - 1]).toContain(`Your research on "${RQ}" stopped when the window closed. Ask again?`)
+  // (F235 task 11: "Ask again?" is a question box, handed to Claude to ask exactly)
+  expect(prompts[prompts.length - 1]).toContain(JSON.stringify(lostBox(RQ, 'when the window closed').question))
+  expect(prompts[prompts.length - 1]).toMatch(/Call AskUserQuestion now with exactly this box/)
   expect(researchFile(w).sayNext).toEqual([])
+})
+
+// ---- F235 task 11: the research's two questions are question boxes (Muzzy: "whenever you are asking questions… put it
+// in a question box"). The box's answer goes where the chat message went; a typed answer, "Yes — next, tell me" and
+// "Chat about this" reach the same path ----
+// (the research is back during step "ask", which has its own script line: a box the engine didn't hand out is refused)
+async function foundBack($: any, on: any, reply: () => any) {
+  on('tool.call', { tool: 'AskUserQuestion' }, () => reply())
+  mock.clock(on, { now: Date.UTC(2026, 10, 11, 12) })
+  const { w, prompts } = researchWorld(on)
+  const p = JSON.parse(w.files.PIPELINE)
+  p.steps[0] = { ...p.steps[0], lines: ['ideate.idea'] }
+  w.files.PIPELINE = JSON.stringify(p)
+  await start($, true)
+  await startHere($)
+  await $.tool.call({ tool: 'mcp__bmuz__research', question: RQ } as any)
+  await $.tool.call({ tool: 'Workflow', name: 'x', tool_use_id: 'tu-b' } as any)
+  await $.turn.complete({ answer: 'Let me look. About 5 minutes…', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  await $.prompt.submit(done('tu-b') as any)
+  return { w, prompts }
+}
+
+test('F235 task 11: research.found is a box asked exactly — "No, carry on" is noted for the step it came from, never journaled as the step\'s own answer', async ($, on) => {
+  const { w, prompts } = await foundBack($, on, () => answered(FOUND_BOX, 'No, carry on'))
+  expect(prompts[prompts.length - 1]).toMatch(/Call AskUserQuestion now with exactly this box/)
+  expect(events(w).find((j: any) => j.ev === 'stepin.box')).toMatchObject({ line: 'research.found' })
+  const before = record(w)
+  // a box of Claude's own words is still refused in this step
+  expect(refused(await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Does the research change anything?', header: 'Research', options: [{ label: 'No' }, { label: 'Yes' }] }] } as any))).toBe(true)
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [FOUND_BOX] } as any)
+  expect(refused(r)).toBe(false)
+  expect((r.context || []).join(' ')).toMatch(/the creative's answer to the research's "Does it change anything\?"[\s\S]*Take it into step "ask" and carry on exactly where it was/)
+  expect(researchFile(w)).toMatchObject({ now: null, notes: [{ step: 'ask', question: RQ, found: FOUND, answer: 'No, carry on', used: true }] })
+  expect(events(w).find((j: any) => j.ev === 'research.answer')).toMatchObject({ via: 'box', text: 'No, carry on' })
+  expect(events(w).some((j: any) => j.ev === 'answer' && j.step === 'ask')).toBe(false)
+  expect(record(w)).toEqual(before)
+})
+
+test('F235 task 11: what they type in the research box is their answer, word for word', async ($, on) => {
+  const { w } = await foundBack($, on, () => answered(FOUND_BOX, 'make the weather help both gardens'))
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [FOUND_BOX] } as any)
+  expect(researchFile(w)).toMatchObject({ now: null, notes: [{ answer: 'make the weather help both gardens' }] })
+})
+
+test('F235 task 11: "Yes — next, tell me what changes" and "Chat about this" leave the question open: Claude writes the chat line, and the next chat message is the answer', async ($, on) => {
+  let reply: any = answered(FOUND_BOX, 'Yes')
+  const { w, prompts } = await foundBack($, on, () => reply)
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [FOUND_BOX] } as any)
+  expect((r.context || []).join(' ')).toMatch(/write exactly this line as your whole reply — Go ahead: type or paste your answer as your next message\./)
+  expect(researchFile(w).now).toMatchObject({ status: 'asked' })
+  await $.turn.complete({ answer: 'Go ahead: type or paste your answer as your next message.', durationMs: 1, isAborted: false, turnId: 't3', reason: 'answer' } as any)
+  await $.prompt.submit({ text: 'yes: make the weather help both gardens' } as any)
+  expect(prompts[prompts.length - 1]).toMatch(/the creative's answer to the research's "Does it change anything\?"/)
+  expect(researchFile(w)).toMatchObject({ now: null, notes: [{ answer: 'yes: make the weather help both gardens' }] })
+  expect(events(w).some((j: any) => j.ev === 'ask.refused')).toBe(false)
+})
+
+test('F235 task 11: "Chat about this" on the research box: their next chat message is the answer', async ($, on) => {
+  const { w, prompts } = await foundBack($, on, () => ({ result: CLARIFY_FOUND, isError: true }))
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [FOUND_BOX] } as any)
+  expect((r.context || []).join(' ')).toMatch(/picked "Chat about this"[\s\S]*Go ahead: type or paste your answer as your next message\./)
+  expect(events(w).some((j: any) => j.ev === 'ask.refused')).toBe(false)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask ?? null).toBeNull()
+  await $.turn.complete({ answer: 'Go ahead: type or paste your answer as your next message.', durationMs: 1, isAborted: false, turnId: 't3', reason: 'answer' } as any)
+  await $.prompt.submit({ text: 'a long paste about weather' } as any)
+  expect(prompts[prompts.length - 1]).toMatch(/the creative's answer to the research's "Does it change anything\?"/)
+  expect(researchFile(w)).toMatchObject({ now: null, notes: [{ answer: 'a long paste about weather' }] })
+})
+
+test('F235 task 11: "Ask again?" is a box — "Ask again" starts the same research; "Not now" carries on', async ($, on) => {
+  let reply: any = null
+  on('tool.call', { tool: 'AskUserQuestion' }, () => reply)
+  mock.clock(on, { now: 1000 })
+  const { w } = researchWorld(on)
+  w.files['/proj/.bmuz/research.json'] = JSON.stringify({ now: { status: 'running', question: RQ, session: 'old-window', out: '.planning/research/x.md' }, notes: [] })
+  await start($, true)
+  await $.prompt.submit({ text: 'hello again' } as any)
+  const box = lostBox(RQ, 'when the window closed')
+  reply = answered(box, 'Ask again')
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [box] } as any)
+  expect(refused(r)).toBe(false)
+  expect((r.context || []).join(' ')).toMatch(new RegExp(`call mcp__bmuz__research with \\{"question":${JSON.stringify(RQ).replace(/[?.()]/g, '\\$&')}\\}`))
+  expect(events(w).find((j: any) => j.ev === 'research.lost.answer')).toMatchObject({ question: RQ, text: 'Ask again' })
+  expect(events(w).some((j: any) => j.ev === 'answer')).toBe(false)
+})
+
+test('F235 task 11: the research box may be asked between steps too (and only that box), and "Not now" carries on', () => {
+  const box = lostBox(RQ, 'when the window closed')
+  const p = { id: 'hello', version: 1, steps: [{ id: 'ask', kind: 'talk', tools: ['Read'] }, { id: 'gate', kind: 'gate', needs: ['ask'], question: 'Go on?', options: ['Not yet', 'Go on'], approve: 'Go on', backTo: 'ask' }] }
+  const idle = { current: 'gate', status: 'idle', finished: ['ask'], retries: {}, results: {} }
+  const talk = { current: 'ask', status: 'working', finished: [], retries: {}, results: {} }
+  const stepInBox = { id: 'research.lost', box }
+  for (const st of [idle, talk]) {
+    expect(E.judgeTool(p, st, { tool: 'AskUserQuestion', input: { questions: [box] } }, { stepInBox })).toMatchObject({ allow: true, stepInBox: true })
+    expect(E.judgeTool(p, st, { tool: 'AskUserQuestion', input: { questions: [{ ...box, question: 'Something else?' }] } }, { stepInBox }).allow).toBe(false)
+  }
+  expect(E.stepInAnswerNote('research.lost', { question: RQ }, { option: 0, text: 'Not now' })).toMatch(/"Not now"[\s\S]*don't start it again/)
 })
 
 test('F229 review fix 6: a flow step waits while the creative\'s research runs, and starts when it\'s back', async ($, on) => {

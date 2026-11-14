@@ -397,3 +397,41 @@ test('task 8: "Chat about this" is read from Claude Code\'s answer; Claude is to
   assert.equal(words, 'Go ahead: type or paste your answer as your next message.')
   assert.match(E.chatNote('ideate.material', words), /their answer to "ideate\.material" comes as their next chat message.*Don't ask what they want to clarify.*write exactly this line as your whole reply — Go ahead/)
 })
+
+// ---- task 11: the research's two questions are boxes too (research.found "Does it change anything?", research.lost
+// "Ask again?") — the engine says them itself when the creative steps in, so no pipeline step lists them ----
+test('task 11: the engine\'s own step-in lines that ask something are boxes — research.found and research.lost included; the check refuses one written as a plain line', () => {
+  for (const id of ['research.found', 'research.lost', 'bug.often']) assert.ok(E.STEP_IN_LINES.includes(id), id)
+  // every step-in line is in the script
+  for (const id of E.STEP_IN_LINES) assert.ok(script.lines[id], id)
+  assert.deepEqual(E.stepInQuestionProblems(script), [])
+  const plain = { lines: { ...script.lines, 'research.lost': { id: 'research.lost', kind: 'say', text: 'Your research on "{question}" stopped {why}. Ask again?' } } }
+  assert.match(E.stepInQuestionProblems(plain).join(' '), /"research\.lost" asks something but is a "say" line: every question is a box/)
+  // check-pipeline runs it (one red line would fail every check:pipelines)
+  assert.match(readFileSync(join(plugin, 'scripts', 'check-pipeline.mjs'), 'utf8'), /stepInQuestionProblems/)
+})
+
+test('task 11: research.found keeps the script\'s words in its box, "No, carry on" first (the safe default); research.lost "Not now" first', () => {
+  const found = E.renderLine(script, 'research.found', { found: ['Most games do X', 'Some fail at Y'] })
+  assert.equal(found.kind, 'box')
+  assert.equal(found.box.question, "Here's what I found:\n· Most games do X\n· Some fail at Y\nSources are on your project page. Does it change anything?")
+  assert.deepEqual(found.box.options.map(o => o.label), ['No, carry on', 'Yes'])
+  assert.match(found.box.options[1].description, /^next, tell me what changes$/)
+  assert.ok(script.lines['research.found'].added)
+  const lost = E.renderLine(script, 'research.lost', { question: 'how do co-op games end?', why: 'when the window closed' })
+  assert.equal(lost.kind, 'box')
+  assert.equal(lost.box.question, 'Your research on "how do co-op games end?" stopped when the window closed. Ask again?')
+  assert.deepEqual(lost.box.options.map(o => o.label), ['Not now', 'Ask again'])
+  for (const l of [found, lost]) {
+    assert.ok(l.box.header.length <= 12)
+    assert.equal(E.fakeTypeOptionProblem([l.box]), null)
+  }
+})
+
+test('task 11: the box\'s answer is read after its question — the option picked, or what they typed', () => {
+  const box = E.renderLine(script, 'research.found', { found: ['A "quoted" finding'] }).box
+  const res = a => ({ result: `User has answered your questions: "${box.question}"="${a}". You can now continue with the user's answers in mind.` })
+  assert.deepEqual(E.boxPick(box, res('No, carry on')), { option: 0, text: 'No, carry on' })
+  assert.deepEqual(E.boxPick(box, res('Yes')), { option: 1, text: 'Yes' })
+  assert.deepEqual(E.boxPick(box, res('make the weather help "both" gardens')), { option: -1, text: 'make the weather help "both" gardens' })
+})
