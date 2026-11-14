@@ -431,7 +431,9 @@ export function talkPrompt(step, craft, why, auto, decided = [], more = {}) {
     lines.push(`This step's script lines (say them through ${SAY_TOOL}, filling the slots from the game so far and the creative's own words):\n${linesList(more.script, step.lines)}`)
     if (step.opening && !more.opened) lines.push(`Open the step with ${SAY_TOOL} {"line": ${JSON.stringify(step.opening.length === 1 ? step.opening[0] : step.opening)}} before anything else.`)
   }
-  if (more.back) lines.push(`The creative answered "${more.back.answer}" at "${more.back.question}", so this step runs again: ask what they want changed (their next message), make the change in the result, and finish.`)
+  // (F235 task 1: words they typed at the gate in place of an option are what they want changed: never asked for again)
+  if (more.back && more.back.typed) lines.push(`At "${more.back.question}" the creative typed this instead of picking an option: "${more.back.answer}". Those words are what they want changed, so this step runs again: don't ask what to change. Make each change they name in the result (an answer to an open question goes into its chapter, and that open question is cleared), answer anything they ask in one short line, and finish. Anything about BMUZ itself (a link that won't open, a missing box, a step that breaks) is BMUZ's own bug: report it with ${BUG_TOOL} and "engine": true, never as a change to the game.`)
+  else if (more.back) lines.push(`The creative answered "${more.back.answer}" at "${more.back.question}", so this step runs again: ask what they want changed (their next message), make the change in the result, and finish.`)
   // The recap carries what earlier steps collected, so the step works the same after a new session or a
   // compacted chat (the conversation alone would forget it).
   const recap = Object.fromEntries(Object.entries(more.recap || {}).filter(([, v]) => v !== undefined && v !== null))
@@ -1333,8 +1335,8 @@ export function mustProblem(step, state, result = {}) {
 }
 
 // Gate answer: the `approve` option approves; any other sends the creative back to
-// the step named in `step.backTo` (its result cleared).
-export function answerGate(p, state, step, answer) {
+// the step named in `step.backTo` (its result cleared). opts.typed: the answer is words the creative typed (F235).
+export function answerGate(p, state, step, answer, opts = {}) {
   if (answer === step.approve) return { state: finish(state, step), approved: true }
   const back = step.backTo
   if (!back) return { state, approved: false }
@@ -1345,7 +1347,28 @@ export function answerGate(p, state, step, answer) {
     for (const s of p.steps) if (!drop.has(s.id) && (s.needs || []).some(n => drop.has(n))) { drop.add(s.id); grew = true }
   }
   // (F232: the step it goes back to is told what the creative answered, and an "onBack" step runs only then)
-  return { state: { ...dropSteps(state, drop), current: null, status: 'idle', startedAt: null, back: { step: back, gate: step.id, answer, question: step.question || step.line || step.id } }, approved: false }
+  return { state: { ...dropSteps(state, drop), current: null, status: 'idle', startedAt: null, back: { step: back, gate: step.id, answer, question: step.question || step.line || step.id, ...(opts.typed ? { typed: true } : {}) } }, approved: false }
+}
+
+// F235 task 1 (finding 12, P1): what the creative typed at a gate, in its box's own field or in the chat, instead of
+// picking. Sirius Smugglers, 2026-11-14: Muzzy typed his answers into the Concept Lock's box, the gate dropped them, never
+// asked again, and his "lock it" in the chat passed by untouched. Now: an option's own words (its label, or the part
+// before its ":" / "—", like "lock it" or "not yet") are that option; a bare yes / ok can't tell which option it means, so
+// the box is asked again; anything else is what they want changed (the gate's "back" step gets their words), never a yes.
+// Returns { option } | { ack: true } | { words } | null (nothing typed).
+const GATE_ACK = /^(y|yes|yeah|yep|yup|ok|okay|k|sure|fine|go|go on|do it|sounds good|looks good|good|great|right|correct|cool|alright|all right)$/
+export function gateTyped(text, options = []) {
+  const norm = t => String(t ?? '').toLowerCase().replace(/[‘’“”"'`*_.!?,;]+/g, ' ').replace(/\s+/g, ' ').trim()
+  const raw = String(text ?? '').trim()
+  const t = norm(raw).replace(/^(yes|ok|okay|sure) (?=\S)/, '').replace(/ (please|thanks|thank you)$/, '')
+  if (!t) return null
+  for (const o of options || []) {
+    const label = norm(o)
+    const lead = norm(String(o).split(/[:—–]/)[0])
+    if (t === label || (lead && t === lead)) return { option: o }
+  }
+  if (GATE_ACK.test(norm(raw))) return { ack: true }
+  return { words: raw }
 }
 
 // A step with "onBack" runs only when a gate sent the creative back to it (Define's "Not yet: change something");
@@ -1861,6 +1884,13 @@ export function soundsBroken(text) {
   const t = String(text || '')
   if (/^\s*bmuz\b/i.test(t)) return false
   return /\b(bug|buggy|broken|breaks|crash(es|ed)?|glitch\w*|doesn'?t work|isn'?t working|not working|won'?t (load|open|start)|cut off|off by one|freez\w*|stuck)\b/i.test(t)
+}
+
+// F235 task 1 (finding 13): is a reported bug BMUZ's own (its list, never the game's)? Claude says so ("engine": true);
+// and before the game has code (Ideate, Define and Discover write only plan files) every bug is BMUZ's.
+export const NO_CODE_STAGES = ['ideate', 'discover', 'define']
+export function isEngineBug(pipelineId, said) {
+  return said === true || said === 'true' || NO_CODE_STAGES.includes(String(pipelineId || ''))
 }
 
 // "bmuz bug …" as typed: { kind: 'fix', id } (no words, an id, "fix [id]"), 'sweep', 'list', 'stop', 'verified' (id),

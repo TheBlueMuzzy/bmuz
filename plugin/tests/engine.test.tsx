@@ -3095,3 +3095,137 @@ test('F234 (F233 task 8): the "write it again" correction never repeats a line �
   expect(count(fix2, 'Tell me about your game in your own words.')).toBe(1)
   expect(fix2.endsWith(`Tell me about your game in your own words.${NL}${NL}Type your answer below.`)).toBe(true)
 })
+
+// ---- F235 task 1 (finding 12, P1, the Sirius Smugglers live look 2026-11-14): at Define's Concept Lock Muzzy typed his
+// answers into the lock box instead of picking; the gate dropped them ("answer was not an option"), never asked again,
+// and his later "lock it" in the chat passed by untouched while every tool was refused: Define never locked. ----
+function gateWorld(on: any) {
+  const prompts: string[] = []
+  on('prompt.submit', (_: any, e: any) => { prompts.push([String(e.text), ...(e.context ?? [])].join(NL)); return { text: e.text } })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  const w = world(on, base({ current: 'approve', status: 'waiting', finished: ['name'] }))
+  return { w, prompts }
+}
+function boxAnswers(on: any) {
+  const asked: any[] = []
+  const queue: any[] = []
+  on('tool.call', { tool: 'AskUserQuestion' }, (_: any, e: any) => {
+    asked.push(e)
+    const typed = queue.shift()
+    if (typed === undefined) return new Promise(() => {})
+    return { result: { questions: e.questions, answers: { [e.questions[0].question]: typed } } }
+  })
+  return { asked, queue }
+}
+
+test('F235 task 1: an option typed in the gate\'s box ("approve", "lock it") is that option', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const box = boxAnswers(on)
+  box.queue.push('approve')
+  const { w } = gateWorld(on)
+  await start($, true)
+  await clock.advance(2000)
+  expect(box.asked.length).toBe(1)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"gate.answer","step":"approve","answer":"Approve"/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).finished).toContain('approve')
+})
+
+test('F235 task 1: words typed in the gate\'s box are never dropped: they send the creative back with those words, never approve', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const box = boxAnswers(on)
+  box.queue.push('first player is chosen randomly, and the link is not clickable')
+  const { w, prompts } = gateWorld(on)
+  await start($, true)
+  await clock.advance(2000)
+  const s = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(s.finished).not.toContain('approve')
+  expect(s.back).toMatchObject({ step: 'name', gate: 'approve', answer: 'first player is chosen randomly, and the link is not clickable', typed: true })
+  expect(w.files['/proj/.bmuz/journal.jsonl']).not.toMatch(/"ev":"gate.pending"/)
+  await clock.advance(10)
+  // (opened from the start-up timer, the talk step is kicked and starts at that turn's end — F218)
+  await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  // the step it went back to starts, told their words are the change: not to ask "what?" again
+  const talk = prompts.find(p => /BMUZ step "name"/.test(p)) ?? ''
+  expect(talk).toMatch(/typed this instead of picking an option: "first player is chosen randomly, and the link is not clickable"/)
+  expect(talk).toMatch(/don't ask what to change/)
+  expect(talk).toMatch(/"engine": true/)
+})
+
+test('F235 task 1: a bare "yes" typed in the gate\'s box is no decision: the gate asks its box again after one short reply', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const box = boxAnswers(on)
+  box.queue.push('yes')
+  const { w, prompts } = gateWorld(on)
+  await start($, true)
+  await clock.advance(2000)
+  const s = JSON.parse(w.files['/proj/.bmuz/state.json'])
+  expect(s.current).toBe('approve')
+  expect(s.finished).not.toContain('approve')
+  expect(s.back ?? null).toBe(null)
+  expect(prompts[prompts.length - 1]).toMatch(/typed "yes"/)
+  box.queue.push('Approve')
+  await $.turn.complete({ answer: 'Pick one in the box.', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  await clock.advance(10)
+  expect(box.asked.length).toBe(2)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).finished).toContain('approve')
+})
+
+test('F235 task 1: with the box closed, "lock it" typed in the chat answers the gate (the live bug: it passed by untouched)', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const box = boxAnswers(on)
+  box.queue.push('')
+  const { w } = gateWorld(on)
+  await start($, true)
+  await clock.advance(2000)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"gate.pending"/)
+  const r: any = await $.prompt.submit({ text: 'Approve' } as any)
+  expect(String(r.text)).toMatch(/gate answered/)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"gate.answer","step":"approve","answer":"Approve"/)
+})
+
+test('F235 task 1: with the box closed, a bare "ok" typed in the chat brings the box back', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const box = boxAnswers(on)
+  box.queue.push('')
+  const { w } = gateWorld(on)
+  await start($, true)
+  await clock.advance(2000)
+  const ok: any = await $.prompt.submit({ text: 'ok' } as any)
+  expect(String(ok.text)).toMatch(/the box again/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).current).toBe('approve')
+  box.queue.push('Approve')
+  await $.turn.complete({ answer: 'Pick one in the box.', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  await clock.advance(10)
+  expect(box.asked.length).toBe(2)
+})
+
+test('F235 task 1: words typed in the chat at an open gate (box closed) go back with them', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const box = boxAnswers(on)
+  box.queue.push('')
+  const { w } = gateWorld(on)
+  await start($, true)
+  await clock.advance(2000)
+  const r: any = await $.prompt.submit({ text: 'call it Moon Goat Deluxe' } as any)
+  expect(String(r.text)).toMatch(/BMUZ engine/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).back).toMatchObject({ step: 'name', answer: 'call it Moon Goat Deluxe', typed: true })
+})
+
+test('F235 task 1 (finding 13): BMUZ\'s own bug ("engine": true) goes on BMUZ\'s list, never the game\'s: its own line, and never a fix run, even when it blocks', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = bugWorld(on, { current: 'name', status: 'working' })
+  w.files.SCRIPT = w.files.SCRIPT + NL + "## bug.engine · say · added" + NL + "That's a bug in BMUZ itself, not in your game: {bug}. It's on BMUZ's own bug list now and gets fixed there, so we carry on." + NL
+  await start($, true)
+  await $.prompt.submit({ text: 'bmuz go' } as any)
+  await turn($, 't-go')
+  const r: any = await $.tool.call({ ...REPORT, title: 'Lock gate ignores lock it', level: 'P1', now: 'blocks', engine: true } as any)
+  expect(refused(r)).toBe(false)
+  const out = JSON.parse(String(r.result))
+  expect(out.say).toBe(`That's a bug in BMUZ itself, not in your game: ${B004}. It's on BMUZ's own bug list now and gets fixed there, so we carry on.`)
+  const add = w.runs.find(a => /bugs[.]mjs$/.test(a[1]) && a[2] === 'add')
+  expect(JSON.parse(String(add?.[3])).engine).toBe(true)
+  expect(events(w).find((j: any) => j.ev === 'bug')).toMatchObject({ now: false, engine: true })
+  await $.turn.complete({ answer: out.say, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(w.runs.some(a => /bugs[.]mjs$/.test(a[1]) && a[2] === 'next')).toBe(false) // no fix run started
+  expect(prompts.join(NL)).not.toMatch(/Fixing B004/)
+})

@@ -294,12 +294,25 @@ const today = () => new Date().toISOString().slice(0, 10)
 export function addIn(dir, r, by = {}) {
   // (review fix 5: BUGS.md with the creative's own unsaved edits isn't committed for them)
   const theirs = dirtyFiles(dir).includes(BUGS) ? [BUGS] : []
-  const out = addBug(readIn(dir, BUGS) || newBugs(gameName(dir)), r, { day: today(), name: gameName(dir), ...by }, readIn(dir, ARCHIVE) || '')
+  const name = by.name || gameName(dir)
+  const out = addBug(readIn(dir, BUGS) || newBugs(name), r, { day: today(), ...by, name }, readIn(dir, ARCHIVE) || '')
   writeIn(dir, BUGS, out.text)
   refreshPage(dir)
   // (the /bug skill commits a report on its own: "Bug B014: <title>", only BUGS.md, whatever else is staged)
   const c = commitFiles(dir, [BUGS], `Bug ${out.id}: ${clean(r.title)}`, theirs)
   return { ok: true, id: out.id, header: out.header, bug: bugWords(out.text, out.id), commit: c.hash || null, nogit: c.nogit || null }
+}
+
+// F235 task 1 (finding 13): a bug in BMUZ itself (a step that breaks, a missing box, a page that won't open) is never the
+// game's: it goes on BMUZ's own list, .planning/BUGS.md in the BMUZ repo (this plugin's parent folder; BMUZ_ENGINE_DIR
+// sets another, for the tests), with the game and the place it was found, and is never fixed in the game's folder.
+// Sirius Smugglers 2026-11-14: Muzzy's B001 (the chart) and B002 (the lock gate) went into the game's BUGS.md, and the
+// fix run started fixing B002 in a game folder that has no code.
+export const engineDir = () => resolve(process.env.BMUZ_ENGINE_DIR || join(dirname(fileURLToPath(import.meta.url)), '..', '..'))
+export function addEngine(gameDir, r, by = {}) {
+  const game = gameName(gameDir) || 'a game'
+  const where = clean(by.where) ? `${game}, ${clean(by.where)}` : game
+  return { ...addIn(engineDir(), r, { ...by, where, name: 'BMUZ' }), engine: true }
 }
 
 // ---- git ----
@@ -678,7 +691,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
   try {
     if (cmd === 'add') {
       const r = JSON.parse(a || '{}')
-      say(addIn(dir, r.report || r, { where: r.where, version: r.version }))
+      say(r.engine ? addEngine(dir, r.report || r, { where: r.where }) : addIn(dir, r.report || r, { where: r.where, version: r.version }))
     } else if (cmd === 'next') {
       const text = readIn(dir, BUGS) || ''
       const p = pickBug(text, a || null)

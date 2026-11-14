@@ -1053,6 +1053,9 @@ Logged as a bug: {bug}. It doesn't block what we're doing, so I'll fix it {when}
 ## bug.now · say · added
 Logged as a bug: {bug}. It blocks what we're doing, so I'll fix it now.
 
+## bug.engine · say · added
+That's a bug in BMUZ itself, not in your game: {bug}. It's on BMUZ's own bug list now and gets fixed there, so we carry on.
+
 ## bug.often · box · added
 ? Does it happen every time, or just once?
 header: How often

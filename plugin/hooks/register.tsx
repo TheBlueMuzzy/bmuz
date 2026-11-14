@@ -622,8 +622,8 @@ async function registerAll($: any) {
   })
   await $.tool.register({
     name: 'bug',
-    description: `BMUZ engine: the creative stepped in with something broken. Report it as a bug (written to .planning/BUGS.md): {"title": "a few words", "level": "P0".."P3", "steps": ["..."], "expected": "...", "actual": "...", "often": "every time / once / not sure"} (${E.BUG_LEVELS}). Add "now": "P0" | "blocks" | "quick" only for a P0, a bug that blocks the current step, or a minutes-long fix in code being changed right now. {"ask": true} first hands you the one question box (how often), if that is essential and missing. Returns the line to say word for word and what to do next.`,
-    inputSchema: { type: 'object', properties: { title: { type: 'string' }, level: { type: 'string' }, steps: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] }, expected: { type: 'string' }, actual: { type: 'string' }, often: { type: 'string' }, evidence: { type: 'string' }, now: { type: 'string' }, ask: { type: 'boolean' } } },
+    description: `BMUZ engine: the creative stepped in with something broken. Report it as a bug (written to .planning/BUGS.md): {"title": "a few words", "level": "P0".."P3", "steps": ["..."], "expected": "...", "actual": "...", "often": "every time / once / not sure"} (${E.BUG_LEVELS}). Add "now": "P0" | "blocks" | "quick" only for a P0, a bug that blocks the current step, or a minutes-long fix in code being changed right now. Add "engine": true when it is BMUZ's own bug, not the game's: a step that breaks, a missing question box, a page or link that won't open, BMUZ's own words or chart (in Ideate and Define every bug is BMUZ's: there is no game code yet); it goes on BMUZ's own bug list and is never fixed in the game's folder. {"ask": true} first hands you the one question box (how often), if that is essential and missing. Returns the line to say word for word and what to do next.`,
+    inputSchema: { type: 'object', properties: { title: { type: 'string' }, level: { type: 'string' }, steps: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] }, expected: { type: 'string' }, actual: { type: 'string' }, often: { type: 'string' }, evidence: { type: 'string' }, now: { type: 'string' }, ask: { type: 'boolean' }, engine: { type: 'boolean' } } },
     isDeferred: false,
   })
   await $.tool.register({
@@ -1112,7 +1112,10 @@ async function askGate($: any, step: any) {
   try {
     const answer = await $.ui.ask(words.question, step.line ? { options: words.options, header: ctx.script.lines[step.line].box.header } : words.options)
     if (words.options.includes(answer)) return answer
-    // An empty or typed answer (or an away-from-keyboard timeout) is no decision: keep waiting.
+    // F235 task 1: words typed in the box's own field are read (an option's words, a bare yes, or what to change);
+    // only an empty answer (Esc, or an away-from-keyboard timeout) is no answer at all: keep waiting.
+    const typed = E.gateTyped(answer, words.options)
+    if (typed) return { ...typed, typed: String(answer) }
     await journal($, { ev: 'gate.pending', step: step.id, why: `answer was not an option: ${JSON.stringify(answer).slice(0, 80)}` })
     return null
   } catch (err) {
@@ -1121,14 +1124,32 @@ async function askGate($: any, step: any) {
   }
 }
 
-async function applyGate($: any, step: any, answer: string) {
-  await journal($, { ev: 'gate.answer', step: step.id, answer })
-  const out = E.answerGate(ctx.pipeline, ctx.state, step, answer)
+async function applyGate($: any, step: any, answer: string, typed = false) {
+  await journal($, { ev: 'gate.answer', step: step.id, answer, ...(typed ? { typed: true } : {}) })
+  const out = E.answerGate(ctx.pipeline, ctx.state, step, answer, { typed })
   const before = ctx.state.finished
   ctx.state = out.state
   if (out.approved) await journal($, { ev: 'step.done', step: step.id, kind: 'gate', result: null })
   else await journal($, { ev: 'gate.back', step: step.id, dropped: before.filter((id: string) => !ctx.state.finished.includes(id)), back: ctx.state.back ?? null })
   await save($)
+}
+
+// F235 task 1: what the creative typed at an open gate (in its box, or in the chat), read by E.gateTyped: an option's own
+// words are that option; words saying what to change go back to the gate's step with them (never a yes); a bare
+// yes / ok gets one short line and the box again. Returns how it went, and for the bare yes the note for Claude.
+async function gateTypedAnswer($: any, step: any, t: any): Promise<{ how: string, option?: string, note?: string }> {
+  if (t.option) {
+    await applyGate($, step, t.option)
+    return { how: 'option', option: t.option }
+  }
+  if (t.words && step.backTo) {
+    await applyGate($, step, t.words, true)
+    return { how: 'back' }
+  }
+  const words = E.gateWords(step, ctx.script, vars())
+  await journal($, { ev: 'gate.unclear', step: step.id, typed: String(t.typed ?? t.words ?? '').slice(0, 200) })
+  pending = 'resume'
+  return { how: 'again', note: `the gate "${words.question}" is still open, and the creative typed "${String(t.typed ?? t.words ?? '').slice(0, 120)}", which doesn't say which option (${words.options.map((o: string) => `"${o}"`).join(' or ')}). Write one short line asking them to pick one in the box (no tools: the gate is still open), then end your turn; the engine asks the box again` }
 }
 
 // Runs steps until one has to wait (a talk turn, a gate, a flow, a block).
@@ -1258,9 +1279,17 @@ async function advance($: any, resume: boolean, opts: { timer?: boolean, go?: bo
       continue
     }
     if (step.kind === 'gate') {
-      const answer = await askGate($, step)
+      const answer: any = await askGate($, step)
       if (answer === null) return
-      await applyGate($, step, answer)
+      if (typeof answer === 'string') await applyGate($, step, answer)
+      else {
+        // F235 task 1: typed in the box
+        const out = await gateTypedAnswer($, step, answer)
+        if (out.note) {
+          await $.prompt.submit({ text: `BMUZ engine: ${out.note}.` })
+          return
+        }
+      }
       continue
     }
     if (step.kind === 'script' && step.loop) {
@@ -1585,23 +1614,25 @@ async function bugTool($: any, e: any) {
     return { result: JSON.stringify({ box: r.box, then: `Call AskUserQuestion now with exactly this box, then report the bug with ${E.BUG_TOOL}.` }) }
   }
   const report = { title: e.title, level: typeof e.level === 'string' ? e.level.trim().toUpperCase() : e.level, steps: e.steps, expected: e.expected, actual: e.actual, often: e.often, evidence: e.evidence, now: e.now }
-  let now = E.isFixNow(report)
+  // F235 task 1 (finding 13): BMUZ's own bug goes on BMUZ's list, never the game's, and is never fixed in the game's folder
+  const engine = E.isEngineBug(ctx.pipeline.id, e.engine)
+  let now = !engine && E.isFixNow(report)
   // A fix run already going on takes a new bug in order; a running helper can't be stopped for it.
   if (now && ctx.side) now = false
   if (now && step && step.kind === 'flow' && ctx.state.status === 'working') {
     return { deny: `BMUZ engine: the "${step.id}" helpers are still working, so nothing can be fixed now. Report it without "now"; it is fixed after this step ("bmuz bug").` }
   }
   const where = E.placeWords(ctx.pipeline, ctx.state)
-  const ran = await runBugs($, ['add', JSON.stringify({ report, where })])
+  const ran = await runBugs($, ['add', JSON.stringify({ report, where, ...(engine ? { engine: true } : {}) })])
   if (!ran.ok) {
     await journal($, { ev: 'deviation', step: ctx.state.current ?? null, tool: E.BUG_TOOL, agentId: null, why: `not logged: ${ran.say || ran.text}` })
     return { deny: `BMUZ engine: the bug wasn't logged: ${ran.say || ran.text}. Fix the report and call ${E.BUG_TOOL} again.` }
   }
-  const sprint = E.sprintFeature((await readText($, `${ctx.dir}/.planning/SPRINT.md`)) ?? '')
-  const when = ctx.side ? `after ${ctx.side.bug}` : E.bugWhen(ctx.pipeline, ctx.state, sprint)
-  const line = E.renderLine(ctx.script, now ? 'bug.now' : 'bug.logged', { bug: ran.bug, when })
+  const sprint = engine ? '' : E.sprintFeature((await readText($, `${ctx.dir}/.planning/SPRINT.md`)) ?? '')
+  const when = engine ? '' : ctx.side ? `after ${ctx.side.bug}` : E.bugWhen(ctx.pipeline, ctx.state, sprint)
+  const line = E.renderLine(ctx.script, engine ? 'bug.engine' : now ? 'bug.now' : 'bug.logged', { bug: ran.bug, when })
   if (line.error) return { deny: `BMUZ engine: ${line.error}` }
-  await journal($, { ev: 'bug', id: ran.id, level: report.level, now, step: ctx.state.current ?? null, place: where, commit: ran.commit ?? null })
+  await journal($, { ev: 'bug', id: ran.id, level: report.level, now, step: ctx.state.current ?? null, place: where, commit: ran.commit ?? null, ...(engine ? { engine: true } : {}) })
   await journal($, { ev: 'line', step: ctx.state.current ?? null, line: line.id, kind: 'say', text: line.text })
   const sid = ctx.state.current || ''
   if (turnSaid.step !== sid) turnSaid = { step: sid, lines: [] }
@@ -2555,8 +2586,9 @@ export const register: Register = on => {
       const step = ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
       if (!step || step.kind !== 'gate') return say('BMUZ engine: no gate is open.')
       // No default answer: the creative names the option (an empty "bmuz approve" must never say yes).
-      const answer = go[2].trim()
       const opts = E.gateWords(step, ctx.script, vars()).options
+      // (F235: an option's own words count too, "bmuz approve lock it")
+      const answer = opts.includes(go[2].trim()) ? go[2].trim() : (E.gateTyped(go[2], opts)?.option ?? go[2].trim())
       if (!opts.includes(answer)) return say(`BMUZ engine: the gate is still open. Answer with one of: ${opts.map((o: string) => `"bmuz approve ${o}"`).join(' / ')}`)
       await applyGate($, step, answer)
       pending = 'advance'
@@ -2565,6 +2597,25 @@ export const register: Register = on => {
     if (go) {
       pending = 'go'
       return next({ ...(e as any), text: `${text}\n(BMUZ engine: starting. Reply with one short line; the engine runs the step itself.)` })
+    }
+    // F235 task 1 (finding 12): a message typed while a gate waits (its box closed or never seen) answers it: "lock it"
+    // locks, words saying what to change go back with them, a bare "ok" brings the box back. (Before, it passed by
+    // untouched while every tool was refused: Define never locked.)
+    const gate = !ctx.broken && ctx.state.status === 'waiting' && ctx.state.current ? E.stepById(ctx.pipeline, ctx.state.current) : null
+    if (gate && gate.kind === 'gate' && !/^\s*bmuz\b/i.test(text)) {
+      const t = E.gateTyped(text, E.gateWords(gate, ctx.script, vars()).options)
+      if (t) {
+        const out = await gateTypedAnswer($, gate, { ...t, typed: text })
+        if (out.how === 'option') {
+          pending = 'advance'
+          return next({ ...(e as any), text: `${text}\n(BMUZ engine: gate answered: "${out.option}". Reply with one short line; the engine runs the next step itself.)` })
+        }
+        if (out.how === 'back') {
+          pending = 'advance'
+          return next({ ...(e as any), text: `${text}\n(BMUZ engine: the gate "${gate.id}" is not approved: these words go back to the step "${gate.backTo}" as what to change, and it runs again. Reply with one short line, no tools; the engine starts it itself.)` })
+        }
+        return next({ ...(e as any), text: `${text}\n(BMUZ engine: ${out.note}.)` })
+      }
     }
     // Answers to the card's numbered questions ("1 yes", "2: the first one"); any other message passes untouched.
     const noted = ctx.broken ? null : await recordAnswerLines($, text)
