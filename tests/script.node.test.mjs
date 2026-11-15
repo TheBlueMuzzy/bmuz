@@ -56,7 +56,9 @@ test('every fixed part of the approved script (Stages 1–6) is in script.md wor
   const mine = E.plainWords(scriptText.split('# Stage 1 · Ideate')[1])
   // (F236 — BMUZ hands back with a card: approved words replaced, each on the Ask Muzzy list: "paste your values if you
   // have them" made Claude wait with nothing to say what for — the values are asked first now, at "Played it?")
-  const REPLACED = ['3.1: paste your values if you have them']
+  // (and the ready line's "is ready: {link}": its link is the card's Try it now, the sketch opened for them — the rest of
+  // its words are the card's, unchanged)
+  const REPLACED = ['3.1: paste your values if you have them', '3.1: is ready:']
   const missing = frags.filter(f => !mine.includes(f.words) && !REPLACED.includes(`${f.num}: ${f.words}`))
   assert.deepEqual(missing.map(f => `${f.num}: ${f.words.slice(0, 90)}`), [])
   // every step of the spec's Stages 1–2 is covered (1.0 – 1.7, 2.0 – 2.8)
@@ -94,7 +96,7 @@ test('lines not in the approved script are marked "added" (each one has an Ask M
   // (F235 task 8 — every question is a box: a free question's words moved into its box unchanged, its options are new)
   const F235_BOXES = ['ideate.idea', 'ideate.spark', 'ideate.material', 'ideate.correct', 'ideate.feelings', 'ideate.open.ask', 'ideate.sketch.more', 'define.feelings.own', 'define.feelings.know', 'define.feelings.not', 'define.pillars.own', 'define.pillars.test', 'define.pillars.slogan', 'define.pitch.write', 'define.pitch.different', 'define.pitch.meets', 'define.pitch.breath', 'define.loop', 'define.loop.steps', 'define.loop.time', 'define.loop.verbs', 'define.scope.wont', 'design.rulebook.flow', 'design.rulebook.win', 'design.rulebook.setup', 'design.rulebook.pieces', 'design.rulebook.action', 'design.rulebook.edge', 'design.rulebook.secret', 'design.rulebook.names', 'design.content.kinds', 'design.content.columns', 'design.content.balance', 'design.time', 'design.time.trap', 'design.players.ai', 'design.look.refs', 'design.look.motion', 'design.look.sound', 'design.screens.map', 'design.screens.eyes', 'design.screens.choose', 'design.screens.end', 'develop.setup.step', 'develop.tune', 'develop.tune.rule', 'develop.lookback', 'develop.teaching.ask', 'deliver.notes', 'release.page', 'release.reactions', 'release.lookback', 'any.chat', 'research.found']
   // (F236 — BMUZ hands back with a card)
-  const F236 = ['any.wait']
+  const F236 = ['any.wait', 'design.sketch.played']
   assert.deepEqual(Object.values(script.lines).filter(l => l.added).map(l => l.id).sort(), [...F233, ...F234, ...F235, ...F235_BOXES, ...F236, 'any.keep', 'bug.fix.done', 'bug.fix.reproduced', 'bug.fix.start', 'bug.none', 'bug.now', 'bug.often', 'bug.verified', 'define.feelings.eight', 'deliver.back', 'deliver.live', 'deliver.notready.box', 'design.rulebook.ok', 'design.rulebook.section', 'design.sketches.none', 'design.time.notrap', 'develop.idea', 'develop.plan.one', 'develop.setup.nologin', 'develop.waiting', 'release.none', 'release.notyet', 'release.out', 'release.walk', 'release.walk.link', 'release.walk.live.box', 'research.busy', 'research.changed', 'research.lost', 'research.none', 'research.notstarted', 'research.wait'].sort())
 })
 

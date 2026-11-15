@@ -661,10 +661,15 @@ header: Order
 - Yes, build them
 - Change the order or the tests — next, tell me what
 
-## design.sketch.ready · say
-**{name}** is ready: {link}
-It answers: {question}
-Try moving: {knobs}. When a setting feels right, press "Copy values for Claude" and paste them here.
+## design.sketch.played · box · added
+done: **{name}** is ready. It answers: {question}
+try: {file}
+todo: Try moving: {knobs}. When a setting feels right, press "Copy values for Claude" and paste them here.
+? Played {sketch}?
+header: Played it?
+- Here are my values — next, paste them from "Copy values for Claude"
+- I played it — no values to keep
+- Not yet — next, tell me when you've played it
 
 ## design.sketch.answered · box
 ? Did {sketch} answer the question?

@@ -3713,3 +3713,31 @@ test('F236 task 2: a gate\'s "Not yet — next, tell me what" is what the step i
   expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"gate.answer","step":"approve","answer":"Change the name"/)
   expect(JSON.parse(w.files['/proj/.bmuz/state.json']).waitFor).toEqual({ step: 'name', what: 'tell me the new name' })
 })
+
+// F236 task 3 (sirius-live4 01:02: "Did S02 answer the question?" came before Muzzy had played it): "Did it answer?" only
+// after "Played it?" was answered, sketch by sketch ("follows" on the step)
+test('F236 task 3: a line that "follows" a box is refused until that box was answered — each time round', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  on('tool.call', { tool: 'AskUserQuestion' }, (_: any, e: any) => ({ result: `User has answered your questions: "${e.questions[0].question}"="${e.questions[0].options[1].label}". You can now continue.` }))
+  const s = cardWorld(on)
+  s.w.files.SCRIPT += NL + '## design.sketch.answered · box' + NL + '? Did {sketch} answer the question?' + NL + 'header: Answered?' + NL + '- Yes, keep what it showed — it goes into the design' + NL + '- No, rethink it — it goes back to Open Questions' + NL
+  const p = JSON.parse(s.w.files.PIPELINE)
+  p.steps[0].lines = [...p.steps[0].lines, 'design.sketch.answered']
+  p.steps[0].follows = { 'design.sketch.answered': 'design.sketch.played' }
+  s.w.files.PIPELINE = JSON.stringify(p)
+  await start($, true)
+  const ask = async (line: string, slots: any) => {
+    const r: any = await $.tool.call({ tool: SAY, line, slots } as any)
+    if (refused(r)) return r
+    const box = boxOf(r)
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: box.question, header: box.header, multiSelect: false, options: box.options }] } as any)
+    return r
+  }
+  const early: any = await ask('design.sketch.answered', { sketch: 'S01' })
+  expect(refused(early)).toBe(true)
+  expect(why(early)).toMatch(/"design\.sketch\.answered" comes only after "design\.sketch\.played" is answered/)
+  expect(refused(await ask('design.sketch.played', SKETCH_SLOTS))).toBe(false)
+  expect(refused(await ask('design.sketch.answered', { sketch: 'S02' }))).toBe(false)
+  // the next sketch: played again first
+  expect(refused(await ask('design.sketch.answered', { sketch: 'S03' }))).toBe(true)
+})

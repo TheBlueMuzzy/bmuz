@@ -72,7 +72,8 @@
       "title": "Sketches, Round 1",
       "description": "Each sketch, played: did it answer the question?",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
-      "lines": ["design.sketch.ready", "design.sketch.answered", "design.sketch.sim"],
+      "lines": ["design.sketch.played", "design.sketch.answered", "design.sketch.sim"],
+      "follows": { "design.sketch.answered": "design.sketch.played" },
       "craft": "craft/design-sketch-play.md",
       "results": ["answers"]
     },

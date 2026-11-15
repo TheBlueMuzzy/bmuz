@@ -111,3 +111,37 @@ test('task 2: the check refuses an option that asks them to type or paste later 
   assert.match(problems, /box "d\.answered", option "Yes, keep it": its words ask them to type or paste .* say "next, …"/)
   assert.deepEqual(E.waitProblems(script), [])
 })
+
+// ---- task 3: sketches — the page opened, "Played it?" first, "Did it answer the question?" only after ----
+const DESIGN = JSON.parse(readFileSync(join(plugin, 'pipelines', 'design.json'), 'utf8'))
+
+test('task 3: Design\'s sketch-play hands each sketch back with a card (its page opened) and "Played it?" before "Did it answer?"', () => {
+  const play = E.stepById(DESIGN, 'sketch-play')
+  assert.deepEqual(play.lines, ['design.sketch.played', 'design.sketch.answered', 'design.sketch.sim'])
+  assert.deepEqual(play.follows, { 'design.sketch.answered': 'design.sketch.played' })
+  assert.deepEqual(E.checkPipeline(DESIGN), [])
+  const l = script.lines['design.sketch.played']
+  assert.ok(l && l.kind === 'box' && l.added)
+  assert.deepEqual(Object.keys(l.box.card), ['done', 'try', 'todo'])
+  assert.match(l.box.card.try, /\{file\}/)
+  const r = E.renderLine(script, 'design.sketch.played', { name: 'S02 Action picker', question: 'Does picking 2 of 3 actions feel quick?', file: 'file:///p/S02-action-picker.html (open in your browser now)', knobs: 'Button size and Picker position', sketch: 'S02' })
+  assert.equal(r.card, [
+    '**Done:** **S02 Action picker** is ready. It answers: Does picking 2 of 3 actions feel quick?',
+    '**Try it:** file:///p/S02-action-picker.html (open in your browser now)',
+    '**Your to-do:** Try moving: Button size and Picker position. When a setting feels right, press "Copy values for Claude" and paste them here.',
+  ].join(NL))
+  assert.equal(r.box.question, 'Played S02?')
+  assert.deepEqual(r.box.options.map(o => o.label), ['Here are my values', 'I played it', 'Not yet'])
+  // every option that waits says what for
+  assert.deepEqual(r.box.options.map(o => E.waitWhat(o.description)), ['paste them from "Copy values for Claude"', null, "tell me when you've played it"])
+  // the ready line (a bare link, its own turn) is gone; "Did it answer?" asks nothing to paste
+  assert.equal(script.lines['design.sketch.ready'], undefined)
+  assert.ok(!script.lines['design.sketch.answered'].box.options.some(o => /paste/i.test(o.description)))
+})
+
+test('task 3: "follows" is checked — the lines are the step\'s own, and a line can\'t follow itself', () => {
+  const p = { id: 'x', version: 1, steps: [{ id: 's', kind: 'talk', tools: [], craft: 'craft/x.md', lines: ['a.one', 'a.two'], follows: { 'a.two': 'a.three' } }] }
+  assert.match(E.checkPipeline(p).join(' '), /"follows": "a\.three" isn't one of its "lines"/)
+  p.steps[0].follows = { 'a.two': 'a.two' }
+  assert.match(E.checkPipeline(p).join(' '), /can't follow itself/)
+})

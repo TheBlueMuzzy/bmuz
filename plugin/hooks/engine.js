@@ -92,7 +92,7 @@ const STEP_KEYS = {
   // must: the ones it always says, so step_done is refused until each was handed out (the rest depend on the game)
   // collects (F234): what the step asks for — [{ field, what, chapter, line, neededBy }]; the engine reads the GDD first
   // and asks only what is still open (askPlan)
-  talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results', 'wrapTo', 'recap', 'lines', 'opening', 'must', 'mustIf', 'collects'],
+  talk: ['tools', 'craft', 'done', 'writes', 'handoff', 'results', 'wrapTo', 'recap', 'lines', 'opening', 'must', 'mustIf', 'collects', 'follows'],
   // line (F232): the gate's question and options come from that script box
   gate: ['question', 'options', 'approve', 'backTo', 'line', 'auto'],
   // show: a .md file the script wrote; after the step passes, the engine shows it to the creative word for word
@@ -223,6 +223,15 @@ export function checkPipeline(p) {
     if (s.stageEnd !== undefined && s.stageEnd !== true) problems.push(`${at}: "stageEnd" must be true (or left out)`)
     if (s.lines !== undefined && !(isList(s.lines) && s.lines.every(id => /^[a-z][a-z0-9.-]*$/.test(id)))) problems.push(`${at}: "lines" must be a list of script line ids, like ["define.pitch"]`)
     if (s.opening !== undefined && !(isList(s.opening) && s.opening.length)) problems.push(`${at}: "opening" must be a list of the line ids the step says first`)
+    // (F236 task 3: "follows": {"<line>": "<box line>"} — the line is said only after that box was answered: "Did it answer
+    // the question?" only after "Played it?")
+    if (s.follows !== undefined) {
+      if (!s.follows || typeof s.follows !== 'object' || Array.isArray(s.follows)) problems.push(`${at}: "follows" must be {"<line>": "<the box line answered before it>"}`)
+      else for (const [a, b] of Object.entries(s.follows)) {
+        for (const id of [a, b]) if (!(isList(s.lines) && s.lines.includes(id))) problems.push(`${at}: "follows": "${id}" isn't one of its "lines"`)
+        if (a === b) problems.push(`${at}: "follows": "${a}" can't follow itself`)
+      }
+    }
     if (s.must !== undefined) {
       if (!(isList(s.must) && s.must.length)) problems.push(`${at}: "must" must be a list of the line ids the step always says`)
       else for (const id of s.must) if (!(s.lines || []).includes(id)) problems.push(`${at}: "must" line "${id}" isn't one of the step's "lines"`)
@@ -1311,7 +1320,8 @@ export function finish(state, step, result) {
     boxes: [],
     opened: null,
     said: null, // (the lines this step handed out, for its "must")
-    waitFor: null, // (F236: what a wait in this step would wait for)
+    waitFor: null, // (F236: what a wait in this step would wait for, and the box answered last)
+    lastBox: null,
     back: state.back && state.back.step === step.id ? null : state.back || null,
     current: null,
     status: 'idle',

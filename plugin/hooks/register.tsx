@@ -1552,6 +1552,10 @@ async function sayTool($: any, e: any) {
   if (!ids.length || ids.some(id => !id)) return deny(`BMUZ engine: say which line: {"line": "<id>"} (this step's lines: ${step.lines.join(', ')}).`)
   const notHere = ids.filter(id => !step.lines.includes(id))
   if (notHere.length) return deny(`BMUZ engine: ${notHere.map(id => `"${id}"`).join(', ')} ${notHere.length > 1 ? "aren't" : "isn't"} one of this step's lines (${step.lines.join(', ')}).`)
+  // F236 task 3: a line that "follows" a box is said only once that box was answered, each time round ("Did it answer the
+  // question?" only after "Played it?")
+  const early = ids.find(id => step.follows && step.follows[id] && !(ctx.state.lastBox && ctx.state.lastBox.step === step.id && ctx.state.lastBox.line === step.follows[id]))
+  if (early) return deny(`BMUZ engine: "${early}" comes only after "${step.follows[early]}" is answered: say "${step.follows[early]}" and ask its box first.`)
   // (F235 task 5: an opening the engine already showed isn't said again)
   const again = ctx.state.shownOpening === step.id && step.opening ? ids.filter(id => step.opening.includes(id)) : []
   if (again.length) return deny(`BMUZ engine: ${again.map(id => `"${id}"`).join(', ')} was already shown to the creative with the step's message. Don't say it again: go on with the step's next line.`)
@@ -1643,7 +1647,8 @@ async function sayTool($: any, e: any) {
   let n = (ctx.state.boxes || []).reduce((m: number, b: any) => Math.max(m, b.n || 0), 0)
   if (boxes.length) {
     const add = boxes.map((r: any) => ({ id: r.id, n: ++n, box: r.box, ...(r.card ? { card: r.card } : {}) }))
-    ctx.state = { ...ctx.state, boxes: [...(ctx.state.boxes || []), ...add], opened: step.id }
+    // (F236 task 3: an auto run never asks — its test answers or defaults answer the box as it is handed out)
+    ctx.state = { ...ctx.state, boxes: [...(ctx.state.boxes || []), ...add], opened: step.id, ...(ctx.auto ? { lastBox: { step: step.id, line: boxes[boxes.length - 1].id } } : {}) }
     for (const r of boxes) await journal($, { ev: 'line', step: step.id, line: r.id, kind: 'box', box: r.box })
     await save($)
     const then = E.sayNext(boxes[0], ctx.auto)
@@ -2569,7 +2574,7 @@ export const register: Register = on => {
       if ((res?.deny || res?.isError) && E.isChatInstead(res) && asked.length && !ctx.auto) {
         const last = asked[asked.length - 1]
         // (F235 review fix: the other boxes asked in the same call go back to pending, so none is lost; Claude asks them after)
-        ctx.state = { ...ctx.state, boxes: [...(ctx.state.boxes || []), ...asked.slice(0, -1)], ask: { step: ctx.state.current, line: last.id, text: last.box.question } }
+        ctx.state = { ...ctx.state, boxes: [...(ctx.state.boxes || []), ...asked.slice(0, -1)], ask: { step: ctx.state.current, line: last.id, text: last.box.question }, lastBox: { step: ctx.state.current, line: last.id } }
         await journal($, { ev: 'ask.open', step: ctx.state.current, line: last.id, via: 'chat' })
         await save($)
         await markActive($)
@@ -2600,9 +2605,10 @@ export const register: Register = on => {
           const lines = [...new Set(asked.map((b: any) => b.id))]
           await journal($, { ev: 'answer', step: ctx.state.current, ...(lines.length ? { lines, via: 'box' } : {}), text: E.answerText(res).slice(0, 6000) })
           // (F236 task 2: an option that says "next, …" picked — what the wait that follows waits for)
+          // (F236 task 3: and the box line answered last, for a line that "follows" it)
           if (asked.length) {
             const what = E.nextPick(asked, E.answerText(res))
-            ctx.state = { ...ctx.state, waitFor: what ? { step: ctx.state.current, what } : null }
+            ctx.state = { ...ctx.state, waitFor: what ? { step: ctx.state.current, what } : null, lastBox: { step: ctx.state.current, line: asked[asked.length - 1].id } }
             await save($)
           }
           // (the ask for links, now a box: what they typed in it is their material, as the free line's answer was)
