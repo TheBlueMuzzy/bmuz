@@ -556,10 +556,11 @@ Here's the effort vs impact chart, on your project page now. Effort is my estima
 Here's the vertical slice I'd build first: {slice}.
 
 ## define.scope.chart.here · box · added
+try: the chart, drawn on your project page: {link}
 ? **Effort vs impact**
 {chart}
 
-It's drawn on your project page too, as a real chart: {link}. Effort is my estimate from research; impact is yours to correct. Anything in the wrong box?
+Effort is my estimate from research; impact is yours to correct. Anything in the wrong box?
 header: The chart
 - All right — every idea is in the right box
 - Move some — next, tell me which
@@ -893,10 +894,9 @@ header: References
 - None yet — show me some to react to
 - In this folder — the pictures I put in this project's folder
 
-## design.look.sketches · say
-From your references, here are {n} look sketches, side by side at real phone size: {link}.
-
 ## design.look.pick · box
+done: From your references, here are {n} look sketches, side by side at real phone size:
+try: {file}
 ? Which look is closest?
 header: The look
 - [each looks] {.}

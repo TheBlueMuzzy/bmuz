@@ -403,9 +403,9 @@
       "title": "Look & Sound",
       "description": "Which look is closest; how the pieces move; how it sounds",
       "tools": ["AskUserQuestion", "ToolSearch", "Read", "Glob", "Grep"],
-      "lines": ["design.look.sketches", "design.look.pick", "design.look.motion", "design.look.sound"],
+      "lines": ["design.look.pick", "design.look.motion", "design.look.sound"],
       "must": ["design.look.motion", "design.look.sound"],
-      "opening": ["design.look.sketches"],
+      "opening": ["design.look.pick"],
       "craft": "craft/design-look-pick.md",
       "results": ["chapters"],
       "recap": ["looks"]

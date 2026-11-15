@@ -1928,6 +1928,34 @@ export function freeQuestionProblems(p, script) {
   return out
 }
 
+// ---- F236 task 4: every hand-back with something to open or do uses the card (Muzzy 2026-11-15: "it asks me to do
+// something, but it doesn't show me what I'm supposed to do (or answer)") ----
+// Something to open or do: a {link} or {file} (a page), or words telling them to work something outside the chat
+// ("Try moving", 'press "'). A short line with it, said on the way to a box, is a hand-back without a card (S01's ready
+// line); a box with a link in its question hides it among the question's words. Either goes in the box's card ("try:"
+// names what BMUZ opens, "todo:" the one thing to do). A long report shown in a turn of its own (the roadmap, the so-far)
+// is no hand-back: its box comes in the next turn, and the engine opens the project page it points at (F235 task 4).
+// Gates are asked by the engine's own dialog, which carries no words above it; their show comes the turn before.
+const TODO_MARK = /\{link\}|\{file\}|\bpress "|\btry moving\b/i
+export function handbackProblems(p, script) {
+  const out = []
+  for (const s of Array.isArray(p && p.steps) ? p.steps : []) {
+    for (const id of isList(s.lines) ? s.lines : []) {
+      const l = script.lines[id]
+      if (!l) continue
+      if (l.kind === 'box') {
+        const m = String(l.box.question).match(TODO_MARK)
+        if (m) out.push(`step "${s.id}": the box "${id}" has something to open in its question (${m[0]}): put it in its card ("try:" / "todo:" before the question)`)
+        if (l.box.card && l.box.card.try !== undefined && !/\{(file|link)\}/.test(l.box.card.try)) out.push(`step "${s.id}": the box "${id}": its card's "try" must name what BMUZ opens: {file} or {link}`)
+        continue
+      }
+      const m = String(l.text || '').match(TODO_MARK)
+      if (m && !isLongSay(l.text)) out.push(`step "${s.id}": the line "${id}" hands back something to open or do (${m[0]}) outside a card: put it in the card of the box it comes with ("done:" / "try:" / "todo:")`)
+    }
+  }
+  return out
+}
+
 // F235 task 11: the lines the engine says itself when the creative steps in (a bug, research) — no pipeline step lists
 // them, so freeQuestionProblems never reads them. The same rule holds: one that asks something is a box (research.found
 // "Does it change anything?" and research.lost "Ask again?" were the last two asked in plain text).

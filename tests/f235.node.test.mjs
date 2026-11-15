@@ -222,8 +222,10 @@ test('task 4: a line that points at the project page is known, and the page\'s l
   assert.equal(E.pointsAtPage(script, 'define.scope.need'), false)
   assert.equal(E.fileLink('C:/Users/Muzzy/My Games/x/.planning/project-page.html'), 'file:///C:/Users/Muzzy/My%20Games/x/.planning/project-page.html')
   assert.equal(E.fileLink('/home/a/b.html'), 'file:///home/a/b.html')
-  const chat = E.renderLine(script, 'define.scope.chart.here', { chart: ['Quick wins (do first): Traps', 'Avoid: Undercover Agent'], link: 'file:///x (open in your browser now)' }).box.question
-  assert.match(chat, /\*\*Effort vs impact\*\*\n· Quick wins \(do first\): Traps\n· Avoid: Undercover Agent\n\nIt's drawn on your project page too, as a real chart: file:\/\/\/x \(open in your browser now\)\./)
+  const r = E.renderLine(script, 'define.scope.chart.here', { chart: ['Quick wins (do first): Traps', 'Avoid: Undercover Agent'], link: 'file:///x (open in your browser now)' })
+  assert.match(r.box.question, /\*\*Effort vs impact\*\*\n· Quick wins \(do first\): Traps\n· Avoid: Undercover Agent\n\nEffort is my estimate/)
+  // (F236 task 4: the page's link is the box's card now — "Try it", right above the box)
+  assert.equal(r.card, '**Try it:** the chart, drawn on your project page: file:///x (open in your browser now)')
 })
 
 test('task 4: the lock card opens the page first (a test run says it would) and says so beside its link', () => {

@@ -28,6 +28,8 @@ export function checkFile(file) {
   problems.push(...script.problems.map(x => `script.md: ${x}`), ...E.checkLines(p, script))
   // F235 task 8: a line that asks something is a question box, never a free line
   problems.push(...E.freeQuestionProblems(p, script))
+  // F236 task 4: a hand-back with something to open or do carries it in the box's card
+  problems.push(...E.handbackProblems(p, script))
   // A fixed "next" with a fixed "at": that step must exist in the next stage's pipeline (when it's on the engine).
   const nx = p && p.next
   if (nx && typeof nx.pipeline === 'string' && E.NAME_RE.test(nx.pipeline) && typeof nx.at === 'string' && E.NAME_RE.test(nx.at)) {

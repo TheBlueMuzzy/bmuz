@@ -2,7 +2,7 @@
 // the box guard, the wait) is in plugin/tests/engine.test.tsx, "F236".
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as E from '../plugin/hooks/engine.js'
@@ -144,4 +144,40 @@ test('task 3: "follows" is checked — the lines are the step\'s own, and a line
   assert.match(E.checkPipeline(p).join(' '), /"follows": "a\.three" isn't one of its "lines"/)
   p.steps[0].follows = { 'a.two': 'a.two' }
   assert.match(E.checkPipeline(p).join(' '), /can't follow itself/)
+})
+
+// ---- task 4: every hand-back with something to open or do carries it in a card; the check refuses one that doesn't ----
+const HB = E.parseScript([
+  '## t.ready · say', '**{name}** is ready: {link}', '',
+  '## t.report · say', '**The Roadmap**', 'The whole journey ahead, on your project page: {link}', '· Milestones: {milestones}', '· Features: {features}', '· What each needs: {needs}', '',
+  '## t.chart · box', '? It\'s drawn on your project page too: {link}. Anything in the wrong box?', 'header: Chart', '- All right', '- Move some — next, tell me which', '',
+  '## t.carded · box', 'try: {link}', '? Anything in the wrong box?', 'header: Chart', '- All right', '- Move some — next, tell me which', '',
+  '## t.badtry · box', 'try: have a look at it', '? Anything wrong?', 'header: Chart', '- All right', '- Move some — next, tell me which', '',
+  '## t.knobs · say', 'Try moving: {knobs}. When a setting feels right, press "Copy values for Claude".', '',
+].join(NL))
+const stepWith = lines => ({ id: 'x', version: 1, steps: [{ id: 's', kind: 'talk', tools: [], craft: 'craft/x.md', lines }] })
+
+test('task 4: a short line with something to open or do, or a box with a link in its question, is refused: it goes in the card', () => {
+  assert.match(E.handbackProblems(stepWith(['t.ready']), HB).join(' '), /step "s": the line "t\.ready" hands back something to open or do \(\{link\}\) outside a card/)
+  assert.match(E.handbackProblems(stepWith(['t.knobs']), HB).join(' '), /"t\.knobs" hands back something to open or do \(Try moving\)/)
+  assert.match(E.handbackProblems(stepWith(['t.chart']), HB).join(' '), /the box "t\.chart" has something to open in its question \(\{link\}\): put it in its card/)
+  assert.deepEqual(E.handbackProblems(stepWith(['t.carded']), HB), [])
+  // a long report shown in a turn of its own (the engine opens the project page for it) is no hand-back
+  assert.deepEqual(E.handbackProblems(stepWith(['t.report']), HB), [])
+  // a card's Try it names what BMUZ opens: a {file} or a {link}, never only words
+  assert.match(E.handbackProblems(stepWith(['t.badtry']), HB).join(' '), /the box "t\.badtry": its card's "try" must name what BMUZ opens: \{file\} or \{link\}/)
+})
+
+test('task 4: every real pipeline (Ideate → Release) passes; the scope chart and the look sketches hand back with their card', () => {
+  for (const f of readdirSync(join(plugin, 'pipelines'))) {
+    const p = JSON.parse(readFileSync(join(plugin, 'pipelines', f), 'utf8'))
+    assert.deepEqual(E.handbackProblems(p, script), [], f)
+  }
+  assert.match(script.lines['define.scope.chart.here'].box.card.try, /\{link\}/)
+  assert.doesNotMatch(script.lines['define.scope.chart.here'].box.question, /\{link\}/)
+  const look = script.lines['design.look.pick'].box.card
+  assert.equal(look.done, 'From your references, here are {n} look sketches, side by side at real phone size:')
+  assert.equal(look.try, '{file}')
+  const pick = E.stepById(JSON.parse(readFileSync(join(plugin, 'pipelines', 'design.json'), 'utf8')), 'look-pick')
+  assert.equal(pick.lines.includes('design.look.sketches'), false)
 })
