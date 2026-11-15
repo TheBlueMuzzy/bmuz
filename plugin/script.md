@@ -669,7 +669,7 @@ Try moving: {knobs}. When a setting feels right, press "Copy values for Claude" 
 ## design.sketch.answered · box
 ? Did {sketch} answer the question?
 header: Answered?
-- Yes, keep what it showed — paste your values if you have them
+- Yes, keep what it showed — it goes into the design
 - Partly, try another way — next, tell me what to change
 - No, rethink it — it goes back to Open Questions
 
@@ -1288,6 +1288,9 @@ header: Keep?
 
 ## any.type · say · added
 Type your answer below.
+
+## any.wait · say · added
+**Your to-do:** {what}, in your next message.
 
 ## any.chat · say · added
 Go ahead: type or paste your answer as your next message.

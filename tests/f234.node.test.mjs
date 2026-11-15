@@ -222,8 +222,10 @@ test('task 6 (F233 task 9): plural() no longer breaks words', () => {
 
 test('task 6 (F233 task 8): the correction\'s again-list never repeats a line', () => {
   const T = 'Type your answer below.'
-  assert.deepEqual(E.againLines([{ id: 'any.type', text: T }], { step: 's', line: 'wait', text: T }, 's'), [])
-  assert.deepEqual(E.againLines([{ id: 'x', text: 'Hello.' }], { step: 's', line: 'wait', text: T }, 's'), [{ id: 'any.type', text: T }])
+  // (F236 task 2: a wait is the wait line, any.wait, naming what it waits for)
+  const W = '**Your to-do:** tell me what, in your next message.'
+  assert.deepEqual(E.againLines([{ id: 'any.wait', text: W }], { step: 's', line: 'wait', text: W }, 's'), [])
+  assert.deepEqual(E.againLines([{ id: 'x', text: 'Hello.' }], { step: 's', line: 'wait', text: W }, 's'), [{ id: 'any.wait', text: W }])
   const head = '**Open Ideas**\nA few questions.'
   const q = `${head}\n\n1. Where?\nAnswer in one message.\n\n${T}`
   assert.deepEqual(E.againLines([{ id: 'ideate.open', text: head }], { step: 's', line: 'ideate.open.ask', text: q }, 's'), [{ id: 'ideate.open.ask', text: `1. Where?\nAnswer in one message.\n\n${T}` }])

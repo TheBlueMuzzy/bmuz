@@ -78,5 +78,14 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   } else {
     console.log('✔ script.md (step-in lines)')
   }
+  // F236 task 2: no bare wait — the wait line says what it waits for, and every option that leads to one says "next, …"
+  const waits = E.waitProblems(script)
+  if (waits.length) {
+    bad++
+    console.log(`✘ script.md (waits): ${waits.length} problem${waits.length > 1 ? 's' : ''}`)
+    for (const x of waits) console.log(`  - ${x}`)
+  } else {
+    console.log('✔ script.md (waits)')
+  }
   process.exit(bad ? 1 : 0)
 }

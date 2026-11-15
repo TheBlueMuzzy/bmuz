@@ -76,3 +76,38 @@ test('task 1: the card is short — at most one line per part — and its words 
   // the card not at the end (words written after it) is no card: the usual limit
   assert.ok(E.hiddenTextProblem(`${card}${NL}And another thing.`, card))
 })
+
+// ---- task 2: no bare wait — every wait names what it waits for ----
+const script = E.parseScript(readFileSync(join(plugin, 'script.md'), 'utf8'))
+
+test('task 2: the wait line is a to-do with what it waits for ("Type your answer below." alone is never a wait)', () => {
+  assert.equal(E.WAIT_LINE, 'any.wait')
+  assert.match(script.lines[E.WAIT_LINE].text, /\{what\}/)
+  assert.equal(E.renderLine(script, E.WAIT_LINE, { what: 'tell me what to change' }).text, '**Your to-do:** tell me what to change, in your next message.')
+  assert.ok(E.renderLine(script, E.WAIT_LINE, {}).error)
+})
+
+test('task 2: what a wait waits for comes from the option picked — its "next, …" words', () => {
+  assert.equal(E.waitWhat('next, tell me what to change'), 'tell me what to change')
+  assert.equal(E.waitWhat('next, tell me which'), 'tell me which')
+  assert.equal(E.waitWhat("next, I'll paste its link"), 'paste its link')
+  assert.equal(E.waitWhat('next, in your own words'), 'write it in your own words')
+  assert.equal(E.waitWhat('next, paste them from "Copy values for Claude"'), 'paste them from "Copy values for Claude"')
+  // BMUZ shows the next thing: nothing to wait for
+  assert.equal(E.waitWhat("next, I'll show the eight to pick from"), null)
+  assert.equal(E.waitWhat('paste your values if you have them'), null)
+  assert.equal(E.waitWhat(''), null)
+  // the option picked in a box answer
+  const boxes = [{ id: 'x', n: 1, box: { question: 'Did S01 answer the question?', options: [{ label: 'Yes, keep what it showed', description: '' }, { label: 'Partly, try another way', description: 'next, tell me what to change' }] } }]
+  assert.equal(E.nextPick(boxes, 'User has answered your questions: "Did S01 answer the question?"="Partly, try another way". You can now continue'), 'tell me what to change')
+  assert.equal(E.nextPick(boxes, 'User has answered your questions: "Did S01 answer the question?"="Yes, keep what it showed".'), null)
+  assert.equal(E.nextPick(boxes, 'User has answered your questions: "Did S01 answer the question?"="worked great! one note…".'), null)
+})
+
+test('task 2: the check refuses an option that asks them to type or paste later without saying "next, …" (the S01 "paste your values" box), and a wait line with no {what}', () => {
+  const bad = E.parseScript(['## any.wait · say · added', 'Type your answer below.', '', '## d.answered · box', '? Did it answer?', 'header: Answered?', '- Yes, keep it — paste your values if you have them', '- Partly — next, tell me what to change', ''].join(NL))
+  const problems = E.waitProblems(bad).join(' | ')
+  assert.match(problems, /"any\.wait" must say what it waits for: a \{what\} slot/)
+  assert.match(problems, /box "d\.answered", option "Yes, keep it": its words ask them to type or paste .* say "next, …"/)
+  assert.deepEqual(E.waitProblems(script), [])
+})

@@ -429,23 +429,33 @@ test('F233: a question list is the step\'s own pool lines (never Claude\'s words
   expect(JSON.parse(s.w.files['/proj/.bmuz/state.json']).said.lines).toContain('ideate.pool.where')
 })
 
-test('F233 6d: "next, tell me what" ({"wait": true}) says "Type your answer below." too, checked like any line', async ($, on) => {
+// (F236 task 2 changed this F233 6d test: a wait is no longer the bare "Type your answer below." but the to-do line naming
+// what it waits for — the "next, …" words of the option picked; with nothing picked that says what, there is no wait)
+test('F233 6d / F236 task 2: "next, tell me what" picked, {"wait": true} says what it waits for, checked like any line; with nothing picked it is refused', async ($, on) => {
   mock.clock(on, { now: 1000 })
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: 'User has answered your questions: "How\'s that?"="Change something". You can now continue.' }))
   const s = sayWorld(on)
   const NL = String.fromCharCode(10)
-  s.w.files.SCRIPT = `${SCRIPT}${NL}## any.type · say · added${NL}Type your answer below.${NL}`
+  s.w.files.SCRIPT = `${SCRIPT}${NL}## any.type · say · added${NL}Type your answer below.${NL}${NL}## any.wait · say · added${NL}**Your to-do:** {what}, in your next message.${NL}`
   const { w, prompts } = s
   await start($, true)
-  await $.tool.call({ tool: SAY, line: 'define.pitch' } as any)
-  await $.turn.complete({ answer: 'The Pitch\nThe game in a few lines, so anyone gets it in ten seconds.', durationMs: 1, isAborted: false, turnId: 't0', reason: 'answer' } as any)
+  // nothing picked yet: no bare wait
+  const bare: any = await $.tool.call({ tool: SAY, wait: true } as any)
+  expect(refused(bare)).toBe(true)
+  expect(why(bare)).toMatch(/a wait says what it waits for/)
+  const box = boxOf(await $.tool.call({ tool: SAY, line: 'define.pitch.how' } as any))
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: box.question, header: box.header, multiSelect: false, options: box.options }] } as any)
+  await $.turn.complete({ answer: "How's that?", durationMs: 1, isAborted: false, turnId: 't0', reason: 'answer' } as any)
   const r: any = await $.tool.call({ tool: SAY, wait: true } as any)
-  expect(said(r)).toMatchObject({ say: 'Type your answer below.' })
+  expect(said(r)).toMatchObject({ say: '**Your to-do:** tell me what, in your next message.' })
   expect(said(r).then).toMatch(/whole reply .* end your turn/)
-  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask).toMatchObject({ line: 'wait', text: 'Type your answer below.' })
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).ask).toMatchObject({ line: 'wait', text: '**Your to-do:** tell me what, in your next message.' })
   const before = prompts.length
-  await $.turn.complete({ answer: 'Type your answer below.', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  await $.turn.complete({ answer: 'Your to-do: tell me what, in your next message.', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
   expect(prompts.length).toBe(before)
-  expect(events(w).filter((j: any) => j.ev === 'said').pop()).toMatchObject({ lines: ['any.type'], missing: [] })
+  expect(events(w).filter((j: any) => j.ev === 'said').pop()).toMatchObject({ lines: ['any.wait'], missing: [] })
+  // the pick is used once: a second wait with nothing new picked is refused
+  expect(refused(await $.tool.call({ tool: SAY, wait: true } as any))).toBe(true)
 })
 
 test('F232: a box comes from the script — asked exactly it reaches the creative; reworded, or with no line asked for, it is refused', async ($, on) => {
@@ -3178,20 +3188,26 @@ test('F234 review fix 4, rule 3: a talk step that ran off its path for a needed 
 // question, when only the heading was dropped, isn't repeated inside the question again.
 test('F234 (F233 task 8): the "write it again" correction never repeats a line — {"wait": true}, and a heading + free question in one call', async ($, on) => {
   mock.clock(on, { now: 1000 })
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: 'User has answered your questions: "How\'s that?"="Change something". You can now continue.' }))
   const s = sayWorld(on)
   const NL = String.fromCharCode(10)
-  s.w.files.SCRIPT = `${SCRIPT}${NL}## any.type · say · added${NL}Type your answer below.${NL}`
+  // (F236 task 2: the wait is the to-do line naming what it waits for, after an option that says "next, …")
+  s.w.files.SCRIPT = `${SCRIPT}${NL}## any.type · say · added${NL}Type your answer below.${NL}${NL}## any.wait · say · added${NL}**Your to-do:** {what}, in your next message.${NL}`
   const { w, prompts } = s
   const count = (text: string, part: string) => text.split(part).length - 1
   await start($, true)
+  const box = boxOf(await $.tool.call({ tool: SAY, line: 'define.pitch.how' } as any))
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: box.question, header: box.header, multiSelect: false, options: box.options }] } as any)
   // 1. wait: nothing written at all
   await $.tool.call({ tool: SAY, wait: true } as any)
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
   const fix1 = prompts[prompts.length - 1]
-  expect(fix1).toMatch(/The script line "any\.type" was not written word for word/)
-  expect(count(fix1, 'Type your answer below.')).toBe(1)
-  expect(events(w).filter((j: any) => j.ev === 'nudge').pop()).toMatchObject({ unsaid: ['any.type'] })
+  expect(fix1).toMatch(/The script line "any\.wait" was not written word for word/)
+  expect(count(fix1, 'tell me what, in your next message.')).toBe(1)
+  expect(events(w).filter((j: any) => j.ev === 'nudge').pop()).toMatchObject({ unsaid: ['any.wait'] })
   expect(events(w).filter((j: any) => j.ev === 'nudge').pop().again).toBeUndefined()
+  // (the correction's turn writes it; the old any.type words were also at the end of turn t2, which hid this turn)
+  await $.turn.complete({ answer: '**Your to-do:** tell me what, in your next message.', durationMs: 1, isAborted: false, turnId: 't1b', reason: 'answer' } as any)
   // 2. a heading and the free question in one call; only the heading was dropped
   await $.prompt.submit({ text: 'the web' } as any)
   const r: any = await $.tool.call({ tool: SAY, line: ['define.pitch', 'ideate.idea'] } as any)
@@ -3654,4 +3670,46 @@ test('F236 task 1: a {file} that is not a file of this project is refused (never
     expect(why(r)).toMatch(/\{file\} must be a file in this project/)
   }
   expect(w.runs.filter(a => a[2] === 'open').length).toBe(0)
+})
+
+// F236 task 2: no bare wait (sirius-live4 00:55: "Yes, keep what it showed — paste your values if you have them" picked,
+// then only "Type your answer below." — Muzzy: "my answer to what?")
+test('F236 task 2: an option with no "next, …" (the live S01 pick) leads to no wait; "next, …" picked, the wait names it', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const answers: string[] = ['Yes, keep what it showed', 'Partly, try another way']
+  on('tool.call', { tool: 'AskUserQuestion' }, (_: any, e: any) => ({ result: `User has answered your questions: "${e.questions[0].question}"="${answers.shift()}". You can now continue.` }))
+  const s = sayWorld(on)
+  s.w.files.SCRIPT = SCRIPT + NL + '## any.wait · say · added' + NL + '**Your to-do:** {what}, in your next message.' + NL + NL +
+    '## design.sketch.answered · box' + NL + '? Did {sketch} answer the question?' + NL + 'header: Answered?' + NL + '- Yes, keep what it showed — paste your values if you have them' + NL + '- Partly, try another way — next, tell me what to change' + NL
+  const p = JSON.parse(s.w.files.PIPELINE)
+  p.steps[0].lines = [...p.steps[0].lines, 'design.sketch.answered']
+  s.w.files.PIPELINE = JSON.stringify(p)
+  await start($, true)
+  const ask = async () => {
+    const box = boxOf(await $.tool.call({ tool: SAY, line: 'design.sketch.answered', slots: { sketch: 'S01' } } as any))
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: box.question, header: box.header, multiSelect: false, options: box.options }] } as any)
+  }
+  await ask()
+  const bare: any = await $.tool.call({ tool: SAY, wait: true } as any)
+  expect(refused(bare)).toBe(true)
+  expect(events(s.w).filter((j: any) => j.ev === 'line' && /any\.(type|wait)/.test(j.line))).toEqual([])
+  await ask()
+  const r: any = await $.tool.call({ tool: SAY, wait: true } as any)
+  expect(said(r).say).toBe('**Your to-do:** tell me what to change, in your next message.')
+  expect(events(s.w).find((j: any) => j.ev === 'ask.open' && j.line === 'wait')).toMatchObject({ what: 'tell me what to change' })
+})
+
+test('F236 task 2: a gate\'s "Not yet — next, tell me what" is what the step it sends them back to waits for', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const box = boxAnswers(on)
+  box.queue.push('Change the name')
+  const { w } = gateWorld(on)
+  const p = JSON.parse(w.files.PIPELINE)
+  p.steps[1] = { ...p.steps[1], line: 'hello.approve', options: undefined, question: undefined }
+  w.files.PIPELINE = JSON.stringify(p)
+  w.files.SCRIPT = ['# Test', '', '## hello.approve · box', '? Approve {name}?', 'header: Approve', '- Change the name — next, tell me the new name', '- Approve', ''].join(NL)
+  await start($, true)
+  await clock.advance(2000)
+  expect(w.files['/proj/.bmuz/journal.jsonl']).toMatch(/"ev":"gate.answer","step":"approve","answer":"Change the name"/)
+  expect(JSON.parse(w.files['/proj/.bmuz/state.json']).waitFor).toEqual({ step: 'name', what: 'tell me the new name' })
 })

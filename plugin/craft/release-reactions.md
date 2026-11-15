@@ -1,7 +1,7 @@
 Craft note (release, step "reactions" — the script's 6.2 First Reactions).
 Read .bmuz/release/run.json (where it went live, each link) and .planning/GDD.md chapter 1 (The Feelings: each "**The feeling:**" line).
 1. Say mcp__bmuz__say {"line": "release.reactions"} and ask its box. What players are saying comes any way they have it: typed in the box, or pasted as their next message after "Chat about this".
-2. Read what they gave you. Pasted text as it is; a link with WebFetch when it is a public page (a store's reviews, a forum thread). A link you can't open: say in one plain line which one you couldn't read and ask them to paste it, as a free question again (mcp__bmuz__say {"wait": true}).
+2. Read what they gave you. Pasted text as it is; a link with WebFetch when it is a public page (a store's reviews, a forum thread). A link you can't open: say in one plain line which one you couldn't read, then ask the box "release.reactions" again (they paste it after "Chat about this"). A wait is only for an option that says "next, …".
 3. Sort it, asking nothing more. Nothing here is decided for them: every fix goes on the roadmap for an update, to plan with them in Develop.
    - Each feeling from chapter 1, checked against the reactions: "seen ✓", "partly" or "not seen", with what in the reactions shows it, in a few words ("5 reviews say it came down to the last card").
    - Fixes worth an update: something players want changed, in their terms ("hail is too strong late in the game").

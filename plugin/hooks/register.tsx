@@ -1165,6 +1165,11 @@ async function applyGate($: any, step: any, answer: string, typed = false) {
   const out = E.answerGate(ctx.pipeline, ctx.state, step, answer, { typed })
   const before = ctx.state.finished
   ctx.state = out.state
+  // (F236 task 2: a gate option that says "next, …" — "Not yet: change something — next, tell me what" — is what the
+  // step it sends them back to waits for; typed words are the change itself, so nothing is waited for)
+  const opt = !out.approved && !typed && step.line && ctx.script.lines[step.line] && ctx.script.lines[step.line].kind === 'box' ? ctx.script.lines[step.line].box.options.find((o: any) => o.label === answer) : null
+  const what = opt ? E.waitWhat(opt.description) : null
+  if (what && step.backTo) ctx.state = { ...ctx.state, waitFor: { step: step.backTo, what } }
   if (out.approved) await journal($, { ev: 'step.done', step: step.id, kind: 'gate', result: null })
   else await journal($, { ev: 'gate.back', step: step.id, dropped: before.filter((id: string) => !ctx.state.finished.includes(id)), back: ctx.state.back ?? null })
   await save($)
@@ -1524,16 +1529,22 @@ async function sayTool($: any, e: any) {
   const typeLine = ctx.script && ctx.script.lines && ctx.script.lines[E.TYPE_LINE] ? String(ctx.script.lines[E.TYPE_LINE].text) : ''
   if (e.wait === true) {
     if (ctx.auto) return { result: JSON.stringify({ say: '', then: 'Auto run: nobody will type. Take the creative\'s answer from the test answers (or the sensible default) and carry on in this turn.' }) }
-    ctx.state = { ...ctx.state, ask: { step: step.id, line: 'wait', text: typeLine } }
-    await journal($, { ev: 'ask.open', step: step.id, line: 'wait' })
-    if (typeLine) {
+    // F236 task 2: a wait names what it waits for — the "next, …" words of the option they just picked (a box here, or
+    // the gate that sent them back to this step). Nothing picked that says what: no wait, and nothing bare is said.
+    const waitFor = ctx.state.waitFor && ctx.state.waitFor.step === step.id ? ctx.state.waitFor.what : ''
+    if (!waitFor) return deny('BMUZ engine: a wait says what it waits for, and nothing the creative picked here says what (only an option that says "next, …" leads to a wait). Their answer is already in: carry on with it. To ask for something more, ask the step\'s box.')
+    const w = ctx.script && ctx.script.lines && ctx.script.lines[E.WAIT_LINE] ? E.renderLine(ctx.script, E.WAIT_LINE, { what: waitFor }) : null
+    const waitLine = w && !w.error ? String(w.text) : ''
+    ctx.state = { ...ctx.state, waitFor: null, ask: { step: step.id, line: 'wait', text: waitLine } }
+    await journal($, { ev: 'ask.open', step: step.id, line: 'wait', what: waitFor })
+    if (waitLine) {
       if (turnSaid.step !== step.id) turnSaid = { step: step.id, lines: [] }
-      turnSaid.lines = [...turnSaid.lines.filter(l => l.id !== E.TYPE_LINE), { id: E.TYPE_LINE, text: typeLine }]
-      await journal($, { ev: 'line', step: step.id, line: E.TYPE_LINE, kind: 'say', text: typeLine })
+      turnSaid.lines = [...turnSaid.lines.filter(l => l.id !== E.WAIT_LINE), { id: E.WAIT_LINE, text: waitLine }]
+      await journal($, { ev: 'line', step: step.id, line: E.WAIT_LINE, kind: 'say', text: waitLine })
     }
     await save($)
-    return { result: JSON.stringify(typeLine
-      ? { say: typeLine, then: 'Write exactly the "say" text as your whole reply — nothing before or after it — and end your turn: the creative\'s next chat message is the answer.' }
+    return { result: JSON.stringify(waitLine
+      ? { say: waitLine, then: 'Write exactly the "say" text as your whole reply — nothing before or after it — and end your turn: the creative\'s next chat message is the answer.' }
       : { say: '', then: 'Write nothing more and end your turn: the creative\'s next chat message is the answer.' }) }
   }
   // (an id sent with its own quotes, '"ideate.material"', is the same id: headless run 2026-11-11)
@@ -2588,6 +2599,12 @@ export const register: Register = on => {
           // (F235 task 8: the lines the box asked, so a script can find the answer to one line — release.walk.link)
           const lines = [...new Set(asked.map((b: any) => b.id))]
           await journal($, { ev: 'answer', step: ctx.state.current, ...(lines.length ? { lines, via: 'box' } : {}), text: E.answerText(res).slice(0, 6000) })
+          // (F236 task 2: an option that says "next, …" picked — what the wait that follows waits for)
+          if (asked.length) {
+            const what = E.nextPick(asked, E.answerText(res))
+            ctx.state = { ...ctx.state, waitFor: what ? { step: ctx.state.current, what } : null }
+            await save($)
+          }
           // (the ask for links, now a box: what they typed in it is their material, as the free line's answer was)
           if (lines.includes(E.LINKS_LINE)) {
             // (the box's answer: what follows its question's closing quote; the question itself may hold quotes)

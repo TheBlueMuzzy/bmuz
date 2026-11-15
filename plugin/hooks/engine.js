@@ -1311,6 +1311,7 @@ export function finish(state, step, result) {
     boxes: [],
     opened: null,
     said: null, // (the lines this step handed out, for its "must")
+    waitFor: null, // (F236: what a wait in this step would wait for)
     back: state.back && state.back.step === step.id ? null : state.back || null,
     current: null,
     status: 'idle',
@@ -2019,15 +2020,62 @@ export function unsaidNudge(step, lines, n = 0, opts = {}) {
   return `BMUZ engine — this message comes from the BMUZ engine, not the creative (step "${step.id}"). The script line${missing.length > 1 ? 's' : ''} ${missing.map(l => `"${l.id}"`).join(', ')} ${missing.length > 1 ? 'were' : 'was'} not written word for word. ${tail}:\n\n${lines.map(l => l.text).join('\n\n')}`
 }
 
-// (F233 6d) The script line every free question ends with: "Type your answer below."
+// (F233 6d) The script line every free question ends with: "Type your answer below." (the question is right above it)
 export const TYPE_LINE = 'any.type'
 
+// ---- F236 task 2: no bare wait (Sirius Smugglers Design, 2026-11-15: after "Yes, keep what it showed — paste your values
+// if you have them" BMUZ said only "Type your answer below.", and Muzzy asked "my answer to what?") ----
+// A {"wait": true} is the script's to-do line, naming what it waits for: the "next, …" words of the option the creative
+// just picked ("Partly, try another way — next, tell me what to change" → "**Your to-do:** tell me what to change, in
+// your next message."). Nothing picked that says what: no wait (the say tool refuses it).
+export const WAIT_LINE = 'any.wait'
+export function waitWhat(description) {
+  const m = String(description || '').trim().match(/^next,\s+(.+)$/i)
+  if (!m) return null
+  let w = m[1].trim().replace(/[.]+$/, '')
+  // ("next, I'll show the eight to pick from": BMUZ shows the next thing itself — nothing to wait for)
+  if (/^I'll show\b/i.test(w)) return null
+  if (/^in your own words$/i.test(w)) return 'write it in your own words'
+  return w.replace(/^I'll\s+/i, '')
+}
+// The wait words of the option picked in a box answer (Claude Code: '"<question>"="<label>"'), the last one if the call
+// asked several; null when what was picked (or typed) doesn't lead to a wait. boxes = the script boxes asked.
+export function nextPick(boxes, answer) {
+  const t = String(answer || '')
+  let out = null
+  for (const b of Array.isArray(boxes) ? boxes : []) {
+    for (const o of (b && b.box && b.box.options) || []) {
+      const what = waitWhat(o.description)
+      if (what && (t.includes(`="${o.label}"`) || t.includes(`="${o.label} — `))) out = what
+    }
+  }
+  return out
+}
+// What breaks the rule in the script (check-pipeline runs it): the wait line must have its {what}; an option whose words
+// ask them to type, paste or tell something later must say "next, …" (then the wait knows what it waits for).
+const LATER = /\b(paste|tell me|type|send|write)\b/i
+export function waitProblems(script) {
+  const out = []
+  const w = script && script.lines && script.lines[WAIT_LINE]
+  if (!w) out.push(`the wait line "${WAIT_LINE}" isn't in the script (plugin/script.md)`)
+  else if (!/\{what\}/.test(String(w.text || ''))) out.push(`"${WAIT_LINE}" must say what it waits for: a {what} slot (the "next, …" words of the option picked)`)
+  for (const l of Object.values((script && script.lines) || {})) {
+    if (l.kind !== 'box') continue
+    for (const o of l.box.options) {
+      if (LATER.test(o.description) && !/^next,/i.test(o.description.trim())) {
+        out.push(`box "${l.id}", option "${o.label}": its words ask them to type or paste something later ("${o.description}"); say "next, …" so the wait says what it waits for`)
+      }
+    }
+  }
+  return out
+}
+
 // (F234 task 6, review fix from F233 task 8) The open free question, written again last by the turn-end correction —
-// without repeating a line: a {"wait": true} ask is "Type your answer below." itself (any.type), and the lines already
+// without repeating a line: a {"wait": true} ask is the wait line itself (any.wait), and the lines already
 // in the correction (missing) are taken out of the question's text (a heading said in the same call as the question).
 export function againLines(missing, ask, stepId) {
   if (!ask || ask.step !== stepId || !ask.text) return []
-  const id = ask.line === 'wait' ? TYPE_LINE : ask.line
+  const id = ask.line === 'wait' ? WAIT_LINE : ask.line
   if (missing.some(l => l.id === id)) return []
   let text = String(ask.text)
   for (const l of missing) if (l.text && text.includes(l.text)) text = text.replace(l.text, '')
