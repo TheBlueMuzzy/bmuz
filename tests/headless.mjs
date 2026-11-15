@@ -186,9 +186,12 @@ const CHART = {
 const GARDEN_DESIGN = {
   sketches: { 'Build them in this order?': 'Yes, build them' },
   'sketch-play': {
+    // (F236: "Played it?" first, then "Did it answer?")
+    'Played S01?': 'Here are my values',
+    'Pasted values (after "Here are my values")': 'speed: 3, size: 2',
+    'Played S02?': 'I played it',
     'Did S01 answer the question?': 'Yes, keep what it showed',
     'Did S02 answer the question?': 'Yes, keep what it showed',
-    'Pasted values': 'none',
   },
   'rules-ask': { 'Before we start, want me to read the rulebooks of the closest games?': 'No, start now' },
   flow: {
@@ -243,8 +246,10 @@ const GARDEN_DEVELOP = {
   tune: { "In your words, what's wrong with it?": 'A turn drags: drawing two cards every turn makes my hand too big. Try drawing one.' },
   lookback: { 'Your three lines (your words win)': 'Fine, keep your draft.' },
 }
-const gardenScratch = name => {
-  if (!/^bmuz-garden-/.test(name)) throw new Error(`the garden scenarios use .scratch/bmuz-garden-* folders only, not ${name}`)
+// (F236: BMUZ_SCRATCH names another folder for one run, a feature's own: bmuz-f236-define)
+const gardenScratch = given => {
+  const name = process.env.BMUZ_SCRATCH || given
+  if (!/^bmuz-(garden|f\d+)-[a-z0-9-]+$/.test(name)) throw new Error(`the garden scenarios use .scratch/bmuz-garden-* (or a feature's bmuz-f<n>-*) folders only, not ${name}`)
   const dir = join(here, '..', '..', '.scratch', name)
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
@@ -289,6 +294,14 @@ const stageJournal = (dir, stage) => {
   const arch = existsSync(root) ? readdirSync(root).filter(d => d.endsWith(`-${stage}`)).sort().pop() : null
   const f = arch ? join(root, arch, 'journal.jsonl') : join(dir, '.bmuz/journal.jsonl')
   return (existsSync(f) ? readFileSync(f, 'utf8') : '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l) } catch (e) { return {} } })
+}
+// F236: the hand-back checks of a stage's journal — every card handed out is in what Claude wrote and has no Proof or
+// Questions part; no wait was ever the bare "Type your answer below." (any.type is only ever the end of a free question)
+const cardChecks = (out, stage, js) => {
+  const cards = js.filter(j => j.ev === 'line' && j.kind === 'card')
+  check(`F236 (${stage}): every card (${cards.map(j => j.line.replace(/#card$/, '')).join(', ') || 'none'}) is Done / Try it / Your to-do only, and in Claude's words`, cards.length > 0 && cards.every(j => j.text.split('\n').every(l => /^\*\*(Done|Try it|Your to-do):\*\* /.test(l)) && plain(out).includes(plain(j.text))), cards.map(j => j.text).join(' | ').slice(0, 600))
+  const bare = js.filter(j => j.ev === 'line' && (j.line === 'any.type' || (j.line === 'any.wait' && !/^\*\*Your to-do:\*\* \S/.test(j.text))))
+  check(`F236 (${stage}): no wait was a bare "Type your answer below."`, bare.length === 0, bare.map(j => `${j.step}: ${j.text}`).join(' | '))
 }
 const trailOf = js => js.map(j => j.ev + (j.step ? ':' + j.step : '') + (j.line ? `[${j.line}]` : '') + (j.why ? ` (${String(j.why).slice(0, 140)})` : '')).join(' ')
 
@@ -441,6 +454,10 @@ const scenarios = {
     check('F232 (define): Define ran 2.0–2.8 in order to the lock gate; research skipped on "No"; "change" only on a "Not yet"', JSON.stringify(starts) === JSON.stringify(UP_TO_LOCK) && js.some(j => j.ev === 'step.skip' && j.step === 'prior-art') && js.some(j => j.ev === 'step.skip' && j.step === 'change'), trailOf(js))
     check('F232 (define): an auto run never locks: the gate asked the script\'s box and stopped', js.some(j => j.ev === 'gate.pending' && j.step === 'lock' && j.question === 'Lock the concept?' && JSON.stringify(j.options) === JSON.stringify(['Not yet: change something', 'Lock it: on to Design'])) && !js.some(j => j.ev === 'step.done' && j.step === 'locked'), trailOf(js.slice(-6)))
     scriptChecks(dir, out, 'define', js, ['define.welcome', 'define.feelings', 'define.feelings.own', 'define.feelings.match', 'define.feelings.right', 'define.feelings.know', 'define.feelings.not', 'define.pillars', 'define.pillars.take', 'define.pillars.test', 'define.pitch', 'define.pitch.research', 'define.pitch.take', 'define.pitch.mine', 'define.pitch.how', 'define.pitch.breath', 'define.loop', 'define.loop.here', 'define.loop.ok', 'define.platform.now', 'define.platform.where', 'define.platform.first', 'define.platform.who', 'define.clash', 'define.scope.intro', 'define.scope.first', 'define.scope.need', 'define.scope.someday', 'define.scope.chart.here', 'define.scope.slice.list', 'define.scope.slice.ok', 'define.scope.report'])
+    // F236: the scope chart's link is the box's card, right above it
+    cardChecks(out, 'define', js)
+    const chart = js.find(j => j.ev === 'line' && j.line === 'define.scope.chart.here#card')
+    check('F236 (define): the effort/impact chart hands back with its card: "Try it: the chart, drawn on your project page: <link>"', !!chart && /^\*\*Try it:\*\* the chart, drawn on your project page: file:\/\/\/\S+project-page\.html/.test(chart.text), chart ? chart.text : trailOf(js.filter(j => j.step === 'slice')))
     const lock = read('.planning/research/define-lock.md') || ''
     check('F232 (define): the concept lock page: the script\'s words, the ✓ lines filled, on the project page', /^\*\*Concept Lock\*\*\nHere's the concept, one page, on your project page now: file:\/\/\//.test(lock) && (lock.match(/^✓ /gm) || []).length === 6 && /Locking means Design builds on this page\./.test(lock), lock.slice(0, 700))
     // F234: on the new-idea path every Define step that names what it collects asks it all
@@ -481,6 +498,33 @@ const scenarios = {
     check('F227 (design): the TDD (its sections, the content tables decision) and the roadmap (milestones, F## features with needs, the first sprint in the review)', /## 1\. At a glance/.test(tdd) && /D01 · Content tables/.test(tdd) && /## 8\. Decisions log/.test(tdd) && /^# .+ — Roadmap/.test(rm) && /\n## v0\.1 — .+← current/.test(rm) && /\n- 🟢 F01 \S+ .+ — .+ — must:/u.test(rm) && /first sprint it would start with: F01 — /.test(read('.planning/research/design-review.md') || ''), `${tdd.slice(0, 300)} || ${rm.slice(0, 500)}`)
   },
 
+
+  // F236: Design's sketches with the garden race, from where Define left it, stopped once sketch-play is done: each sketch
+  // handed back with its card (the page opened for them: a test run says it would), "Played it?" before "Did it answer?",
+  // sketch by sketch, and no bare wait.
+  async 'design-sketches'() {
+    const dir = gardenScratch('bmuz-garden-sketches')
+    mkdirSync(join(dir, '.planning'), { recursive: true })
+    writeFileSync(join(dir, '.planning/GDD.md'), readFileSync(join(here, 'fixtures', 'garden-defined', 'GDD.md'), 'utf8'))
+    writeFileSync(join(dir, 'bmuz.json'), JSON.stringify({ pipeline: 'design', testAnswers: GARDEN_DESIGN }, null, 2))
+    const played = () => journalOf(dir).some(j => j.ev === 'step.done' && j.step === 'sketch-play')
+    const out = await runCollect(dir, 'bmuz go', `${TOOLS} ToolSearch mcp__bmuz__say WebSearch WebFetch`, played, 2_400_000)
+    writeFileSync(join(dir, 'run-output.txt'), out)
+    const js = journalOf(dir)
+    check('F236 (design): Design ran to the end of sketch-play', played(), trailOf(js.slice(-10)))
+    const manifest = JSON.parse((existsSync(join(dir, '.planning/research/sketches/sketches.json')) && readFileSync(join(dir, '.planning/research/sketches/sketches.json'), 'utf8')) || '{"sketches":[]}')
+    const pages = manifest.sketches.filter(s => !s.numbers)
+    const play = js.filter(j => j.step === 'sketch-play')
+    const order = play.filter(j => j.ev === 'line' && /^design\.sketch\.(played|answered)$/.test(j.line)).map(j => `${j.line.split('.').pop()}:${(j.box && j.box.question.match(/S\d+/) || [''])[0]}`)
+    const want = pages.flatMap(s => [`played:${s.id}`, `answered:${s.id}`])
+    check(`F236 (design): each sketch page (${pages.map(s => s.id).join(', ')}) is "Played it?" first, "Did it answer?" only after`, pages.length >= 2 && JSON.stringify(order) === JSON.stringify(want), `${order.join(' ')} (want ${want.join(' ')})`)
+    const opened = play.filter(j => j.ev === 'page.open' && j.file)
+    check('F236 (design): each sketch page was opened for them (a test run: "would open"), once', pages.every(s => opened.filter(j => j.file === s.file && j.ok).length === 1), JSON.stringify(opened.map(j => [j.file, j.ok, j.said])))
+    const cards = play.filter(j => j.ev === 'line' && j.line === 'design.sketch.played#card')
+    check('F236 (design): each "Played it?" came with its card — Done (the sketch, its question), Try it (its page, open), Your to-do (Copy values for Claude)', cards.length === pages.length && cards.every(j => /^\*\*Done:\*\* \*\*S\d+ .+\*\* is ready\. It answers: .+\n\*\*Try it:\*\* file:\/\/\/\S+\.html \(open in your browser now\)\n\*\*Your to-do:\*\* Try moving: .+ press "Copy values for Claude"/.test(j.text)), cards.map(j => j.text).join(' | ').slice(0, 900))
+    cardChecks(out, 'design sketches', js)
+    for (const c of cards) console.log(`      card:\n        ${c.text.split('\n').join('\n        ')}`)
+  },
 
   // F232: "bmuz new" in an empty folder → Ideate on the script, 1.0–1.7, with the garden race (the script's own example):
   // the welcome and every fixed line word for word, the GDD's chapters loose as the chart says, the sketch list, the
