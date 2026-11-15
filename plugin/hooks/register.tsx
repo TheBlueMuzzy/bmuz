@@ -1570,7 +1570,10 @@ async function sayTool($: any, e: any) {
   const there = E.asksThere(ctx.state.asked && ctx.state.asked[step.id], ids, slots, ctx.script)
   if (there) return deny(`BMUZ engine: "${there.what}" is already in the design document (${there.why}), so it isn't asked, not even as a Keep. Leave it out and ask the next question.`)
   // F235 task 4 (findings 8, 10): a line that points at the project page opens it, and its {link} says so
-  const withPage = await pageSlots($, step, ids, slots)
+  // F236 task 1: a card's {file} (a sketch page) is opened for them first, and its link says so
+  const withFile = await fileSlots($, step, ids, slots)
+  if (typeof withFile === 'string') return deny(withFile)
+  const withPage = await pageSlots($, step, ids, withFile)
   const rendered = ids.map(id => E.renderLine(ctx.script, id, withPage))
   const bad = rendered.find((r: any) => r.error)
   if (bad) return deny(`BMUZ engine: ${bad.error}.`)
@@ -1578,12 +1581,18 @@ async function sayTool($: any, e: any) {
   const words = rendered.filter((r: any) => r.kind !== 'box')
   // Words before a box in one call are fine when they are short and none is a free question ("Got it: added to …"
   // then "Another round?"); a long text or a free question gets a turn of its own (a box covers what's above it).
+  // (F236: a box with a card has the card right above it, so at most one short line may come before the card)
+  const carded = boxes.filter((r: any) => r.card)
+  if (carded.length > 1) return deny('BMUZ engine: one card at a time: say each box that has a card in a call of its own.')
   if (boxes.length && words.length) {
     const before = words.map((r: any) => r.text).join('\n\n')
-    if (rendered.findIndex((r: any) => r.kind === 'box') < words.length || words.some((r: any) => r.kind === 'free') || E.isLongSay(before)) {
+    const long = carded.length ? before.length > E.CARD_BEFORE.chars || before.split('\n').filter((l: string) => l.trim()).length > E.CARD_BEFORE.lines : E.isLongSay(before)
+    if (rendered.findIndex((r: any) => r.kind === 'box') < words.length || words.some((r: any) => r.kind === 'free') || long) {
       return deny('BMUZ engine: a box comes last, after at most a short line of words (no free question, nothing long: a box covers text written above it). Say the words on their own first.')
     }
   }
+  // (the card is said as the box's own words, last before it: checked word for word like any line)
+  for (const r of carded) words.push({ id: `${r.id}#card`, kind: 'card', text: r.card })
   // (F233 6d: the free question's words end with "Type your answer below.", once — on the free line itself, which
   // must then be the last thing said: headless ideate-finished 12:3x sent the pool lines after the question too)
   const lastFree = words.map((r: any) => r.kind).lastIndexOf('free')
@@ -1622,7 +1631,7 @@ async function sayTool($: any, e: any) {
   // (each box handed out gets a number, so the same box can be asked twice: Scope's "[idea]: …?" per idea)
   let n = (ctx.state.boxes || []).reduce((m: number, b: any) => Math.max(m, b.n || 0), 0)
   if (boxes.length) {
-    const add = boxes.map((r: any) => ({ id: r.id, n: ++n, box: r.box }))
+    const add = boxes.map((r: any) => ({ id: r.id, n: ++n, box: r.box, ...(r.card ? { card: r.card } : {}) }))
     ctx.state = { ...ctx.state, boxes: [...(ctx.state.boxes || []), ...add], opened: step.id }
     for (const r of boxes) await journal($, { ev: 'line', step: step.id, line: r.id, kind: 'box', box: r.box })
     await save($)
@@ -1647,6 +1656,36 @@ async function sayTool($: any, e: any) {
 // is the page's address with "(open in your browser now)". Returns the slots to render with.
 let pageOpenedFor = ''
 let pageOpenedOk = false
+
+// F236 task 3 (Sirius Smugglers Design, 2026-11-15: the sketch's ready line was a bare file:/// link): a card whose
+// "try" names a {file} — a page of this project, like a sketch — opens it in the creative's browser first (gdd.mjs open,
+// once per step try and file; a test run only says it would; an auto run outside a test opens nothing), and {file} is
+// its address with "(open in your browser now)" when that worked. Returns the slots to render with, or the refusal.
+const filesOpened = new Map<string, boolean>()
+async function fileSlots($: any, step: any, ids: string[], slots: any) {
+  const wants = ids.some(id => {
+    const l = ctx.script.lines[id]
+    return l && l.kind === 'box' && l.box.card && /\{file\}/.test(Object.values(l.box.card).join(' '))
+  })
+  if (!wants || slots.file === undefined) return slots
+  const rel = E.projectFile(slots.file)
+  if (!rel || (await readText($, `${ctx.dir}/${rel}`)) === null) return `BMUZ engine: {file} must be a file in this project, as its path from the project folder (like ".planning/research/sketches/S01-name.html"): "${String(slots.file).slice(0, 120)}" isn't.`
+  const key = `${step.id}#${ctx.state.retries[step.id] || 0}#${rel}`
+  const test = ctx.auto ? (await envValue($, 'BMUZ_TEST')) === '1' : false
+  if (!filesOpened.has(key) && (!ctx.auto || test)) {
+    filesOpened.set(key, false)
+    try {
+      const ran: any = await $.process.run(['node', `${ctx.root}/scripts/gdd.mjs`, 'open', rel], { cwd: ctx.dir, timeoutMs: 30000 })
+      const ok = ran?.exitCode === 0 && /opened|would open/.test(String(ran?.stdout ?? ''))
+      filesOpened.set(key, ok)
+      await journal($, { ev: 'page.open', step: step.id, file: rel, ok, said: String(ran?.stdout ?? '').trim().slice(0, 200) })
+    } catch (err) {
+      await journal($, { ev: 'page.open', step: step.id, file: rel, ok: false, said: String(err).slice(0, 200) })
+    }
+  }
+  return { ...slots, file: `${E.fileLink(`${ctx.dir}/${rel}`)}${filesOpened.get(key) ? ' (open in your browser now)' : ''}` }
+}
+
 async function pageSlots($: any, step: any, ids: string[], slots: any) {
   if (!ids.some(id => E.pointsAtPage(ctx.script, id))) return slots
   const key = `${step.id}#${ctx.state.retries[step.id] || 0}`
@@ -1666,7 +1705,8 @@ async function pageSlots($: any, step: any, ids: string[], slots: any) {
   // (F235 task 8: a box's {link} is in its question — define.scope.chart.here is a box now)
   const needsLink = ids.some(id => {
     const l = ctx.script.lines[id]
-    return /\{link\}/.test(String((l && (l.kind === 'box' ? l.box.question : l.text)) || ''))
+    // (F236: or in its card)
+    return /\{link\}/.test(String((l && (l.kind === 'box' ? [l.box.question, ...Object.values(l.box.card || {})].join(' ') : l.text)) || ''))
   })
   if (!needsLink || (typeof slots.link === 'string' && slots.link.trim())) return slots
   return { ...slots, link: `${E.fileLink(`${ctx.dir}/.planning/project-page.html`)}${opened ? ' (open in your browser now)' : ''}` }
@@ -2492,7 +2532,9 @@ export const register: Register = on => {
         try { rows = await $.session.messages() } catch (err) { rows = null }
         if (!Array.isArray(rows)) await journal($, { ev: 'ask.unchecked', step: cur.id, why: 'the transcript could not be read' })
         else {
-          const hidden = E.hiddenTextProblem(E.turnText(rows))
+          // (F236: the card handed out with the box asked is the box's own words, right above it)
+          const card = (asked.find((b: any) => b.card) || {}).card || ''
+          const hidden = E.hiddenTextProblem(E.turnText(rows), card)
           if (hidden) {
             await journal($, { ev: 'deviation', step: cur.id, tool: 'AskUserQuestion', agentId: null, why: hidden })
             return { deny: hidden }

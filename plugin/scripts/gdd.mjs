@@ -599,12 +599,14 @@ ${listHtml('Decisions')}
 export const pageLink = dir => pathToFileURL(resolve(dir, PAGE)).href
 
 // Opens the page in the creative's browser. Never in a test run (BMUZ_TEST=1): it says what it would open instead.
-export function openPage(dir, env = process.env) {
-  const file = resolve(dir, PAGE)
-  if (env.BMUZ_TEST === '1') return `test run: would open ${pageLink(dir)}`
+// (F236: rel = another page of the project, a sketch; the engine checked it is one)
+export function openPage(dir, env = process.env, rel = PAGE) {
+  const file = resolve(dir, rel)
+  const link = pathToFileURL(file).href
+  if (env.BMUZ_TEST === '1') return `test run: would open ${link}`
   const cmd = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', file]] : process.platform === 'darwin' ? ['open', [file]] : ['xdg-open', [file]]
   const r = spawnSync(cmd[0], cmd[1], { stdio: 'ignore', timeout: 15000, windowsHide: true })
-  return r.error ? `couldn't open the browser (${String(r.error.message).slice(0, 80)}); the page is ${pageLink(dir)}` : `opened ${pageLink(dir)}`
+  return r.error ? `couldn't open the browser (${String(r.error.message).slice(0, 80)}); the page is ${link}` : `opened ${link}`
 }
 
 // ---- The command line ----
@@ -650,6 +652,12 @@ if (isMain) {
     if (!readFileIn(dir, GDD)) writeFile(dir, GDD, newGdd())
     writePage(dir)
     console.log(`✔ ${PAGE}${a === '--open' ? ` · ${openPage(dir)}` : ''}`)
+  } else if (cmd === 'open') {
+    // (F236: a sketch page, opened for the creative: a file inside the project, never anything else)
+    const rel = String(a || '').replace(/\\/g, '/')
+    const inside = resolve(dir, rel).startsWith(resolve(dir)) && !/^[a-z]+:|^\//i.test(rel) && !rel.split('/').includes('..')
+    if (!rel || !inside || !existsSync(join(dir, rel))) { console.log(`✘ not a file in this project: ${rel}`); process.exit(1) }
+    console.log(`✔ ${openPage(dir, process.env, rel)}`)
   } else if (cmd === 'decision') {
     // (F235 task 5: a decision or a cut said in passing, from the engine's step-in tool: {decision, said, cut, rule, answers, step, stage})
     let d = null

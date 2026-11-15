@@ -3578,3 +3578,80 @@ test('F235 review fix: two owed "Ask again?" lines: one is the box, the other is
   expect(all).toMatch(/Which seeds grow fastest\?/)
   expect(all).toMatch(new RegExp(RQ.replace(/[?.()]/g, '\$&')))
 })
+
+// ---- F236: BMUZ hands back with a card (Muzzy 2026-11-15, Sirius Smugglers Design: "it asks me to do something, but it
+// doesn't show me what I'm supposed to do (or answer)"). The card's words are the box line's own (done / try / todo);
+// the engine renders it and hands it out with the box, to be written right before it in the same message. ----
+const CARD_BOX = [
+  '## design.sketch.played · box · added',
+  'done: **{name}** is ready. It answers: {question}',
+  'try: {file}',
+  'todo: Try moving: {knobs}.',
+  '? Played {sketch}?',
+  'header: Played it?',
+  '- Here are my values — next, paste them from "Copy values for Claude"',
+  '- I played it — no values to keep',
+  '',
+].join(String.fromCharCode(10))
+function cardWorld(on: any) {
+  const s = sayWorld(on)
+  s.w.files.SCRIPT = SCRIPT + String.fromCharCode(10) + CARD_BOX
+  const p = JSON.parse(s.w.files.PIPELINE)
+  p.steps[0].lines = [...p.steps[0].lines, 'design.sketch.played']
+  s.w.files.PIPELINE = JSON.stringify(p)
+  s.w.files['/proj/.planning/research/sketches/S02-action-picker.html'] = '<html></html>'
+  return s
+}
+const SKETCH_SLOTS = { name: 'S02 Action picker', question: 'Is picking quick?', file: '.planning/research/sketches/S02-action-picker.html', knobs: 'Button size and Picker position', sketch: 'S02' }
+
+test('F236 task 1: a box with a card comes back with the card to write first; the file it names is opened once, and the card is checked word for word', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w, prompts } = cardWorld(on)
+  await start($, true)
+  const before = w.runs.length
+  const r: any = await $.tool.call({ tool: SAY, line: 'design.sketch.played', slots: SKETCH_SLOTS } as any)
+  expect(refused(r)).toBe(false)
+  const out = said(r)
+  expect(out.say).toMatch(/^\*\*Done:\*\* \*\*S02 Action picker\*\* is ready\. It answers: Is picking quick\?\n\*\*Try it:\*\* file:\/\/\/.*proj\/\.planning\/research\/sketches\/S02-action-picker\.html\n\*\*Your to-do:\*\* Try moving: Button size and Picker position\.$/)
+  // (the fake run answered "{}", not "opened": the card never claims a page is open when it isn't)
+  expect(out.say).not.toMatch(/open in your browser now/)
+  expect(out.box.question).toBe('Played S02?')
+  expect(out.first).toMatch(/Write exactly the "say" text first/)
+  const opens = w.runs.slice(before).filter(a => /gdd[.]mjs$/.test(String(a[1])) && a[2] === 'open')
+  expect(opens).toEqual([['node', expect.stringMatching(/gdd[.]mjs$/), 'open', '.planning/research/sketches/S02-action-picker.html']])
+  expect(events(w).find((j: any) => j.ev === 'page.open')).toMatchObject({ step: 'ask', file: '.planning/research/sketches/S02-action-picker.html' })
+  expect(events(w).find((j: any) => j.ev === 'line' && j.kind === 'card')).toMatchObject({ line: 'design.sketch.played#card', text: out.say })
+  // the card left out of what Claude wrote: nudged like any script line
+  await $.turn.complete({ answer: 'Played S02?', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as any)
+  expect(events(w).filter((j: any) => j.ev === 'said').pop()).toMatchObject({ missing: ['design.sketch.played#card'] })
+  expect(nudges(prompts)).toBe(1)
+})
+
+test('F236 task 1: the card plus one short line before its box is not "covered text"; the same words without the card\'s box are', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  let rows: any[] = []
+  on('session.messages', () => ({ value: rows }))
+  on('tool.call', { tool: 'AskUserQuestion' }, () => ({ result: 'User has answered your questions: "Played S02?"="I played it"' }))
+  cardWorld(on)
+  await start($, true)
+  const out = said(await $.tool.call({ tool: SAY, line: 'design.sketch.played', slots: { ...SKETCH_SLOTS, question: 'Does picking 2 of 3 actions, with last turn\'s second one locked, feel quick and clear on a screen when you play five turns in a row?' } } as any))
+  rows = [
+    { role: 'user', text: 'BMUZ step "ask"', toolUses: [] },
+    { role: 'assistant', text: `Noted in your design document: you recover your Evidence on its Planet.\n\n${out.say}`, toolUses: [{ tool_use_id: 'tu1', tool: 'AskUserQuestion', input: {} }] },
+  ]
+  expect(out.say.length).toBeGreaterThan(300)
+  const r: any = await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: out.box.question, header: out.box.header, multiSelect: false, options: out.box.options }] } as any)
+  expect(refused(r)).toBe(false)
+})
+
+test('F236 task 1: a {file} that is not a file of this project is refused (never opened)', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const { w } = cardWorld(on)
+  await start($, true)
+  for (const file of ['../elsewhere.html', 'C:/Windows/x.html', '.planning/research/sketches/S09-missing.html']) {
+    const r: any = await $.tool.call({ tool: SAY, line: 'design.sketch.played', slots: { ...SKETCH_SLOTS, file } } as any)
+    expect(refused(r)).toBe(true)
+    expect(why(r)).toMatch(/\{file\} must be a file in this project/)
+  }
+  expect(w.runs.filter(a => a[2] === 'open').length).toBe(0)
+})

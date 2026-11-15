@@ -934,8 +934,26 @@ export function turnText(rows) {
 }
 
 // Is there more plain text before a question box than one short line? Returns the refusal's words, or null.
-export function hiddenTextProblem(text) {
-  const t = String(text || '').trim()
+// What came before the card at the end of a turn's text: the text less the card's own lines (as many as it has).
+function cutCard(text, card) {
+  const n = card.split(/\r?\n/).filter(l => l.trim()).length
+  const rows = text.split(/\r?\n/)
+  let seen = 0
+  let i = rows.length
+  while (i > 0 && seen < n) { i -= 1; if (rows[i].trim()) seen += 1 }
+  return rows.slice(0, i).join('\n').trim()
+}
+
+// card (F236): the engine's own step card handed out with this box. It is short by its make (one line per part, three at
+// most), so when the turn's text ends with it, it is not counted: what came before it may be one short line.
+export const CARD_BEFORE = { chars: 160, lines: 1 }
+export function hiddenTextProblem(text, card = '') {
+  let t = String(text || '').trim()
+  const c = String(card || '').trim()
+  if (c && plainWords(t).endsWith(plainWords(c))) {
+    const before = cutCard(t, c)
+    if (before.length <= CARD_BEFORE.chars && before.split(/\r?\n/).filter(l => l.trim()).length <= CARD_BEFORE.lines) return null
+  }
   const lines = t.split(/\r?\n/).filter(l => l.trim()).length
   if (t.length <= 300 && lines <= 3) return null
   return `BMUZ engine: ${lines} line${lines === 1 ? '' : 's'} of plain text (${t.length} characters) came before this question box in the same turn, and the box covers them: the creative can't read them (live run: "i don't see 5 research questions that you're referring to"). Ask again with everything they need to read inside the question or the options' descriptions, and at most one short line before the box.`
@@ -1589,7 +1607,11 @@ export function parseScript(text) {
         else if (/^- /.test(l)) {
           const m = l.slice(2).match(/^(?:\[(if|each) (\w+)\]\s+)?(.*?)(?: — (.*))?$/)
           box.options.push({ label: m[3].trim(), description: (m[4] || '').trim(), ...(m[1] ? { [m[1]]: m[2] } : {}) })
-        } else if (l.trim()) problems.push(`box "${cur.id}": the line "${l.slice(0, 60)}" isn't "? question", "header:", "many: yes" or "- option"`)
+        } else if (!box.question && /^(done|try|todo):\s/.test(l)) {
+          // (F236: the step card's parts, before the question: what just happened, what to open, the one thing to do)
+          const k = l.match(/^(done|try|todo):/)[1]
+          box.card = { ...(box.card || {}), [k]: l.slice(k.length + 1).trim() }
+        } else if (l.trim()) problems.push(`box "${cur.id}": the line "${l.slice(0, 60)}" isn't "done:", "try:", "todo:" (the card, before the question), "? question", "header:", "many: yes" or "- option"`)
       }
       box.question = box.question.replace(/^\n+|\s+$/g, '')
       if (!box.question) problems.push(`box "${cur.id}" has no "? question" line`)
@@ -1667,8 +1689,16 @@ export function scriptRunFailure(why, limitMs) {
 export function pointsAtPage(script, id) {
   const l = script && script.lines && script.lines[id]
   if (!l) return false
-  const words = l.kind === 'box' ? [l.box.question, ...l.box.options.map(o => `${o.label} ${o.description}`)].join(' ') : String(l.text || '')
+  // (F236: a box's card counts — its "try" is where a page is pointed at)
+  const words = l.kind === 'box' ? [l.box.question, ...l.box.options.map(o => `${o.label} ${o.description}`), ...Object.values(l.box.card || {})].join(' ') : String(l.text || '')
   return /project page/i.test(words)
+}
+// F236: a file of the project as its path from the project folder (".planning/research/sketches/S01-x.html"), or null
+// for anything else: an absolute path, a link, a way out of the folder ("..").
+export function projectFile(p) {
+  const s = String(p ?? '').trim().replace(/\\/g, '/').replace(/^\.\//, '')
+  if (!s || s.length > 200 || /^[a-z]+:/i.test(s) || s.startsWith('/') || s.split('/').some(x => x === '..' || x === '')) return null
+  return s
 }
 // A file's address as a file:/// link (Windows paths too), the spaces and other signs escaped.
 export function fileLink(path) {
@@ -1736,7 +1766,30 @@ export function renderLine(script, id, slots = {}) {
   // filled and cut to fit the tab (boxHeader)
   const h = fillTemplate(line.box.header, s, nested)
   if (h.missing) return { error: `box "${id}" needs ${h.missing.map(n => `{${n}}`).join(', ')} in "slots" (its header)` }
-  return { id, kind: 'box', box: { question: q.text.trim(), header: boxHeader(h.text), multiSelect: line.box.many, options } }
+  const card = line.box.card ? renderStepCard(line.box.card, s, nested) : null
+  if (card && card.missing) return { error: `box "${id}" needs ${card.missing.map(n => `{${n}}`).join(', ')} in "slots" (its card)` }
+  return { id, kind: 'box', box: { question: q.text.trim(), header: boxHeader(h.text), multiSelect: line.box.many, options }, ...(card && card.text ? { card: card.text } : {}) }
+}
+
+// ---- F236: the step card — BMUZ hands back with a card (Muzzy 2026-11-15: "the way you layout Done: You'll See:, Try
+// It:, Proof, Your To-dos: Questions: blocks are great, and that should be mirrored… maybe the main card doesn't have
+// the questions"; picked: Done / Try it / Your to-do, no Proof). A box line may carry the card's parts ("done:", "try:",
+// "todo:" before its question, script words with slots); the engine renders it, one line per part, and it is said with
+// the box, last thing before it, in the same message. The box is the question, so the card has none. A part that
+// renders empty is left out (a plain question has no Try it).
+export const STEP_CARD = [['done', 'Done'], ['try', 'Try it'], ['todo', 'Your to-do']]
+function renderStepCard(parts, s, nested) {
+  const out = []
+  const missing = []
+  for (const [k, label] of STEP_CARD) {
+    if (!parts[k]) continue
+    const f = fillTemplate(parts[k], s, nested)
+    if (f.missing) { missing.push(...f.missing); continue }
+    // (one line per part: a list slot inside a part is joined with " · ")
+    const words = f.text.split('\n').map(x => x.replace(/^[·]\s+/, '').trim()).filter(Boolean).join(' · ')
+    if (words) out.push(`**${label}:** ${words}`)
+  }
+  return missing.length ? { missing: [...new Set(missing)] } : { text: out.join('\n') }
 }
 
 // A question box's tab: AskUserQuestion takes 12 characters at most. Whole words while they fit ("Online play with

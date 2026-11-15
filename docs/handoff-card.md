@@ -57,3 +57,12 @@ A later card asking a question whose `key` is already decided is refused with th
 
 ## How it is shown
 The engine saves the card in `.bmuz/last-card.md`. At the end of the hand-off step's turn it sends its own labelled message: read that file, show its text word for word, and end the turn. The message points at the file rather than carrying the card, so the creative sees the card once (a message carrying it showed it twice). Reading that one file is allowed between steps, when every other tool waits.
+
+# The step card (F236): handing back mid-stage
+Every time BMUZ hands the turn back mid-stage with something to do or open, one message holds a short card and then the question box, last (Muzzy 2026-11-15: Done / Try it / Your to-do, no Proof; the box is the question, so the card has no Questions part).
+
+- The card's words live on the **box line** in `plugin/script.md`, before its `? question`: `done:` (what just happened, one line) · `try:` (what to open) · `todo:` (the one thing to do now). Script words with slots, like any line: Claude fills the slots, never the words.
+- The engine renders it (`E.renderLine` → `card`), one line per part with the labels **Done:** · **Try it:** · **Your to-do:**; a part with nothing in it is left out.
+- The say tool hands it back as the `say` to write first, then the box: one message, text then AskUserQuestion. The card is checked word for word at the turn's end (`<line>#card`), like any script line.
+- A box covers text written above it, so a card is short by its make (one line per part); at most one short line may come before it (`E.CARD_BEFORE`), and the box guard counts the card as the box's own words.
+- `{file}` in a card's `try:` is a page of the project (a sketch): the engine opens it in the creative's browser first (`gdd.mjs open <file>`, once per step try) and fills `{file}` with its address, plus "(open in your browser now)" only when it opened. `{link}` (the project page) works as before (F235 task 4).
