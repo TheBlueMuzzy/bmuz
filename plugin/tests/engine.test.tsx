@@ -3741,3 +3741,25 @@ test('F236 task 3: a line that "follows" a box is refused until that box was ans
   // the next sketch: played again first
   expect(refused(await ask('design.sketch.answered', { sketch: 'S03' }))).toBe(true)
 })
+
+// F236 task 3 (headless design-sketches 02:06, an auto run: "Played S02?" was handed out before "Did S01 answer?", and
+// the guard let "Did S01…" through because the box before it was a "Played it?"): the line and the box it follows agree
+// on the slots they share — "Did S01 answer?" follows "Played S01?", never "Played S02?"
+test('F236 task 3: "follows" pairs by the slots both lines share — sketch by sketch, in an auto run too', async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  const s = cardWorld(on)
+  s.w.files.SCRIPT += NL + '## design.sketch.answered · box' + NL + '? Did {sketch} answer the question?' + NL + 'header: Answered?' + NL + '- Yes, keep what it showed — it goes into the design' + NL + '- No, rethink it — it goes back to Open Questions' + NL
+  s.w.files['/proj/.planning/research/sketches/S01.html'] = '<html></html>'
+  const p = JSON.parse(s.w.files.PIPELINE)
+  p.steps[0].lines = [...p.steps[0].lines, 'design.sketch.answered']
+  p.steps[0].follows = { 'design.sketch.answered': 'design.sketch.played' }
+  s.w.files.PIPELINE = JSON.stringify(p)
+  await start($, false) // an auto run: a box handed out counts as answered
+  const say = (line: string, slots: any) => $.tool.call({ tool: SAY, line, slots } as any)
+  expect(refused(await say('design.sketch.played', { ...SKETCH_SLOTS, sketch: 'S01', file: '.planning/research/sketches/S01.html' }))).toBe(false)
+  expect(refused(await say('design.sketch.played', SKETCH_SLOTS))).toBe(false) // S02 handed out too early
+  const wrong: any = await say('design.sketch.answered', { sketch: 'S01' })
+  expect(refused(wrong)).toBe(true)
+  expect(why(wrong)).toMatch(/comes only after "design\.sketch\.played" is answered/)
+  expect(refused(await say('design.sketch.answered', { sketch: 'S02' }))).toBe(false)
+})

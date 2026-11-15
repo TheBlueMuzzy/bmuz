@@ -521,7 +521,7 @@ const scenarios = {
     const opened = play.filter(j => j.ev === 'page.open' && j.file)
     check('F236 (design): each sketch page was opened for them (a test run: "would open"), once', pages.every(s => opened.filter(j => j.file === s.file && j.ok).length === 1), JSON.stringify(opened.map(j => [j.file, j.ok, j.said])))
     const cards = play.filter(j => j.ev === 'line' && j.line === 'design.sketch.played#card')
-    check('F236 (design): each "Played it?" came with its card — Done (the sketch, its question), Try it (its page, open), Your to-do (Copy values for Claude)', cards.length === pages.length && cards.every(j => /^\*\*Done:\*\* \*\*S\d+ .+\*\* is ready\. It answers: .+\n\*\*Try it:\*\* file:\/\/\/\S+\.html \(open in your browser now\)\n\*\*Your to-do:\*\* Try moving: .+ press "Copy values for Claude"/.test(j.text)), cards.map(j => j.text).join(' | ').slice(0, 900))
+    check('F236 (design): each "Played it?" came with its card — Done (the sketch, its question), Try it (its page, open), Your to-do (Copy values for Claude)', pages.every(s => cards.some(j => j.text.includes(`**${s.id} `))) && cards.every(j => /^\*\*Done:\*\* \*\*S\d+ .+\*\* is ready\. It answers: .+\n\*\*Try it:\*\* file:\/\/\/\S+\.html \(open in your browser now\)\n\*\*Your to-do:\*\* Try moving: .+ press "Copy values for Claude"/.test(j.text)), cards.map(j => j.text).join(' | ').slice(0, 900))
     cardChecks(out, 'design sketches', js)
     for (const c of cards) console.log(`      card:\n        ${c.text.split('\n').join('\n        ')}`)
   },

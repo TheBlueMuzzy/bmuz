@@ -2012,7 +2012,7 @@ export function gateWords(step, script, vars = {}) {
 }
 
 // Every live talk step with script lines is told this, in place of ASK_RULE.
-export const SCRIPT_RULE = `The script: this step's fixed lines are BMUZ's own words, word for word, from its script. Never write one yourself and never reword one. To say a line, call ${SAY_TOOL} with {"line": "<id>", "slots": {…}} (a list of ids says several at once); it returns the exact words and what to do next. A line with an {example} slot gets one or two short examples from THIS game's own parts, and a list slot is a JSON list (bullet points), never a run of semicolons. Every question is a question box (F235): a "box" line returns the box to ask with AskUserQuestion, exactly as given (the engine refuses any other box). Claude Code adds "Type something." for a short typed answer and "Chat about this" for a long or pasted one; when they pick "Chat about this", the engine tells you what to write and takes their next chat message as the answer. An option that says "next, tell me …" picked: call ${SAY_TOOL} {"wait": true} and end your turn; their next message says it. An option "Show me your take" picked: draft it from the game so far (your reading, never quoted as their words) and show it; where the step has a box to check it (any.keep, a "… ok" box), ask that box, else carry on with it. (A "free" line, where one is left, is your whole reply, then end your turn; the creative's next chat message is the answer.) Between lines you may add one short sentence of your own only where the script has nothing to say (an example, a pointer to their own words); never a question in plain text. If the creative closes a box without an answer, write ONE short line: "Nothing came through. Paste it as your next message, or say carry on." and end your turn.`
+export const SCRIPT_RULE = `The script: this step's fixed lines are BMUZ's own words, word for word, from its script. Never write one yourself and never reword one. To say a line, call ${SAY_TOOL} with {"line": "<id>", "slots": {…}} (a list of ids says several at once); it returns the exact words and what to do next. A line with an {example} slot gets one or two short examples from THIS game's own parts, and a list slot is a JSON list (bullet points), never a run of semicolons. Every question is a question box (F235): a "box" line returns the box to ask with AskUserQuestion, exactly as given (the engine refuses any other box). Claude Code adds "Type something." for a short typed answer and "Chat about this" for a long or pasted one; when they pick "Chat about this", the engine tells you what to write and takes their next chat message as the answer. A box that comes back with a "say" beside it (a step card: Done · Try it · Your to-do, F236): write that text exactly, then ask the box, in the same message. An option that says "next, tell me …" picked: call ${SAY_TOOL} {"wait": true} and end your turn; their next message says it (a wait says what it waits for, so it is refused when nothing they picked says "next, …"). An option "Show me your take" picked: draft it from the game so far (your reading, never quoted as their words) and show it; where the step has a box to check it (any.keep, a "… ok" box), ask that box, else carry on with it. (A "free" line, where one is left, is your whole reply, then end your turn; the creative's next chat message is the answer.) Between lines you may add one short sentence of your own only where the script has nothing to say (an example, a pointer to their own words); never a question in plain text. If the creative closes a box without an answer, write ONE short line: "Nothing came through. Paste it as your next message, or say carry on." and end your turn.`
 
 // The step's lines as its prompt lists them: id, kind, slots and the first words.
 export function linesList(script, ids) {
@@ -2089,6 +2089,21 @@ export function nextPick(boxes, answer) {
   }
   return out
 }
+// F236 task 3: a box's short slots, kept to pair a line that "follows" it ({"sketch": "S01"}); and do two calls agree on
+// every slot both gave?
+export function shortSlots(slots) {
+  const out = {}
+  for (const [k, v] of Object.entries(slots && typeof slots === 'object' && !Array.isArray(slots) ? slots : {})) {
+    if ((typeof v === 'string' || typeof v === 'number') && String(v).length <= 80) out[k] = String(v)
+  }
+  return out
+}
+export function sameShared(a, b) {
+  const x = shortSlots(a)
+  const y = shortSlots(b)
+  return Object.keys(x).filter(k => k in y).every(k => x[k].trim() === y[k].trim())
+}
+
 // What breaks the rule in the script (check-pipeline runs it): the wait line must have its {what}; an option whose words
 // ask them to type, paste or tell something later must say "next, …" (then the wait knows what it waits for).
 const LATER = /\b(paste|tell me|type|send|write)\b/i

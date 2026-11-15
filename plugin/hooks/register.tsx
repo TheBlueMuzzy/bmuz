@@ -1554,7 +1554,9 @@ async function sayTool($: any, e: any) {
   if (notHere.length) return deny(`BMUZ engine: ${notHere.map(id => `"${id}"`).join(', ')} ${notHere.length > 1 ? "aren't" : "isn't"} one of this step's lines (${step.lines.join(', ')}).`)
   // F236 task 3: a line that "follows" a box is said only once that box was answered, each time round ("Did it answer the
   // question?" only after "Played it?")
-  const early = ids.find(id => step.follows && step.follows[id] && !(ctx.state.lastBox && ctx.state.lastBox.step === step.id && ctx.state.lastBox.line === step.follows[id]))
+  // (and pairs by the slots both share: "Did S01 answer?" follows "Played S01?", never "Played S02?" — headless 02:06)
+  const callSlots = e.slots && typeof e.slots === 'object' && !Array.isArray(e.slots) ? e.slots : {}
+  const early = ids.find(id => step.follows && step.follows[id] && !(ctx.state.lastBox && ctx.state.lastBox.step === step.id && ctx.state.lastBox.line === step.follows[id] && E.sameShared(ctx.state.lastBox.slots, callSlots)))
   if (early) return deny(`BMUZ engine: "${early}" comes only after "${step.follows[early]}" is answered: say "${step.follows[early]}" and ask its box first.`)
   // (F235 task 5: an opening the engine already showed isn't said again)
   const again = ctx.state.shownOpening === step.id && step.opening ? ids.filter(id => step.opening.includes(id)) : []
@@ -1646,9 +1648,10 @@ async function sayTool($: any, e: any) {
   // (each box handed out gets a number, so the same box can be asked twice: Scope's "[idea]: …?" per idea)
   let n = (ctx.state.boxes || []).reduce((m: number, b: any) => Math.max(m, b.n || 0), 0)
   if (boxes.length) {
-    const add = boxes.map((r: any) => ({ id: r.id, n: ++n, box: r.box, ...(r.card ? { card: r.card } : {}) }))
+    const keep = E.shortSlots(slots)
+    const add = boxes.map((r: any) => ({ id: r.id, n: ++n, box: r.box, ...(r.card ? { card: r.card } : {}), ...(step.follows ? { slots: keep } : {}) }))
     // (F236 task 3: an auto run never asks — its test answers or defaults answer the box as it is handed out)
-    ctx.state = { ...ctx.state, boxes: [...(ctx.state.boxes || []), ...add], opened: step.id, ...(ctx.auto ? { lastBox: { step: step.id, line: boxes[boxes.length - 1].id } } : {}) }
+    ctx.state = { ...ctx.state, boxes: [...(ctx.state.boxes || []), ...add], opened: step.id, ...(ctx.auto ? { lastBox: { step: step.id, line: boxes[boxes.length - 1].id, slots: keep } } : {}) }
     for (const r of boxes) await journal($, { ev: 'line', step: step.id, line: r.id, kind: 'box', box: r.box })
     await save($)
     const then = E.sayNext(boxes[0], ctx.auto)
@@ -2574,7 +2577,7 @@ export const register: Register = on => {
       if ((res?.deny || res?.isError) && E.isChatInstead(res) && asked.length && !ctx.auto) {
         const last = asked[asked.length - 1]
         // (F235 review fix: the other boxes asked in the same call go back to pending, so none is lost; Claude asks them after)
-        ctx.state = { ...ctx.state, boxes: [...(ctx.state.boxes || []), ...asked.slice(0, -1)], ask: { step: ctx.state.current, line: last.id, text: last.box.question }, lastBox: { step: ctx.state.current, line: last.id } }
+        ctx.state = { ...ctx.state, boxes: [...(ctx.state.boxes || []), ...asked.slice(0, -1)], ask: { step: ctx.state.current, line: last.id, text: last.box.question }, lastBox: { step: ctx.state.current, line: last.id, slots: last.slots || {} } }
         await journal($, { ev: 'ask.open', step: ctx.state.current, line: last.id, via: 'chat' })
         await save($)
         await markActive($)
@@ -2608,7 +2611,7 @@ export const register: Register = on => {
           // (F236 task 3: and the box line answered last, for a line that "follows" it)
           if (asked.length) {
             const what = E.nextPick(asked, E.answerText(res))
-            ctx.state = { ...ctx.state, waitFor: what ? { step: ctx.state.current, what } : null, lastBox: { step: ctx.state.current, line: asked[asked.length - 1].id } }
+            ctx.state = { ...ctx.state, waitFor: what ? { step: ctx.state.current, what } : null, lastBox: { step: ctx.state.current, line: asked[asked.length - 1].id, slots: asked[asked.length - 1].slots || {} } }
             await save($)
           }
           // (the ask for links, now a box: what they typed in it is their material, as the free line's answer was)
